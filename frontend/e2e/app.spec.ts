@@ -22,6 +22,7 @@ const run = {
   brief: {
     summary: "Atlas has a strong return-lane opportunity into the Dallas network.",
     recommended_next_step: "Pitch the Atlanta to Dallas lane.",
+    recommended_next_step_code: "new_lane_pitch",
     modeled_annual_revenue: 624000,
     deadhead_miles_avoided: 18400,
     lanes: [
@@ -37,7 +38,11 @@ const run = {
           {
             claim: "12 observed loads per week",
             source: "GenLogs fixture",
+            mode: "fixture",
+            endpoint_or_artifact: "fixtures/genlogs/atlas-foods.json",
             retrieved_at: "2026-09-29T12:00:00Z",
+            evidence_location: "$.lanes[0].weekly_loads",
+            source_version: "synthetic-v1",
           },
         ],
       },
@@ -80,6 +85,11 @@ test("builds an evidence-backed brief and requires rep approval", async ({ page 
 
   await expect(page.getByRole("heading", { name: "Network-fit brief" })).toBeVisible();
   await expect(page.getByText("Atlanta, GA → Dallas, TX")).toBeVisible();
+  await expect(page.getByText("Modeled gross revenue", { exact: true })).toBeVisible();
+  await expect(page.getByText("Modeled deadhead avoided", { exact: true })).toBeVisible();
+  await page.getByText("Model assumptions").click();
+  await expect(page.getByText(/estimated rate per load × 52 weeks/)).toBeVisible();
+  await expect(page.getByText(/full origin-to-destination lane distance × 52 weeks/)).toBeVisible();
   await expect(page.getByText("Using disclosed fixture snapshot")).toBeVisible();
   await page.getByText(/Inspect evidence/).click();
   await expect(page.getByText("12 observed loads per week")).toBeVisible();

@@ -118,7 +118,7 @@ class ProspectRunService:
         self._require(run, RunStatus.RUNNING)
         verdict = output.verdict
         if output.outreach is not None:
-            validate_customer_outreach(output.outreach.body)
+            validate_customer_outreach(output.outreach)
         status = (
             RunStatus.COMPLETED
             if verdict in {FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA}
@@ -188,7 +188,7 @@ class ProspectRunService:
             outreach = edited_outreach
         else:
             outreach = run.output.outreach
-        validate_customer_outreach(outreach.body)
+        validate_customer_outreach(outreach)
         now = self._clock()
         receipt = SendReceipt(
             id=self._id_factory(),

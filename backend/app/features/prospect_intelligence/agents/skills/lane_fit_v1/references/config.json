@@ -1,0 +1,52 @@
+{
+  "density_loads_at_full_score": 40,
+  "fit_threshold": {
+    "matched_loads_per_week": 1
+  },
+  "matching": "exact_same_direction_origin_destination",
+  "method_version": "lane_fit_v1",
+  "modeled_estimates": {
+    "annual_weeks": 52,
+    "deadhead_displacement": "matched_loads * full_origin_destination_miles * 52",
+    "gross_revenue": "matched_loads * estimated_rate * 52"
+  },
+  "ranking": {
+    "eligible": "matched_loads_per_week >= 1",
+    "limit": 3,
+    "order": [
+      "fit_score desc",
+      "matched_loads_per_week desc",
+      "origin asc",
+      "destination asc"
+    ]
+  },
+  "rounding": "ROUND_HALF_UP",
+  "score_quantum": "0.0001",
+  "verdicts": {
+    "fit": "complete evidence with at least one eligible direct match",
+    "needs_more_data": [
+      "incomplete critical coverage",
+      "absent shipper lane evidence",
+      "conflicting evidence",
+      "malformed lane evidence",
+      "duplicate origin-destination records"
+    ],
+    "no_fit": "complete evidence without an eligible direct match"
+  },
+  "output_labels": {
+    "deadhead_miles_avoided": "Modeled deadhead avoided",
+    "modeled_annual_revenue": "Modeled gross revenue"
+  },
+  "outreach_exclusions": [
+    "internal rates",
+    "margin",
+    "network capacity",
+    "deadhead calculations",
+    "restricted provider data"
+  ],
+  "weights": {
+    "backhaul_fill": "0.50",
+    "density": "0.30",
+    "equipment": "0.20"
+  }
+}

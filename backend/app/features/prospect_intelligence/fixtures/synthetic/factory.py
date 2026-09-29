@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 from ...contracts.models import FitVerdict, RecommendedNextStep, SourceCoverageStatus
-from ...domain.lane_fit import score_lane
+from ...domain.lane_fit import rank_lane_fits
 from ...domain.models import LaneFitResult, NetworkLane, ShipperLane
 from ...integrations.market_data.faf5 import DerivedMarketLane
 from .models import (
@@ -48,21 +48,7 @@ def standard_lanes(market: DerivedMarketLane) -> tuple[ShipperLane, ...]:
 def _scores(
     lanes: tuple[ShipperLane, ...], networks: tuple[NetworkLane, ...]
 ) -> tuple[LaneFitResult, ...]:
-    scored = (
-        score_lane(
-            lane,
-            next(
-                (
-                    network
-                    for network in networks
-                    if (network.origin, network.destination) == (lane.origin, lane.destination)
-                ),
-                None,
-            ),
-        )
-        for lane in lanes
-    )
-    return tuple(sorted(scored, key=lambda item: item.fit_score, reverse=True))
+    return rank_lane_fits(lanes, networks)
 
 
 def _numeric_values(

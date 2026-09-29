@@ -47,26 +47,58 @@ include credentials, private customer data, raw traces, or generated result expo
 ### 2026-09-29 — Lane fit: direct empty-leg coverage and versioned scoring
 
 - **Decision:** A shipper origin-to-destination lane matches carrier empty capacity in the same
-  direction. `lane_fit_v1` weights backhaul fill 50%, same-lane density 30%, and equipment match 20%.
-  Matched loads are the smaller of shipper loads and empty capacity.
-- **Alternatives considered:** Reverse-direction round-trip matching; equal weights; margin estimation.
+  direction; reverse-direction capacity is not a match. Matched loads are the smaller of shipper
+  loads and empty capacity. Backhaul fill is matched loads divided by empty capacity, or zero for
+  zero capacity. Density is same-lane weekly loads divided by 40 and capped at one; equipment match
+  is the carrier fleet share for the required equipment. `lane_fit_v1` weights those components
+  50%, 30%, and 20%, respectively, and rounds the bounded score half-up to four decimal places.
+- **Decision:** Only lanes with at least one matched load are eligible. Rank by score descending,
+  matched loads descending, origin ascending, and destination ascending, then retain three. Duplicate
+  shipper or network routes and malformed inputs produce `needs_more_data`; complete critical inputs
+  with an eligible lane produce `fit`, while complete critical inputs without one produce `no_fit`.
+- **Decision:** Modeled gross revenue is `matched loads * estimated rate per load * 52 weeks`.
+  Modeled deadhead avoided is `matched loads * full origin-to-destination miles * 52 weeks`. These
+  internal values are assumptions, not booked revenue, margin, guaranteed savings, or evidence that
+  every modeled mile would otherwise have run empty.
+- **Decision:** Customer-visible outreach is limited to exact, approved v1 qualitative invitation
+  pairs. Generic drafts use the exact `Freight conversation` subject. Its approved bodies are
+  `Could we discuss your freight needs?`, `Could we compare freight needs?`, and
+  `Would you be open to comparing notes on your freight needs?`. Route drafts use the exact
+  `{O} to {D} freight conversation` subject paired with the exact
+  `Would you be open to comparing notes on your {O}-to-{D} freight needs?` body, where both route codes
+  are matching uppercase alphanumeric normalized IDs. Generated drafts and rep edits use the same
+  full-match allowlist; all other prose is rejected, so internal commercial and source claims cannot
+  pass through paraphrasing.
+- **Alternatives considered:** Reverse-direction round-trip matching; uncapped density; equal weights;
+  retaining zero-match lanes; input-order tie breaking; merging duplicate routes; margin estimation;
+  assuming only the empty portion of a lane for deadhead avoidance.
 - **Reasoning:** Same-direction matching represents capacity that the shipper load can actually fill and
-  makes the score independently reproducible.
-- **Consequences:** Internal briefs may show modeled annual revenue and deadhead miles avoided. Values
-  are estimates, not promised margin, and must carry their inputs and provenance.
-- **Evidence:** Independent reference implementation and table-driven boundary tests.
+  makes the score independently reproducible. Fixed normalization and tie breakers keep results stable
+  under input reordering. Abstaining on ambiguous data avoids silently choosing among conflicting
+  records, while explicit 52-week and full-lane assumptions keep the MVP's opportunity model legible.
+  A deterministic template allowlist is auditable and closes paraphrase variants without pretending
+  a lexical denylist can reliably distinguish safe from unsafe commercial claims.
+- **Consequences:** Internal briefs label modeled gross revenue and modeled deadhead avoided and disclose
+  their assumptions without changing the API shape. The gross-revenue model intentionally excludes
+  costs and margin; the deadhead model is an upper-bound displacement estimate for the full lane.
+  The outreach guardrail is intentionally conservative: reps cannot author custom v1 copy and must
+  select an approved generic template or the internally consistent normalized-route template.
+- **Evidence:** Runtime and independent-reference parity across all reviewed fixtures; table-driven,
+  boundary, ordering, duplicate, malformed, zero-fit, outreach-safety, component, and browser tests.
 
 ### 2026-09-29 — Human review: outreach-only approval boundary
 
 - **Decision:** The system pauses before simulated outreach. A rep can approve, replace the complete
-  draft, or reject it. CRM writeback and real email are excluded. Sends are idempotent by run and tool
-  call. Approved edits may update only tenant/rep tone, length, structure, and formatting preferences.
+  draft with another exact approved v1 invitation pair, or reject it; arbitrary custom copy is rejected.
+  CRM writeback and real email are excluded. Sends are idempotent by run and tool call. Preference
+  memory may record approved template selection but not customer facts.
 - **Alternatives considered:** Sequential send and CRM approvals; relying on review without a runtime
   interrupt; storing customer facts as memory.
 - **Reasoning:** This is the smallest meaningful side-effect boundary and demonstrates durable human
   control without pretending to integrate a real customer system.
-- **Consequences:** Rejection is terminal and sends nothing. Customer-specific facts never enter
-  preference memory. Production CRM integration remains documented future work.
+- **Consequences:** Rejection is terminal and sends nothing. V1 preference learning is deliberately
+  limited to safe template selection; customer-specific facts never enter preference memory. Production
+  CRM integration remains documented future work.
 - **Evidence:** Approve/edit/reject, resume, idempotency, and namespace-isolation tests.
 
 ### 2026-09-29 — Data policy: live-first public research with explicit source modes
@@ -112,18 +144,20 @@ include credentials, private customer data, raw traces, or generated result expo
   adopt `create_deep_agent`, QuickJS, and PostgreSQL checkpoint/store resources.
 - **Evidence:** Agent-scaffold contract tests, architecture dependency tests, and CAM-32 handoff notes.
 
-### 2026-09-29 — Offline demo: direct-match fixture verdict
+### 2026-09-29 — Offline demo: `lane_fit_v1` direct-match verdict
 
-- **Decision:** The credential-free demo returns `fit` when a reviewed synthetic lane has at least one
-  direct matched load; an account without lane evidence returns `needs_more_data`. This is a demo-only
-  worker behavior, not the final agent verdict policy.
-- **Alternatives considered:** Leave demo runs permanently queued; invent a confidence threshold; require
-  live credentials for every UI walkthrough.
-- **Reasoning:** A deterministic path lets the API/UI/HITL contracts be reviewed without presenting a
-  made-up confidence threshold as production logic.
-- **Consequences:** CAM-32 and CAM-33 must replace the process-local fixture worker, and any final verdict
-  threshold must be separately decided, documented, and evaluated.
-- **Evidence:** Offline pipeline and FastAPI bootstrap tests.
+- **Decision:** `lane_fit_v1` returns `fit` when complete, unambiguous evidence yields at least one direct
+  matched load (`matched_loads_per_week >= 1`). Complete evidence without an eligible match returns
+  `no_fit`; missing, degraded, malformed, or duplicate critical evidence returns `needs_more_data`.
+- **Alternatives considered:** Leave demo runs permanently queued; use a calibrated score threshold;
+  require live credentials for every UI walkthrough.
+- **Reasoning:** The direct-match threshold is deterministic, independently reproducible, and consistent
+  with the v1 eligibility rule. It lets the API/UI/HITL contracts be reviewed without presenting an
+  uncalibrated confidence cutoff as production logic.
+- **Consequences:** CAM-32 and CAM-33 may replace the process-local fixture worker but must preserve this
+  v1 verdict contract. Introducing calibrated score thresholds changes business behavior and therefore
+  requires a versioned `lane_fit_v2` decision, evaluation baseline, and promotion evidence.
+- **Evidence:** CAM-31 lane-fit parity, boundary, malformed-data, duplicate, and API bootstrap tests.
 
 ### 2026-09-29 — Contracts: separate workflow state, fit verdict, and recommended action
 

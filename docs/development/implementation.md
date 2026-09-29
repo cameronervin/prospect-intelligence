@@ -3,9 +3,9 @@
 Linear is the source of truth for ticket scope, status, and dependencies. This file only shows what to pick up next. Tickets on the same line can run in parallel once all earlier blockers are complete.
 
 1. [COMPLETE] **Now:** CAM-27 — finalize the shared contracts.
-2. [CURRENT] **After CAM-27:** CAM-28 — deterministic data; CAM-29 — persistence.
-3. **After CAM-28:** CAM-30 — source adapters; CAM-31 — lane-fit verification.
-4. **After CAM-29, CAM-30, and CAM-31:** CAM-32 — working agent topology.
+2. [COMPLETE] **After CAM-27:** CAM-28 — deterministic data; CAM-29 — persistence.
+3. [COMPLETE] **After CAM-28:** CAM-30 — source adapters; CAM-31 — lane-fit verification.
+4. [CURRENT] **After CAM-29, CAM-30, and CAM-31:** CAM-32 — working agent topology.
 5. **After CAM-32:** CAM-33 — durable APIs; CAM-38 — offline evaluators.
 6. **After CAM-33:** CAM-34 — HITL and preference learning; CAM-35 — first UI slice.
 7. **After CAM-34 and CAM-35:** CAM-36 — review UI. **After CAM-38:** CAM-39 — Jev evaluators.

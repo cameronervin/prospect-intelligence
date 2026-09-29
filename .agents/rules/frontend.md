@@ -17,4 +17,4 @@ paths:
   MCP's existing tabs/session; do not substitute a Browser or Chrome integration unless explicitly
   requested or the Playwright MCP is unavailable and the user approves the fallback.
 - Record decisions that change user-visible workflow, status meaning, disclosure, or approval behavior
-  in `docs/delivery/business_logic.md` with the implementing change.
+  in `docs/delivery/business-logic.md` with the implementing change.

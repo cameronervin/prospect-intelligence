@@ -1,8 +1,18 @@
 """Credential-free worker behavior for the local demo."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
+import pytest
+
 from app.features.prospect_intelligence.contracts.models import RunStatus
+from app.features.prospect_intelligence.contracts.sources import (
+    CarrierNetwork,
+    CarrierNetworkSource,
+    SourceCallContext,
+    SourceResult,
+)
+from app.features.prospect_intelligence.domain.models import NetworkLane
 from app.features.prospect_intelligence.fixtures.synthetic import SyntheticSourceCatalog
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
@@ -15,6 +25,36 @@ from app.features.prospect_intelligence.services.deterministic_pipeline import (
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.fakes import synthetic_prospect_sources
+
+
+class _DuplicateNetworkSource:
+    def __init__(self, delegate: CarrierNetworkSource) -> None:
+        self._delegate = delegate
+
+    def get_network(self, context: SourceCallContext) -> SourceResult[CarrierNetwork]:
+        result = self._delegate.get_network(context)
+        assert result.value is not None
+        return replace(
+            result,
+            value=CarrierNetwork(lanes=(*result.value.lanes, result.value.lanes[0])),
+        )
+
+
+class _MalformedNetworkSource:
+    def __init__(self, delegate: CarrierNetworkSource) -> None:
+        self._delegate = delegate
+
+    def get_network(self, context: SourceCallContext) -> SourceResult[CarrierNetwork]:
+        result = self._delegate.get_network(context)
+        assert result.value is not None
+        valid = result.value.lanes[0]
+        malformed = object.__new__(NetworkLane)
+        object.__setattr__(malformed, "origin", valid.origin)
+        object.__setattr__(malformed, "destination", valid.destination)
+        object.__setattr__(malformed, "weekly_loads", 1.5)
+        object.__setattr__(malformed, "empty_capacity", valid.empty_capacity)
+        object.__setattr__(malformed, "fleet_equipment_share", valid.fleet_equipment_share)
+        return replace(result, value=CarrierNetwork(lanes=(malformed,)))
 
 
 def test_pipeline_produces_reviewable_fit_from_seeded_evidence() -> None:
@@ -35,6 +75,15 @@ def test_pipeline_produces_reviewable_fit_from_seeded_evidence() -> None:
     assert completed.output.verdict.value == "fit"
     assert completed.output.brief.lanes[0].score.matched_loads_per_week == 31
     assert completed.output.brief.lanes[0].evidence[0].provenance.mode.value == "fixture"
+    top_lane = completed.output.brief.lanes[0].score
+    assert completed.output.outreach is not None
+    assert completed.output.outreach.subject == (
+        f"{top_lane.origin} to {top_lane.destination} freight conversation"
+    )
+    assert completed.output.outreach.body == (
+        f"Would you be open to comparing notes on your {top_lane.origin}-to-"
+        f"{top_lane.destination} freight needs?"
+    )
 
 
 def test_pipeline_returns_needs_more_data_without_lane_evidence() -> None:
@@ -97,3 +146,74 @@ def test_pipeline_abstains_when_freight_coverage_is_degraded() -> None:
         assert completed.output is not None
         assert completed.output.verdict.value == "needs_more_data"
         assert completed.output.outreach is None
+
+
+def test_pipeline_abstains_when_source_contains_duplicate_lanes() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    sources = synthetic_prospect_sources()
+    sources = replace(sources, network=_DuplicateNetworkSource(sources.network))
+
+    DeterministicProspectPipeline(service, sources).run(run.id)
+
+    completed = service.get_run(run.id)
+    assert completed.status is RunStatus.COMPLETED
+    assert completed.output is not None
+    assert completed.output.verdict.value == "needs_more_data"
+    assert completed.output.outreach is None
+
+
+def test_pipeline_abstains_when_source_contains_malformed_lane_values() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    sources = synthetic_prospect_sources()
+    sources = replace(sources, network=_MalformedNetworkSource(sources.network))
+
+    DeterministicProspectPipeline(service, sources).run(run.id)
+
+    completed = service.get_run(run.id)
+    assert completed.status is RunStatus.COMPLETED
+    assert completed.output is not None
+    assert completed.output.verdict.value == "needs_more_data"
+    assert completed.output.outreach is None
+
+
+@pytest.mark.parametrize(
+    ("scenario_id", "expected_verdict", "expected_lane_count"),
+    (("edge_04", "no_fit", 0), ("edge_07", "fit", 1)),
+)
+def test_pipeline_verdict_depends_on_direct_capacity_not_equipment_share(
+    scenario_id: str,
+    expected_verdict: str,
+    expected_lane_count: int,
+) -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+
+    DeterministicProspectPipeline(
+        service,
+        synthetic_prospect_sources(aliases={"acme-foods": scenario_id}),
+    ).run(run.id)
+
+    completed = service.get_run(run.id)
+    assert completed.output is not None
+    assert completed.output.verdict.value == expected_verdict
+    assert len(completed.output.brief.lanes) == expected_lane_count

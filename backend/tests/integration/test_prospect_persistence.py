@@ -237,8 +237,8 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
         ReviewAction.EDIT,
         tool_call_id="edit-1",
         edited_outreach=OutreachDraft(
-            subject="Atlanta freight",
-            body="Could we compare notes on your Atlanta freight next week?",
+            subject="Freight conversation",
+            body="Could we compare freight needs?",
         ),
     )
     assert edited.status is RunStatus.COMPLETED

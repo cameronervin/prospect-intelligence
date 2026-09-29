@@ -27,7 +27,7 @@ Build the smallest complete, reviewable slice for the deployed-engineer take-hom
 6. Keep prose direct and record assumptions and trade-offs as the work evolves.
 7. Record every decision that changes business behavior, formulas, thresholds, workflow,
    user-visible outcomes, data interpretation, or safety boundaries in
-   `docs/delivery/business_logic.md` as part of the same change.
+   `docs/delivery/business-logic.md` as part of the same change.
 8. Update `docs/delivery/friction-log.md` only for confirmed, material friction: an external blocker,
    reproducible framework/integration defect, unexpected limitation requiring a non-trivial
    workaround, or unresolved delivery risk. Do not log routine setup, ordinary debugging, expected

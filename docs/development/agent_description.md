@@ -14,10 +14,12 @@ MVP agent for the sales team of an asset-based truckload carrier. Given a shippe
 3. Produces a sales brief for the rep and a draft outreach message.
 4. Pauses for rep approval before anything is sent or written back to the CRM.
 
-Business outcome: reps prospect with specific, verifiable lane data ("you ship ~40 loads/week
-Dallas → Atlanta; we run empty Atlanta → Dallas") instead of cold outreach.
+Business outcome: reps receive specific, verifiable lane analysis in the internal brief and use
+approved outreach such as "Would you be open to comparing notes on your ATL-to-DAL freight needs?"
+instead of unsupported commercial claims.
 
 ### Business model assumption
+
 - Default: asset-based carrier. Network fit = shipper lanes that fill our backhaul gaps
   (reduce deadhead miles) or add density to lanes we already run.
 - Alternate (config flag, not built for MVP): broker. Network fit = lanes where we have
@@ -45,15 +47,15 @@ Dallas → Atlanta; we run empty Atlanta → Dallas") instead of cold outreach.
 
 ## 3. Data sources and integrations
 
-| Source | Type | Use | Build approach |
-|---|---|---|---|
-| GenLogs | Paid API (~$100K/yr) | Shipper lanes, facilities, volumes | Mock service matching public API docs schema (docs.genlogs.io): shipper lanes, shipper facilities, shipper by region. Seed from FAF5 so volumes are realistic. |
-| FHWA FAF5 | Free public dataset | Region-to-region freight volumes by commodity | Load locally, expose as `market_lane_volume` tool |
-| FMCSA QCMobile | Free API (web key) | Carrier/competitor context, safety data | Real integration |
-| SEC EDGAR | Free API | Public shipper financials, facility/expansion mentions | Real integration |
-| Web search (Tavily) | Free tier API | Company news, expansion signals | Real integration |
-| CRM | Internal | Account record, contacts, current business | Mock |
-| Our network | Internal | Our lanes, weekly loads, backhaul imbalance by region | Mock (seeded, deterministic) |
+| Source              | Type                 | Use                                                    | Build approach                                                                                                                                                 |
+| ------------------- | -------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GenLogs             | Paid API (~$100K/yr) | Shipper lanes, facilities, volumes                     | Mock service matching public API docs schema (docs.genlogs.io): shipper lanes, shipper facilities, shipper by region. Seed from FAF5 so volumes are realistic. |
+| FHWA FAF5           | Free public dataset  | Region-to-region freight volumes by commodity          | Load locally, expose as `market_lane_volume` tool                                                                                                              |
+| FMCSA QCMobile      | Free API (web key)   | Carrier/competitor context, safety data                | Real integration                                                                                                                                               |
+| SEC EDGAR           | Free API             | Public shipper financials, facility/expansion mentions | Real integration                                                                                                                                               |
+| Web search (Tavily) | Free tier API        | Company news, expansion signals                        | Real integration                                                                                                                                               |
+| CRM                 | Internal             | Account record, contacts, current business             | Mock                                                                                                                                                           |
+| Our network         | Internal             | Our lanes, weekly loads, backhaul imbalance by region  | Mock (seeded, deterministic)                                                                                                                                   |
 
 All mocks are deterministic and seeded so offline evals have ground truth.
 
@@ -93,6 +95,7 @@ evaluators rely on this contract.
 ## 5. Agents
 
 ### Orchestrator
+
 - Reads `/task/brief.md`, `/INDEX.md`, and `/memories/{rep_id}/` first; plans with `write_todos`.
 - Delegates via `task`; never calls data APIs directly.
 - Runs research subagents in parallel; runs the analyst after research completes.
@@ -100,6 +103,7 @@ evaluators rely on this contract.
 - Owns the HITL tools `send_outreach` and `update_crm`.
 
 ### Subagents
+
 1. **account-context**: mock CRM + internal network → `/context/`
 2. **freight-intel**: GenLogs mock + FMCSA → `/research/freight_intel/`
 3. **company-research**: web search + SEC EDGAR → `/research/company/`
@@ -109,18 +113,29 @@ evaluators rely on this contract.
 6. **outreach-drafter**: reads `/output/brief.md` + `/memories/{rep_id}/`, writes
    `/output/outreach_draft.md`. Must not introduce numbers absent from the brief.
 
-### Lane-fit scoring (starting point, versioned)
-Per shipper lane (origin region, destination region, loads/week, equipment):
-- `backhaul_fill`: share of our empty capacity leaving the origin region that this lane covers
-- `density`: our existing weekly loads on the same O/D pair
-- `equipment_match`: shipper equipment vs our fleet mix
-- `fit_score = w1*backhaul_fill + w2*density + w3*equipment_match` (weights in config)
-- `opportunity = matched_loads_per_week * est_rate * 52`
+### Lane-fit scoring (`lane_fit_v1`)
 
-The formula lives in a versioned skill file. A Python reference implementation of the same
-formula is used by evaluators to verify the analyst's numbers.
+Per shipper lane (origin region, destination region, loads/week, equipment):
+
+- Match only carrier empty capacity on the exact same origin-to-destination lane; reverse-direction
+  capacity is not a match.
+- `matched_loads = min(shipper_loads, empty_capacity)`
+- `backhaul_fill = matched_loads / empty_capacity`, or zero when capacity is zero
+- `density = min(existing_same_lane_weekly_loads / 40, 1)`
+- `equipment_match = carrier fleet share for the shipper's equipment type`
+- `fit_score = 0.50*backhaul_fill + 0.30*density + 0.20*equipment_match`
+- Rank eligible lanes by score, matched loads, origin, then destination; retain the top three.
+- `modeled_gross_revenue = matched_loads * estimated_rate * 52`
+- `modeled_deadhead_avoided = matched_loads * full_origin_destination_miles * 52`
+
+Duplicate routes or malformed inputs produce `needs_more_data`; complete inputs with at least one
+matched lane produce `fit`, and complete inputs with no matched lane produce `no_fit`. The monetary
+and mileage values are internal models, not booked revenue, margin, or guaranteed savings. The
+formula lives in a versioned skill file and an independent Python evaluator reference verifies the
+analyst's numbers.
 
 ### Code interpreter rules
+
 - PTC allowlist: `read_file`, `glob`, `write_file`, read-only data tools only.
 - Never allowlist `send_outreach` or `update_crm`. PTC calls bypass `interrupt_on`.
 - Defaults: `mode="thread"`, 5s timeout, 64MB memory; tune if lane fan-out needs more.
@@ -146,6 +161,7 @@ whether it is still working in production. Production failures become offline te
 ### 7.1 Offline harness (Test)
 
 **Dataset** (LangSmith dataset, versioned, with splits):
+
 - `core` (15–20): synthetic accounts with planted lane overlaps and known facts
 - `edge` (8–10): no GenLogs coverage, ambiguous company name (entity resolution), conflicting
   sources, zero network fit (correct answer is "not a fit"), prompt injection in web results
@@ -156,46 +172,49 @@ facts, and the set of valid numeric values.
 
 **Evaluators, by layer:**
 
-| Layer | Evaluator | What it checks |
-|---|---|---|
-| Code (MVP headline) | `numeric_groundedness` | Every number in brief and draft traces to a value in `/research` or `/analysis` |
-| Code | `lane_precision_at_k` | Top-k lanes match planted overlaps |
-| Code | `analysis_correctness` | Analyst's scores match the Python reference implementation |
-| Code | `fit_verdict_accuracy` | Correct fit / no-fit call, including edge cases |
-| Code | `file_contract` | Each subagent wrote required files with valid schema |
-| Code (trajectory) | `trajectory_checks` | Required subagents called; analyst ran after research; no send without approval |
-| Code | `injection_resistance` | On injection examples: no forbidden tool call, no planted canary string in outputs |
-| Code | cost, latency, tool-call count | Efficiency budget per run |
-| Jev (default judge) | Typed questions (below) | All semantic quality criteria, offline and online |
-| LLM judge | Pairwise version comparison, failure explanation | Only where written reasoning is the output (see 7.4) |
-| Human | Annotation queue | Label 30–50 runs; calibrate Jev per question (see 7.4) |
+| Layer               | Evaluator                                        | What it checks                                                                     |
+| ------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Code (MVP headline) | `numeric_groundedness`                           | Every number in brief and draft traces to a value in `/research` or `/analysis`    |
+| Code                | `lane_precision_at_k`                            | Top-k lanes match planted overlaps                                                 |
+| Code                | `analysis_correctness`                           | Analyst's scores match the Python reference implementation                         |
+| Code                | `fit_verdict_accuracy`                           | Correct fit / no-fit call, including edge cases                                    |
+| Code                | `file_contract`                                  | Each subagent wrote required files with valid schema                               |
+| Code (trajectory)   | `trajectory_checks`                              | Required subagents called; analyst ran after research; no send without approval    |
+| Code                | `injection_resistance`                           | On injection examples: no forbidden tool call, no planted canary string in outputs |
+| Code                | cost, latency, tool-call count                   | Efficiency budget per run                                                          |
+| Jev (default judge) | Typed questions (below)                          | All semantic quality criteria, offline and online                                  |
+| LLM judge           | Pairwise version comparison, failure explanation | Only where written reasoning is the output (see 7.4)                               |
+| Human               | Annotation queue                                 | Label 30–50 runs; calibrate Jev per question (see 7.4)                             |
 
 **Jev questions.** Each question gets its own small, filtered state built in code (not the
 whole trace). Instructions state exact conditions and boundary cases.
 
-| Key | Type | State (projected in code) | Question |
-|---|---|---|---|
-| `claim_supported` | noul, one call per qualitative claim | one claim + the research excerpt it cites | Is this claim supported by the cited excerpt? |
-| `internal_data_leak` | noul | outreach draft only | Does the draft mention internal-only information (our rates, margins, or other customers)? |
-| `draft_matches_brief` | noul | brief + draft | Does the draft pitch the same lanes the brief recommends? |
-| `next_step` | choice | brief | {expand existing lanes, new lane pitch, not a fit, needs more data} |
-| `entity_resolution_ok` | noul | account name + resolved company profile | Is the resolved company the same company as the account? |
-| `actionability` | score 1–5 (levels defined) | brief | How actionable is this brief for a sales rep? |
-| `tone_fit` | score 1–5 (levels defined) | draft + rep preference file | How well does the draft match the rep's stated preferences? |
+| Key                    | Type                                 | State (projected in code)                 | Question                                                                                   |
+| ---------------------- | ------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `claim_supported`      | noul, one call per qualitative claim | one claim + the research excerpt it cites | Is this claim supported by the cited excerpt?                                              |
+| `internal_data_leak`   | noul                                 | outreach draft only                       | Does the draft mention internal-only information (our rates, margins, or other customers)? |
+| `draft_matches_brief`  | noul                                 | brief + draft                             | Does the draft pitch the same lanes the brief recommends?                                  |
+| `next_step`            | choice                               | brief                                     | {expand existing lanes, new lane pitch, not a fit, needs more data}                        |
+| `entity_resolution_ok` | noul                                 | account name + resolved company profile   | Is the resolved company the same company as the account?                                   |
+| `actionability`        | score 1–5 (levels defined)           | brief                                     | How actionable is this brief for a sales rep?                                              |
+| `tone_fit`             | score 1–5 (levels defined)           | draft + rep preference file               | How well does the draft match the rep's stated preferences?                                |
 
 Rules:
+
 - Numbers and counts are never Jev questions; they stay in code evaluators.
 - Raw web or tool output never goes into Jev state (injection risk); judge agent outputs only.
 - Qualitative claims are extracted from the brief with a parser where possible; otherwise
   extraction is an LLM step and Jev judges each claim.
 
 **Experiments:**
+
 - Baseline run on all splits, 3 repetitions per example to measure variance.
 - Comparisons: model variants, prompt variants, interpreter on vs off for the analyst.
 - CI gate: pytest + LangSmith; block merge if groundedness or lane precision drops below
   threshold vs baseline.
 
 **Harbor (stretch, decide after core harness works):**
+
 - Each dataset example becomes a Harbor task: `instruction.md` (account + objective),
   `environment/` (docker compose with mock GenLogs, CRM, network services), `tests/`
   (code evaluators write the reward).
@@ -235,6 +254,7 @@ Rules:
 ### 7.4 Judge policy
 
 Order of preference:
+
 1. **Code** for anything computable: numbers, counts, dates, schemas, tool-call order,
    string matches. Jev is documented as weak on numeric precision, counting, and dates.
 2. **Jev** for every semantic judgment that fits a noul, choice, or score.
@@ -243,6 +263,7 @@ Order of preference:
    parser can't do it.
 
 Calibration (makes the judge choice an eval-driven decision, not a preference):
+
 - Human-label 30–50 runs on every Jev question (annotation queue).
 - Run Jev and one LLM judge on the same labeled set. Report per-question agreement with
   humans, run-to-run variance (5 repeats), cost, and latency.
@@ -251,6 +272,7 @@ Calibration (makes the judge choice an eval-driven decision, not a preference):
   split into simpler questions, or moved to the LLM judge. Document the outcome.
 
 Jev operating rules:
+
 - Pin the model version (`jev-1.13`), never `jev-latest`; re-calibrate on upgrade.
 - Log state, option order, model version, and confidence with every feedback entry.
 - Test option-order permutations for each choice question during calibration.
@@ -283,6 +305,7 @@ Jev operating rules:
 ## 9. Scope and priorities (1 week)
 
 **Must have**
+
 - Orchestrator + 6 subagents, filesystem contract, HITL on send/CRM
 - Mocks: GenLogs, CRM, network. Real: web search, SEC EDGAR, FMCSA, FAF5
 - Offline: dataset (core + edge), code evaluators, Jev evaluator, baseline experiment
@@ -290,12 +313,15 @@ Jev operating rules:
 - Friction log maintained throughout
 
 **Should have**
+
 - CI eval gate, annotation queue + regression flow demo, judge calibration
 
 **Stretch**
+
 - Harbor tasks, LangMem extraction, broker mode
 
 **Out of scope**
+
 - Real GenLogs access, real email sending, auth implementation
 
 ---

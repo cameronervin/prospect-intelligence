@@ -82,13 +82,7 @@ function SourceCoverage({ sources }: Readonly<{ sources: ProspectRun["source_cov
           <li key={source.source} className="rounded-xl bg-muted/55 px-3 py-2.5 text-sm">
             <span className="flex items-center justify-between gap-3">
               <span className="font-medium">{source.source}</span>
-              <span
-                className={
-                  source.status === "complete"
-                    ? "text-ready"
-                    : "text-degraded"
-                }
-              >
+              <span className={source.status === "complete" ? "text-ready" : "text-degraded"}>
                 {source.status}
               </span>
             </span>
@@ -135,16 +129,30 @@ function LaneCards({ lanes }: Readonly<{ lanes: NonNullable<ProspectRun["brief"]
               <dd className="mt-1 font-semibold">{lane.matched_loads_per_week}/wk</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Revenue model</dt>
+              <dt className="text-muted-foreground">Modeled gross revenue</dt>
               <dd className="mt-1 font-semibold">{currency.format(lane.modeled_annual_revenue)}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">Deadhead avoided</dt>
+              <dt className="text-muted-foreground">Modeled deadhead avoided</dt>
               <dd className="mt-1 font-semibold">
                 {number.format(lane.deadhead_miles_avoided)} mi
               </dd>
             </div>
           </dl>
+          <details className="mt-4 border-t border-border pt-3 text-sm">
+            <summary className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
+              Model assumptions
+            </summary>
+            <div className="mt-3 grid gap-2 leading-6 text-muted-foreground">
+              <p>
+                Modeled gross revenue = matched loads per week × estimated rate per load × 52 weeks.
+              </p>
+              <p>
+                Modeled deadhead avoided = matched loads per week × the full origin-to-destination
+                lane distance × 52 weeks.
+              </p>
+            </div>
+          </details>
           {lane.evidence.length > 0 ? (
             <details className="mt-4 border-t border-border pt-3 text-sm">
               <summary className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-offset-2">
@@ -522,7 +530,7 @@ export function ProspectWorkspace({
               >
                 <h2 className="font-semibold">Research could not be completed</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-              {run.error?.message ?? "No customer-facing output was produced."}
+                  {run.error?.message ?? "No customer-facing output was produced."}
                 </p>
               </div>
             ) : null}

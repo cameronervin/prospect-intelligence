@@ -10,10 +10,11 @@ from ..contracts.models import (
     RecommendedNextStep,
     RunStatus,
     ScoredLane,
+    SourceCoverage,
     SourceCoverageStatus,
 )
 from ..contracts.sources import ProspectSources, RunSourceCache, SourceCallContext
-from ..domain.lane_fit import score_lane
+from ..domain.lane_fit import rank_lane_fits
 from .runs import ProspectRunService
 
 
@@ -48,55 +49,36 @@ class DeterministicProspectPipeline:
             or network.coverage.status is not SourceCoverageStatus.COMPLETE
             or not freight.value.lanes
         ):
-            self._service.submit_analysis(
+            self._submit_needs_more_data(
                 run_id,
-                AnalysisOutput(
-                    verdict=FitVerdict.NEEDS_MORE_DATA,
-                    brief=ProspectBrief(
-                        summary=(
-                            "The available source coverage does not support a lane recommendation."
-                        ),
-                        markdown="No usable lane-level freight and network evidence is available.",
-                        recommended_next_step=RecommendedNextStep.NEEDS_MORE_DATA,
-                        recommendation="Verify shipper lanes before outreach.",
-                        lanes=(),
-                    ),
-                    outreach=None,
-                    source_coverage=(freight.coverage, network.coverage),
-                ),
-                claim_token=claim_token,
+                (freight.coverage, network.coverage),
+                claim_token,
             )
             return
 
-        scored = tuple(
-            score_lane(
-                shipper,
-                next(
-                    (
-                        lane
-                        for lane in network.value.lanes
-                        if (lane.origin, lane.destination) == (shipper.origin, shipper.destination)
-                    ),
-                    None,
-                ),
+        try:
+            ranked = rank_lane_fits(freight.value.lanes, network.value.lanes)
+        except (ArithmeticError, TypeError, ValueError):
+            self._submit_needs_more_data(
+                run_id,
+                (freight.coverage, network.coverage),
+                claim_token,
             )
-            for shipper in freight.value.lanes
-        )
-        ranked = tuple(sorted(scored, key=lambda lane: lane.fit_score, reverse=True)[:3])
-        has_direct_match = any(lane.matched_loads_per_week > 0 for lane in ranked)
+            return
+
+        has_direct_match = bool(ranked)
         verdict = FitVerdict.FIT if has_direct_match else FitVerdict.NO_FIT
         top_lane = ranked[0] if ranked else None
         outreach = (
             OutreachDraft(
                 subject=(
-                    f"{top_lane.origin} to {top_lane.destination} capacity conversation"
+                    f"{top_lane.origin} to {top_lane.destination} freight conversation"
                     if top_lane is not None
-                    else "Capacity conversation"
+                    else "Freight conversation"
                 ),
                 body=(
                     f"Would you be open to comparing notes on your {top_lane.origin}-to-"
-                    f"{top_lane.destination} freight needs? Our network may be able to support "
-                    "that lane."
+                    f"{top_lane.destination} freight needs?"
                     if top_lane is not None
                     else "Would you be open to comparing notes on your freight needs?"
                 ),
@@ -109,10 +91,17 @@ class DeterministicProspectPipeline:
             AnalysisOutput(
                 verdict=verdict,
                 brief=ProspectBrief(
-                    markdown="Direct lane evidence supports a carrier-sales conversation.",
+                    markdown=(
+                        "Direct lane evidence supports a carrier-sales conversation."
+                        if has_direct_match
+                        else "No direct lane overlap with usable capacity was found."
+                    ),
                     summary=(
                         "Reviewed freight and carrier-network evidence shows a direct lane overlap "
                         "worth a sales conversation."
+                        if has_direct_match
+                        else "Reviewed freight and carrier-network evidence shows no direct lane "
+                        "overlap with usable capacity."
                     ),
                     recommended_next_step=(
                         RecommendedNextStep.NEW_LANE_PITCH
@@ -131,6 +120,29 @@ class DeterministicProspectPipeline:
                 ),
                 outreach=outreach,
                 source_coverage=(freight.coverage, network.coverage),
+            ),
+            claim_token=claim_token,
+        )
+
+    def _submit_needs_more_data(
+        self,
+        run_id: UUID,
+        source_coverage: tuple[SourceCoverage, SourceCoverage],
+        claim_token: UUID | None,
+    ) -> None:
+        self._service.submit_analysis(
+            run_id,
+            AnalysisOutput(
+                verdict=FitVerdict.NEEDS_MORE_DATA,
+                brief=ProspectBrief(
+                    summary="The available source coverage does not support a lane recommendation.",
+                    markdown="No usable lane-level freight and network evidence is available.",
+                    recommended_next_step=RecommendedNextStep.NEEDS_MORE_DATA,
+                    recommendation="Verify shipper lanes before outreach.",
+                    lanes=(),
+                ),
+                outreach=None,
+                source_coverage=source_coverage,
             ),
             claim_token=claim_token,
         )

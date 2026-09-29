@@ -92,6 +92,13 @@ describe("ProspectWorkspace", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Ready for your review");
     expect(screen.getByText("Using the disclosed fixture snapshot")).toBeInTheDocument();
     expect(screen.getByText("Atlanta, GA → Dallas, TX")).toBeInTheDocument();
+    expect(screen.getByText("Modeled gross revenue")).toBeInTheDocument();
+    expect(screen.getByText("Modeled deadhead avoided")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Model assumptions"));
+    expect(screen.getByText(/estimated rate per load × 52 weeks/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/full origin-to-destination lane distance × 52 weeks/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve simulated send" })).toBeInTheDocument();
     expect(api.reviewRun).not.toHaveBeenCalled();
 
