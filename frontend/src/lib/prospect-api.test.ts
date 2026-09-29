@@ -53,12 +53,61 @@ describe("prospect API boundary", () => {
         verdict: null,
         brief: null,
         outreach: null,
+        pending_review: null,
         error: null,
       }),
     );
     const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
 
     await expect(client.getRun("run-1")).resolves.toMatchObject({ verdict: null, error: null });
+  });
+
+  it("parses the durable review interrupt separately from draft outreach", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "awaiting_review",
+        stage: "Ready for review",
+        progress_percent: 100,
+        source_coverage: [],
+        verdict: "fit",
+        outreach: { subject: "Freight conversation", body: "Could we discuss your freight needs?" },
+        pending_review: {
+          name: "send_outreach",
+          allowed_decisions: ["approve", "edit", "reject"],
+          tool_call_id: "review-run-1",
+        },
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).resolves.toMatchObject({
+      pending_review: {
+        name: "send_outreach",
+        allowed_decisions: ["approve", "edit", "reject"],
+        tool_call_id: "review-run-1",
+      },
+    });
+  });
+
+  it("rejects an awaiting-review response without its durable review capability", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "awaiting_review",
+        stage: "Ready for review",
+        progress_percent: 100,
+        source_coverage: [],
+        verdict: "fit",
+        outreach: { subject: "Freight conversation", body: "Could we discuss your freight needs?" },
+        pending_review: null,
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
 
   it("parses the typed API error envelope", async () => {
@@ -81,5 +130,27 @@ describe("prospect API boundary", () => {
 
     expect(error).toBeInstanceOf(ProspectApiError);
     expect(error).toMatchObject({ code: "validation_error", retryable: false });
+  });
+
+  it("preserves retryable service-unavailable errors for review retries", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          error: {
+            code: "service_unavailable",
+            message: "Review service is temporarily unavailable.",
+            retryable: true,
+            issues: [],
+          },
+        },
+        { status: 503 },
+      ),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toMatchObject({
+      code: "service_unavailable",
+      retryable: true,
+    });
   });
 });

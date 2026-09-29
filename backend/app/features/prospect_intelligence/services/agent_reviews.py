@@ -11,6 +11,7 @@ from ..contracts.agent_runtime import (
     ProspectRuntimeContext,
 )
 from ..contracts.models import OutreachDraft, ProspectRun, ReviewAction, RunStatus
+from ..contracts.workflow import review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
 from ..domain.outreach import validate_customer_outreach
 from .runs import ProspectRunService
@@ -32,6 +33,8 @@ class ProspectAgentReviewHandler:
         tool_call_id: str,
         edited_outreach: OutreachDraft | None = None,
     ) -> ProspectRun:
+        if tool_call_id != review_tool_call_id(run_id):
+            raise InvalidRunTransitionError("review token does not match this run")
         lock = self._run_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
             return await self._review(

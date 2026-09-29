@@ -1,6 +1,6 @@
 """Validated request and response schemas."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -112,6 +112,14 @@ class RunErrorResponse(BaseModel):
     retryable: bool
 
 
+class PendingReviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Literal["send_outreach"]
+    allowed_decisions: list[ReviewAction]
+    tool_call_id: str
+
+
 class ProspectRunResponse(BaseModel):
     id: UUID
     account: AccountSummary
@@ -122,4 +130,5 @@ class ProspectRunResponse(BaseModel):
     verdict: FitVerdict | None = None
     brief: BriefResponse | None = None
     outreach: OutreachResponse | None = None
+    pending_review: PendingReviewResponse | None = None
     error: RunErrorResponse | None = None

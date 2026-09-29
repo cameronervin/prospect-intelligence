@@ -36,7 +36,12 @@ class PostgresWorkflowRepository:
                 )
             )
 
-    def replay_review(self, run_id: UUID, idempotency_key: str) -> ProspectRun | None:
+    def replay_review(
+        self,
+        run_id: UUID,
+        action: ReviewAction,
+        idempotency_key: str,
+    ) -> ProspectRun | None:
         with Session(self._engine) as session:
             approval = session.scalars(
                 select(ApprovalRecord).where(
@@ -46,6 +51,10 @@ class PostgresWorkflowRepository:
             ).one_or_none()
             if approval is None:
                 return None
+            if approval.decision != action.value:
+                raise InvalidRunTransitionError(
+                    "review token was already used for a different review decision"
+                )
             return _load_run(session, run_id)
 
     def commit_review(
@@ -71,6 +80,10 @@ class PostgresWorkflowRepository:
             if approval is not None:
                 if approval.idempotency_key != idempotency_key:
                     raise InvalidRunTransitionError("run already has a review decision")
+                if approval.decision != action.value:
+                    raise InvalidRunTransitionError(
+                        "review token was already used for a different review decision"
+                    )
                 replay_canonical = True
             elif row.status != RunStatus.AWAITING_REVIEW.value:
                 raise InvalidRunTransitionError(
@@ -111,7 +124,7 @@ class PostgresWorkflowRepository:
                     .values(**run_record_values(updated))
                 )
         if replay_canonical:
-            replayed = self.replay_review(original.id, idempotency_key)
+            replayed = self.replay_review(original.id, action, idempotency_key)
             if replayed is None:
                 raise RuntimeError("canonical review disappeared after commit")
             return replayed

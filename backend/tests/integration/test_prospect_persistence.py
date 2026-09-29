@@ -5,6 +5,7 @@ import json
 import os
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict, cast
 from uuid import UUID
@@ -12,14 +13,18 @@ from uuid import UUID
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from pydantic import SecretStr
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
+from app.bootstrap.exception_handlers import register_exception_handlers
 from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
 from app.features.prospect_intelligence.agents.runtime import CompiledProspectAgentRuntime
+from app.features.prospect_intelligence.api.router import build_router
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectAgentInput,
     ProspectReviewDecision,
@@ -30,10 +35,14 @@ from app.features.prospect_intelligence.contracts.models import (
     ReviewAction,
     RunStatus,
 )
-from app.features.prospect_intelligence.contracts.workflow import preference_namespace
+from app.features.prospect_intelligence.contracts.workflow import (
+    preference_namespace,
+    review_tool_call_id,
+)
 from app.features.prospect_intelligence.domain.errors import InvalidRunTransitionError
 from app.features.prospect_intelligence.models.records import (
     ApprovalRecord,
+    ProspectRunRecord,
     SendReceiptRecord,
     WorkerJobRecord,
 )
@@ -149,6 +158,79 @@ def build_service(store: PostgresProspectStore) -> ProspectRunService:
     )
 
 
+def build_api(service: ProspectRunService) -> TestClient:
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(build_router(service, lambda: None))
+    return TestClient(app)
+
+
+@pytest.mark.postgresql
+def test_api_creation_atomically_enqueues_a_pollable_run_across_restart(
+    postgres_url: str,
+) -> None:
+    settings = Settings(database_url=SecretStr(postgres_url))
+    first_store = PostgresProspectStore.from_settings(settings)
+    created = build_api(build_service(first_store)).post(
+        "/api/v1/prospect-runs",
+        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-a"},
+        json={"account_id": "acme-foods"},
+    )
+
+    assert created.status_code == 202
+    assert created.json()["status"] == "queued"
+    run_id = UUID(created.json()["id"])
+    with Session(first_store.engine) as session:
+        job = session.scalars(select(WorkerJobRecord).where(WorkerJobRecord.run_id == run_id)).one()
+        assert job.status == "queued"
+        assert job.attempts == 0
+    first_store.close()
+
+    restarted_store = PostgresProspectStore.from_settings(settings)
+    polled = build_api(build_service(restarted_store)).get(
+        f"/api/v1/prospect-runs/{run_id}",
+        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-a"},
+    )
+
+    assert polled.status_code == 200
+    assert polled.json()["id"] == str(run_id)
+    assert polled.json()["status"] == "queued"
+    restarted_store.close()
+
+
+@pytest.mark.postgresql
+def test_run_and_job_creation_roll_back_together_when_job_insert_fails(
+    postgres_url: str,
+) -> None:
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
+
+    def fail_worker_job_insert(
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        del conn, cursor, parameters, context, executemany
+        if statement.lstrip().upper().startswith("INSERT") and (
+            WorkerJobRecord.__tablename__ in statement
+        ):
+            raise RuntimeError("forced worker job insert failure")
+
+    event.listen(store.engine, "before_cursor_execute", fail_worker_job_insert)
+    try:
+        with pytest.raises(RuntimeError, match="forced worker job insert failure"):
+            build_service(store).create_run("tenant-demo", "rep-a", "acme-foods")
+    finally:
+        event.remove(store.engine, "before_cursor_execute", fail_worker_job_insert)
+
+    with Session(store.engine) as session:
+        assert session.scalar(select(func.count()).select_from(ProspectRunRecord)) == 0
+        assert session.scalar(select(func.count()).select_from(WorkerJobRecord)) == 0
+    store.close()
+
+
 @pytest.mark.postgresql
 def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: str) -> None:
     settings = Settings(database_url=SecretStr(postgres_url))
@@ -171,9 +253,14 @@ def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: 
     restarted = build_service(restarted_store)
     assert restarted.get_run(run.id).thread_id == (f"prospect:v1:tenant-demo:rep-a:{run.id}")
     DeterministicProspectPipeline(restarted, synthetic_prospect_sources()).run(run.id)
+    tool_call_id = review_tool_call_id(run.id)
 
     def review(_: int):
-        return restarted.review_run(run.id, ReviewAction.APPROVE, tool_call_id="review-1")
+        return restarted.review_run(
+            run.id,
+            ReviewAction.APPROVE,
+            tool_call_id=tool_call_id,
+        )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = tuple(pool.map(review, range(2)))
@@ -183,8 +270,31 @@ def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: 
     with Session(restarted_store.engine) as session:
         assert session.scalar(select(func.count()).select_from(ApprovalRecord)) == 1
         assert session.scalar(select(func.count()).select_from(SendReceiptRecord)) == 1
-    with pytest.raises(InvalidRunTransitionError, match=r"expected|'completed'|already"):
-        restarted.review_run(run.id, ReviewAction.APPROVE, tool_call_id="review-2")
+    with pytest.raises(InvalidRunTransitionError, match="review token"):
+        restarted.review_run(run.id, ReviewAction.APPROVE, tool_call_id="review-wrong-run")
+    with pytest.raises(InvalidRunTransitionError, match="different review decision"):
+        restarted.review_run(run.id, ReviewAction.REJECT, tool_call_id=tool_call_id)
+
+    persisted = restarted.get_run(run.id)
+    with pytest.raises(InvalidRunTransitionError, match="different review decision"):
+        PostgresWorkflowRepository(restarted_store).commit_review(
+            original=replace(
+                persisted,
+                status=RunStatus.AWAITING_REVIEW,
+                review_action=None,
+                send_receipt_id=None,
+            ),
+            updated=replace(
+                persisted,
+                status=RunStatus.REJECTED,
+                review_action=ReviewAction.REJECT,
+                send_receipt_id=None,
+            ),
+            action=ReviewAction.REJECT,
+            idempotency_key=tool_call_id,
+            receipt=None,
+            preference=None,
+        )
     restarted_store.close()
 
 
@@ -298,8 +408,17 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
 
     rejected_run = service.create_run("tenant-demo", "rep-a", "acme-foods")
     pipeline.run(rejected_run.id)
-    rejected = service.review_run(rejected_run.id, ReviewAction.REJECT, tool_call_id="reject-1")
-    replayed = service.review_run(rejected_run.id, ReviewAction.REJECT, tool_call_id="reject-1")
+    rejected_tool_call_id = review_tool_call_id(rejected_run.id)
+    rejected = service.review_run(
+        rejected_run.id,
+        ReviewAction.REJECT,
+        tool_call_id=rejected_tool_call_id,
+    )
+    replayed = service.review_run(
+        rejected_run.id,
+        ReviewAction.REJECT,
+        tool_call_id=rejected_tool_call_id,
+    )
     assert rejected.status is RunStatus.REJECTED
     assert replayed == rejected
 
@@ -308,7 +427,7 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
     edited = service.review_run(
         edited_run.id,
         ReviewAction.EDIT,
-        tool_call_id="edit-1",
+        tool_call_id=review_tool_call_id(edited_run.id),
         edited_outreach=OutreachDraft(
             subject="Freight conversation",
             body="Could we compare freight needs?",

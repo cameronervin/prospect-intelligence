@@ -9,7 +9,8 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 
 from app.platform.api.errors import ErrorResponse
 
-from ..contracts.models import FitVerdict, OutreachDraft, ProspectRun, ReviewAction
+from ..contracts.models import FitVerdict, OutreachDraft, ProspectRun, ReviewAction, RunStatus
+from ..contracts.workflow import review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError, UnsafeOutreachError
 from ..schemas.api import (
     AccountResponse,
@@ -19,6 +20,7 @@ from ..schemas.api import (
     EvidenceResponse,
     LaneResponse,
     OutreachResponse,
+    PendingReviewResponse,
     ProspectRunResponse,
     ReviewRunRequest,
     RunErrorResponse,
@@ -220,6 +222,19 @@ def _run_response(run: ProspectRun) -> ProspectRunResponse:
         verdict=verdict,
         brief=brief,
         outreach=outreach,
+        pending_review=(
+            PendingReviewResponse(
+                name="send_outreach",
+                allowed_decisions=[
+                    ReviewAction.APPROVE,
+                    ReviewAction.EDIT,
+                    ReviewAction.REJECT,
+                ],
+                tool_call_id=review_tool_call_id(run.id),
+            )
+            if run.status is RunStatus.AWAITING_REVIEW
+            else None
+        ),
         error=(
             RunErrorResponse(
                 code=run.error.code,

@@ -51,7 +51,11 @@ const run = {
   outreach: {
     subject: "Atlanta to Dallas capacity",
     body: "We have reliable capacity aligned to your Atlanta to Dallas freight.",
-    tool_call_id: "send-1",
+  },
+  pending_review: {
+    name: "send_outreach",
+    allowed_decisions: ["approve", "edit", "reject"],
+    tool_call_id: "review-run-browser-1",
   },
 };
 
@@ -67,9 +71,18 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route("**/api/v1/prospect-runs/*/review", async (route) => {
     const review = route.request().postDataJSON() as { decision: string; body: string };
-    expect(review).toMatchObject({ decision: "edit", body: "Rep-approved lane message." });
+    expect(review).toMatchObject({
+      decision: "edit",
+      body: "Rep-approved lane message.",
+      tool_call_id: "review-run-browser-1",
+    });
     await route.fulfill({
-      json: { ...run, status: "completed", stage: "Simulated send complete" },
+      json: {
+        ...run,
+        status: "completed",
+        stage: "Simulated send complete",
+        pending_review: null,
+      },
     });
   });
 });

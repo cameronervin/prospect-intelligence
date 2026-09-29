@@ -63,6 +63,11 @@ const reviewRun: ProspectRun = {
     subject: "Atlanta → Dallas capacity",
     body: "We have reliable capacity aligned to your Atlanta to Dallas freight.",
   },
+  pending_review: {
+    name: "send_outreach",
+    allowed_decisions: ["approve", "edit", "reject"],
+    tool_call_id: "review-server-token",
+  },
 };
 
 function client(overrides: Partial<ProspectClient> = {}): ProspectClient {
@@ -74,6 +79,7 @@ function client(overrides: Partial<ProspectClient> = {}): ProspectClient {
       ...reviewRun,
       status: review.decision === "reject" ? "rejected" : "completed",
       stage: review.decision === "reject" ? "Outreach rejected" : "Simulated send complete",
+      pending_review: null,
     })),
     ...overrides,
   };
@@ -110,7 +116,11 @@ describe("ProspectWorkspace", () => {
     await waitFor(() =>
       expect(api.reviewRun).toHaveBeenCalledWith(
         "run-1",
-        expect.objectContaining({ decision: "edit", body: "A rep-reviewed message." }),
+        expect.objectContaining({
+          decision: "edit",
+          body: "A rep-reviewed message.",
+          tool_call_id: "review-server-token",
+        }),
       ),
     );
     expect(await screen.findByText("Simulated send recorded")).toBeInTheDocument();

@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from ..contracts import repositories
 from ..contracts.models import (
     Account,
     AnalysisOutput,
@@ -16,14 +17,7 @@ from ..contracts.models import (
     RunStatus,
     SendReceipt,
 )
-from ..contracts.repositories import (
-    AccountRepository,
-    PreferenceRepository,
-    RunRepository,
-    SendReceiptRepository,
-    WorkflowRepository,
-)
-from ..contracts.workflow import checkpoint_thread_id
+from ..contracts.workflow import checkpoint_thread_id, review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
 from ..domain.outreach import validate_customer_outreach
 
@@ -32,13 +26,13 @@ class ProspectRunService:
     def __init__(
         self,
         *,
-        accounts: AccountRepository,
-        runs: RunRepository,
-        receipts: SendReceiptRepository,
-        preferences: PreferenceRepository,
+        accounts: repositories.AccountRepository,
+        runs: repositories.RunRepository,
+        receipts: repositories.SendReceiptRepository,
+        preferences: repositories.PreferenceRepository,
         clock: Callable[[], datetime],
         id_factory: Callable[[], UUID] = uuid4,
-        workflows: WorkflowRepository | None = None,
+        workflows: repositories.WorkflowRepository | None = None,
     ) -> None:
         self._accounts = accounts
         self._runs = runs
@@ -116,19 +110,18 @@ class ProspectRunService:
     ) -> ProspectRun:
         run = self.get_run(run_id)
         self._require(run, RunStatus.RUNNING)
-        verdict = output.verdict
         if output.outreach is not None:
             validate_customer_outreach(output.outreach)
         status = (
             RunStatus.COMPLETED
-            if verdict in {FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA}
+            if output.verdict in {FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA}
             else RunStatus.AWAITING_REVIEW
         )
         stage = (
             "Ready for your review"
             if status is RunStatus.AWAITING_REVIEW
             else "More freight evidence needed"
-            if verdict is FitVerdict.NEEDS_MORE_DATA
+            if output.verdict is FitVerdict.NEEDS_MORE_DATA
             else "No network fit found"
         )
         updated = replace(
@@ -150,14 +143,19 @@ class ProspectRunService:
         tool_call_id: str,
         edited_outreach: OutreachDraft | None = None,
     ) -> ProspectRun:
+        if tool_call_id != review_tool_call_id(run_id):
+            raise InvalidRunTransitionError("review token does not match this run")
         run = self.get_run(run_id)
         if self._workflows is not None:
-            replayed = self._workflows.replay_review(run_id, tool_call_id)
-            if replayed is not None:
+            if (
+                replayed := self._workflows.replay_review(run_id, action, tool_call_id)
+            ) is not None:
                 return replayed
         else:
             existing = self._receipts.get(run_id, tool_call_id)
             if existing is not None:
+                if run.review_action is not action:
+                    raise InvalidRunTransitionError("review token has a different review decision")
                 return replace(run, send_receipt_id=existing.id)
         self._require(run, RunStatus.AWAITING_REVIEW)
         if action is ReviewAction.REJECT:
@@ -244,6 +242,5 @@ class ProspectRunService:
     @staticmethod
     def _require(run: ProspectRun, expected: RunStatus) -> None:
         if run.status is not expected:
-            raise InvalidRunTransitionError(
-                f"run in {run.status.value!r}; expected {expected.value!r}"
-            )
+            detail = f"expected {expected.value!r}, got {run.status.value!r}"
+            raise InvalidRunTransitionError(detail)

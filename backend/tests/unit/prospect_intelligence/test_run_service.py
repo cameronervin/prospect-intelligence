@@ -16,7 +16,11 @@ from app.features.prospect_intelligence.contracts.models import (
     SourceCoverage,
     SourceCoverageStatus,
 )
-from app.features.prospect_intelligence.domain.errors import UnsafeOutreachError
+from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
+from app.features.prospect_intelligence.domain.errors import (
+    InvalidRunTransitionError,
+    UnsafeOutreachError,
+)
 from app.features.prospect_intelligence.domain.outreach import validate_customer_outreach
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
@@ -130,12 +134,37 @@ def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
     )
     assert pending.status is RunStatus.AWAITING_REVIEW
 
-    first = service.review_run(run.id, ReviewAction.APPROVE, tool_call_id="send-1")
-    second = service.review_run(run.id, ReviewAction.APPROVE, tool_call_id="send-1")
+    tool_call_id = review_tool_call_id(run.id)
+    first = service.review_run(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
+    second = service.review_run(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
 
     assert first.status is RunStatus.COMPLETED
     assert second.status is RunStatus.COMPLETED
     assert first.send_receipt_id == second.send_receipt_id
+
+
+def test_review_rejects_a_token_that_does_not_belong_to_the_run() -> None:
+    service = build_service()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    service.start_run(run.id)
+    service.submit_analysis(run.id, analysis("Could we discuss your freight needs?"))
+
+    with pytest.raises(InvalidRunTransitionError, match="review token"):
+        service.review_run(run.id, ReviewAction.APPROVE, tool_call_id="review-wrong-run")
+
+    assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
+
+
+def test_review_replay_rejects_a_different_decision_for_the_same_token() -> None:
+    service = build_service()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    service.start_run(run.id)
+    service.submit_analysis(run.id, analysis("Could we discuss your freight needs?"))
+    tool_call_id = review_tool_call_id(run.id)
+    service.review_run(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
+
+    with pytest.raises(InvalidRunTransitionError, match="different review decision"):
+        service.review_run(run.id, ReviewAction.REJECT, tool_call_id=tool_call_id)
 
 
 def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
@@ -148,7 +177,11 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
         analysis("Could we discuss your freight needs?"),
     )
 
-    result = service.review_run(rejected.id, ReviewAction.REJECT, tool_call_id="reject-1")
+    result = service.review_run(
+        rejected.id,
+        ReviewAction.REJECT,
+        tool_call_id=review_tool_call_id(rejected.id),
+    )
 
     assert result.status is RunStatus.REJECTED
     assert result.send_receipt_id is None
@@ -163,7 +196,7 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
     reviewed = service.review_run(
         edited.id,
         ReviewAction.EDIT,
-        tool_call_id="edit-1",
+        tool_call_id=review_tool_call_id(edited.id),
         edited_outreach=OutreachDraft(
             subject="Freight conversation",
             body="Could we discuss your freight needs?",
@@ -263,7 +296,7 @@ def test_rep_edits_cannot_bypass_subject_or_body_outreach_guardrail(
         service.review_run(
             run.id,
             ReviewAction.EDIT,
-            tool_call_id="unsafe-edit",
+            tool_call_id=review_tool_call_id(run.id),
             edited_outreach=OutreachDraft(
                 subject=unsafe_copy if field == "subject" else "Freight conversation",
                 body=unsafe_copy if field == "body" else "Could we compare freight needs?",
@@ -311,7 +344,7 @@ def test_qualitative_outreach_boundary_rejects_validator_reproductions(
             service.review_run(
                 run.id,
                 ReviewAction.EDIT,
-                tool_call_id="unsafe-qualitative-boundary-edit",
+                tool_call_id=review_tool_call_id(run.id),
                 edited_outreach=unsafe_outreach,
             )
 

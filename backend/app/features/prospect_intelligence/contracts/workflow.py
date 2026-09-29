@@ -11,6 +11,12 @@ def checkpoint_thread_id(tenant_id: str, rep_id: str, run_id: UUID) -> str:
     return f"prospect:v1:{tenant_id}:{rep_id}:{run_id}"
 
 
+def review_tool_call_id(run_id: UUID) -> str:
+    """Return the one idempotency token accepted for a run's review interrupt."""
+
+    return f"review-{run_id}"
+
+
 def preference_namespace(tenant_id: str, rep_id: str) -> tuple[str, ...]:
     _validate_scope(tenant_id, rep_id)
     return ("prospect_intelligence", "v1", tenant_id, rep_id, "preferences")

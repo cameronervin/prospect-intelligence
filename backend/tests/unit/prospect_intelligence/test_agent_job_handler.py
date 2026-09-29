@@ -21,6 +21,7 @@ from app.features.prospect_intelligence.contracts.models import (
     ReviewAction,
     RunStatus,
 )
+from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
 from app.features.prospect_intelligence.domain.errors import InvalidRunTransitionError
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
@@ -272,7 +273,7 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
     reviewed = await handler(
         run.id,
         action,
-        tool_call_id=f"{action.value}-1",
+        tool_call_id=review_tool_call_id(run.id),
         edited_outreach=edited,
     )
 
@@ -290,12 +291,34 @@ async def test_review_handler_reuses_matching_finalized_checkpoint_after_commit_
     runtime = _ReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
 
+    tool_call_id = review_tool_call_id(run.id)
     with pytest.raises(RuntimeError, match="synthetic review commit failure"):
-        await handler(run.id, ReviewAction.APPROVE, tool_call_id="approve-1")
-    reviewed = await handler(run.id, ReviewAction.APPROVE, tool_call_id="approve-1")
+        await handler(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
+    reviewed = await handler(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
 
     assert reviewed.status is RunStatus.COMPLETED
     assert len(runtime.decisions) == 1
+
+
+@pytest.mark.asyncio
+async def test_review_handler_rejects_wrong_token_before_resuming_graph() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
+    runtime = _ReviewRuntime()
+    handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
+
+    with pytest.raises(InvalidRunTransitionError, match="review token"):
+        await handler(run.id, ReviewAction.APPROVE, tool_call_id="review-wrong-run")
+
+    assert runtime.decisions == []
+    assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
 
 
 @pytest.mark.asyncio
@@ -312,9 +335,10 @@ async def test_review_handler_serializes_conflicting_decisions_for_one_run() -> 
     runtime = _ConcurrentReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
 
+    tool_call_id = review_tool_call_id(run.id)
     results = await asyncio.gather(
-        handler(run.id, ReviewAction.APPROVE, tool_call_id="approve-1"),
-        handler(run.id, ReviewAction.REJECT, tool_call_id="reject-1"),
+        handler(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id),
+        handler(run.id, ReviewAction.REJECT, tool_call_id=tool_call_id),
         return_exceptions=True,
     )
 

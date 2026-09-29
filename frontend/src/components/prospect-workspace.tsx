@@ -211,17 +211,18 @@ function VerdictPanel({ run }: Readonly<{ run: ProspectRun }>) {
 
 function OutreachReview({
   run,
+  toolCallId,
   submitting,
   onReview,
 }: Readonly<{
   run: ProspectRun;
+  toolCallId: string;
   submitting: boolean;
   onReview: (review: RunReview) => Promise<void>;
 }>) {
   const [subject, setSubject] = useState(run.outreach?.subject ?? "");
   const [body, setBody] = useState(run.outreach?.body ?? "");
   const changed = subject !== run.outreach?.subject || body !== run.outreach?.body;
-  const toolCallId = run.outreach?.tool_call_id ?? `review-${run.id}`;
 
   return (
     <section
@@ -537,8 +538,16 @@ export function ProspectWorkspace({
 
             <VerdictPanel run={run} />
 
-            {run.status === "awaiting_review" && run.outreach && run.verdict === "fit" ? (
-              <OutreachReview run={run} submitting={submitting} onReview={reviewRun} />
+            {run.status === "awaiting_review" &&
+            run.outreach &&
+            run.pending_review &&
+            run.verdict === "fit" ? (
+              <OutreachReview
+                run={run}
+                toolCallId={run.pending_review.tool_call_id}
+                submitting={submitting}
+                onReview={reviewRun}
+              />
             ) : null}
 
             {run.status === "completed" && run.verdict === "fit" ? (

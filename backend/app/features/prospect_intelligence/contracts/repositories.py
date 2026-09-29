@@ -39,7 +39,12 @@ class WorkflowRepository(Protocol):
 
     def create_run(self, run: ProspectRun) -> None: ...
 
-    def replay_review(self, run_id: UUID, idempotency_key: str) -> ProspectRun | None: ...
+    def replay_review(
+        self,
+        run_id: UUID,
+        action: ReviewAction,
+        idempotency_key: str,
+    ) -> ProspectRun | None: ...
 
     def commit_review(
         self,

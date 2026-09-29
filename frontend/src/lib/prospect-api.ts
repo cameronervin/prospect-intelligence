@@ -52,7 +52,12 @@ const BriefSchema = z.object({
 const OutreachSchema = z.object({
   subject: z.string(),
   body: z.string(),
-  tool_call_id: z.string().min(1).optional(),
+});
+
+const PendingReviewSchema = z.object({
+  name: z.literal("send_outreach"),
+  allowed_decisions: z.tuple([z.literal("approve"), z.literal("edit"), z.literal("reject")]),
+  tool_call_id: z.string().min(1),
 });
 
 const RunErrorSchema = z.object({
@@ -69,30 +74,43 @@ const ErrorIssueSchema = z.object({
 
 const ErrorResponseSchema = z.object({
   error: z.object({
-    code: z.enum(["validation_error", "not_found", "conflict", "internal_error"]),
+    code: z.enum([
+      "validation_error",
+      "not_found",
+      "conflict",
+      "internal_error",
+      "service_unavailable",
+    ]),
     message: z.string().min(1),
     retryable: z.boolean(),
     issues: z.array(ErrorIssueSchema),
   }),
 });
 
-const RunSchema = z.object({
-  id: z.string().min(1),
-  account: z.object({ id: z.string().min(1), name: z.string().min(1) }),
-  status: z.enum(["queued", "running", "awaiting_review", "completed", "rejected", "failed"]),
-  stage: z.string().min(1),
-  progress_percent: z.number().min(0).max(100),
-  source_coverage: z.array(SourceCoverageSchema),
-  verdict: z.enum(["fit", "no_fit", "needs_more_data"]).nullable().optional(),
-  brief: BriefSchema.nullable().optional(),
-  outreach: OutreachSchema.nullable().optional(),
-  error: RunErrorSchema.nullable().optional(),
-});
+const RunSchema = z
+  .object({
+    id: z.string().min(1),
+    account: z.object({ id: z.string().min(1), name: z.string().min(1) }),
+    status: z.enum(["queued", "running", "awaiting_review", "completed", "rejected", "failed"]),
+    stage: z.string().min(1),
+    progress_percent: z.number().min(0).max(100),
+    source_coverage: z.array(SourceCoverageSchema),
+    verdict: z.enum(["fit", "no_fit", "needs_more_data"]).nullable().optional(),
+    brief: BriefSchema.nullable().optional(),
+    outreach: OutreachSchema.nullable().optional(),
+    pending_review: PendingReviewSchema.nullable().optional(),
+    error: RunErrorSchema.nullable().optional(),
+  })
+  .refine((run) => (run.status === "awaiting_review") === Boolean(run.pending_review), {
+    message: "pending_review must match awaiting-review status",
+    path: ["pending_review"],
+  });
 
 const AccountsSchema = z.object({ items: z.array(AccountSchema) });
 
 export type Account = z.infer<typeof AccountSchema>;
 export type ProspectRun = z.infer<typeof RunSchema>;
+export type ProspectApiErrorCode = z.infer<typeof ErrorResponseSchema>["error"]["code"];
 export type RunReview = {
   decision: "approve" | "edit" | "reject";
   subject?: string;
@@ -114,14 +132,14 @@ type ClientOptions = {
 };
 
 export class ProspectApiError extends Error {
-  readonly code?: string;
+  readonly code?: ProspectApiErrorCode;
   readonly retryable?: boolean;
   readonly issues: z.infer<typeof ErrorIssueSchema>[];
 
   constructor(
     message = "The prospect service is unavailable",
     options: {
-      code?: string;
+      code?: ProspectApiErrorCode;
       retryable?: boolean;
       issues?: z.infer<typeof ErrorIssueSchema>[];
     } = {},

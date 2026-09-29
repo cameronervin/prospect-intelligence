@@ -241,6 +241,30 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Evidence:** Validation-error, provenance-response, filesystem, architecture, quality-event, and
   frontend parser tests.
 
+### 2026-09-29 — Durable API: explicit polling and review capability
+
+- **Decision:** Starting a run returns `202` only after the run and its worker job commit atomically.
+  Clients poll the run's durable status separately from its fit verdict. Only `awaiting_review`
+  responses expose `pending_review`, naming `send_outreach`, the fixed approve/edit/reject decisions,
+  and the stable `review-{run_id}` review-idempotency token; the draft `outreach` contains content
+  only.
+- **Decision:** Accounts are tenant-scoped, while runs and reviews are tenant-and-rep-scoped. Missing
+  and out-of-scope resources share the same `404` response. Every review submission must return the
+  exact supplied token; an arbitrary token or reusing that token for a different decision returns
+  `409 conflict`. Unavailable graph review returns retryable `503 service_unavailable` without
+  recording a decision.
+- **Alternatives considered:** Background-only enqueue after the HTTP response; combining workflow
+  status and fit verdict; deriving or embedding the review token in draft content; distinct forbidden
+  responses that disclose resource existence.
+- **Reasoning:** An explicit capability keeps draft content separate from durable workflow control,
+  while atomic enqueue, scoped polling, and non-disclosing errors make restart and retry behavior
+  predictable without overstating the synthetic headers as authentication.
+- **Consequences:** Clients must preserve the server token and tolerate polling across application
+  restarts. The token provides idempotency, not authorization. Production still requires real
+  authentication and delegated authorization before these scope headers can be trusted.
+- **Evidence:** API state-matrix, validation, ownership, sanitization, service-unavailable, atomic
+  PostgreSQL enqueue/restart, frontend boundary, component, and browser tests.
+
 ### 2026-09-29 — Deterministic data: one seeded population and explicit FAF estimates
 
 - **Decision:** `freight-prospect-v1` uses seed `28029` and one generator for 16 core, 8 edge,
