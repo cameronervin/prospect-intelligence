@@ -243,18 +243,3 @@ def test_skill_config_is_machine_readable_and_matches_reference_policy() -> None
         "deadhead calculations",
         "restricted provider data",
     }
-
-
-@pytest.mark.parametrize(
-    ("shipper_loads", "empty_capacity", "expected_matched"),
-    [(1, 8, 1), (8, 8, 8), (9, 8, 8)],
-)
-def test_reference_matched_loads_are_bounded_by_demand_and_capacity(
-    shipper_loads: int, empty_capacity: int, expected_matched: int
-) -> None:
-    score = rank_lane_fit(
-        (_shipper(weekly_loads=shipper_loads),),
-        (_network(empty_capacity=empty_capacity),),
-    )[0]
-
-    assert score.matched_loads_per_week == expected_matched

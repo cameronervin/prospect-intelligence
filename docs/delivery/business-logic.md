@@ -181,17 +181,39 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ### 2026-09-29 — Evaluation: strict deterministic gates and calibrated semantic judges
 
-- **Decision:** Use 16 core and 8 edge examples with three experiment repetitions. Require 100% numeric
-  grounding, score/file/trajectory/injection checks, lane precision@3 of at least 0.80, verdict accuracy
-  of at least 0.90, and semantic averages of at least 4/5. Pin Jev to `jev-1.13.0` and calibrate each
+- **Decision:** Use 16 core and 8 edge examples with three repetitions. The CAM-38 deterministic
+  profile requires 100% numeric grounding, analysis correctness, file-contract, trajectory, and
+  injection checks, reference-aware lane precision@3 of at least 0.80, and verdict accuracy of at
+  least 0.90. Precision is the unique predicted/expected top-three intersection divided by the
+  larger set size; two empty sets score 1.0, so sparse correct predictions can pass without allowing
+  under-produced core predictions to score perfectly.
+- **Decision:** Lane analysis is the exact `lane_fit_v1` artifact contract: method version, fit verdict,
+  and up to three complete, uniquely routed, canonically ordered lane records. The scripted target
+  authors these records with the application scorer; `analysis_correctness` recomputes them with the
+  independent evaluator reference. Numeric grounding reads only research and analysis JSON, with
+  currency, grouping separators, decimal strings, and percentages normalized before exact matching.
+- **Decision:** The root `send_outreach` tool call means `review.requested`, not an external send.
+  Trajectory evaluation requires research before analysis, analysis before drafting, and drafting
+  before review; an `outreach.sent` event is valid only after `review.approved`. Efficiency metrics
+  remain informational. CAM-39 will add Jev semantic gates, pin `jev-1.13.0`, and calibrate each
   question independently against human labels and a GPT-6 Sol comparison judge.
 - **Alternatives considered:** Grounding as the only release gate; live public APIs in the release
-  dataset; one shared threshold for all semantic questions.
+  dataset; dividing precision by the number of returned predictions; treating the review request as
+  a send; using the application scorer as both target and oracle; one shared threshold for semantic
+  questions.
 - **Reasoning:** Deterministic checks should own computable facts while calibrated judges cover narrow
-  semantic questions.
-- **Consequences:** CI remains offline. Live LangSmith experiments and online resources require explicit
-  credentials and produce sanitized evidence rather than committed traces or result exports.
-- **Evidence:** Evaluator self-tests, calibration agreement analysis, and named LangSmith experiments.
+  semantic questions. Independent scoring and a real compiled-graph artifact boundary catch failures
+  that fixture-only or self-referential checks would miss.
+- **Consequences:** CI remains offline. The local synchronous LangSmith runner uses a preloaded,
+  non-hosted client, disables uploads and tracing, requires every metric in exactly three rows for
+  each of 24 examples, and publishes only sanitized aggregate repository evidence. Target snapshots
+  retain model-authored analysis/output bodies but reduce task, context, and research artifacts to
+  typed contract and numeric observations. Measured latency is retained as a LangSmith metric but
+  omitted from the committed report value so repository evidence is reproducible. Its scripted-model
+  result validates wiring and gates, not live model quality. Live LangSmith experiments and semantic
+  calibration remain CAM-39/CAM-40 work requiring credentials.
+- **Evidence:** Evaluator true/false-positive, boundary, and adversarial tests; compiled-graph target
+  test; 72-row sanitized CAM-38 report; future calibration and named live LangSmith experiments.
 
 ### 2026-09-29 — Offline demo: `lane_fit_v1` direct-match verdict
 

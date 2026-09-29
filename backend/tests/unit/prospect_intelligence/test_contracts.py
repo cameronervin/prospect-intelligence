@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.features.prospect_intelligence.contracts import LaneAnalysisArtifact
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
@@ -94,6 +95,108 @@ def test_analysis_output_uses_distinct_typed_business_contracts() -> None:
     assert deserialize_outreach(serialize_outreach(output.outreach)) == output.outreach
     run_error = RunError(code="source_unavailable", message="Source unavailable", retryable=True)
     assert deserialize_run_error(serialize_run_error(run_error)) == run_error
+
+
+def test_lane_analysis_artifact_round_trips_complete_ranked_scores() -> None:
+    first = LaneFitResult(
+        origin="ATL",
+        destination="DAL",
+        shipper_loads_per_week=12,
+        matched_loads_per_week=8,
+        backhaul_fill=Decimal("1"),
+        density=Decimal("0.6"),
+        equipment_match=Decimal("0.9"),
+        fit_score=Decimal("0.86"),
+        modeled_annual_revenue=Decimal("624000"),
+        deadhead_miles_avoided=332_800,
+    )
+    second = LaneFitResult(
+        origin="CHI",
+        destination="IND",
+        shipper_loads_per_week=8,
+        matched_loads_per_week=5,
+        backhaul_fill=Decimal("0.5"),
+        density=Decimal("0.5"),
+        equipment_match=Decimal("0.5"),
+        fit_score=Decimal("0.5"),
+        modeled_annual_revenue=Decimal("260000"),
+        deadhead_miles_avoided=52_000,
+    )
+    artifact = LaneAnalysisArtifact(
+        method_version="lane_fit_v1",
+        verdict=FitVerdict.FIT,
+        top_lanes=(first, second),
+    )
+
+    encoded = artifact.to_json()
+
+    assert LaneAnalysisArtifact.from_json(encoded) == artifact
+    assert '"verdict":"fit"' in encoded
+    assert '"modeled_annual_revenue":"624000"' in encoded
+
+
+@pytest.mark.parametrize(
+    "raw, error",
+    [
+        (
+            '{"method_version":"lane_fit_v1","verdict":"fit",'
+            '"top_lanes":[{"origin":"ATL","destination":"DAL"}]}',
+            "lane score fields",
+        ),
+        (
+            '{"method_version":"lane_fit_v1","verdict":"no_fit","top_lanes":[],"extra":1}',
+            "artifact fields",
+        ),
+        (
+            '{"method_version":"lane_fit_v1","verdict":"fit","top_lanes":[]}',
+            "fit verdict requires",
+        ),
+        (
+            '{"method_version":"lane_fit_v1","verdict":"no_fit","verdict":"fit","top_lanes":[]}',
+            "duplicate JSON field",
+        ),
+    ],
+)
+def test_lane_analysis_artifact_json_rejects_incomplete_or_inconsistent_payloads(
+    raw: str,
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        LaneAnalysisArtifact.from_json(raw)
+
+
+def test_lane_analysis_artifact_rejects_noncanonical_rank_order() -> None:
+    lower = LaneFitResult(
+        origin="CHI",
+        destination="IND",
+        shipper_loads_per_week=8,
+        matched_loads_per_week=5,
+        backhaul_fill=Decimal("0.5"),
+        density=Decimal("0.5"),
+        equipment_match=Decimal("0.5"),
+        fit_score=Decimal("0.5"),
+        modeled_annual_revenue=Decimal("260000"),
+        deadhead_miles_avoided=52_000,
+    )
+    higher = LaneFitResult(
+        origin="ATL",
+        destination="DAL",
+        shipper_loads_per_week=12,
+        matched_loads_per_week=8,
+        backhaul_fill=Decimal("1"),
+        density=Decimal("0.6"),
+        equipment_match=Decimal("0.9"),
+        fit_score=Decimal("0.86"),
+        modeled_annual_revenue=Decimal("624000"),
+        deadhead_miles_avoided=332_800,
+    )
+
+    with pytest.raises(ValueError, match="canonical rank order"):
+        LaneAnalysisArtifact(
+            method_version="lane_fit_v1",
+            verdict=FitVerdict.FIT,
+            top_lanes=(lower, higher),
+        )
 
 
 def test_filesystem_contract_is_canonical_and_rejects_unsafe_memory_scopes() -> None:

@@ -2,7 +2,7 @@
 
 import pytest
 
-from evaluation.evaluators.jev import (
+from evaluation.judges.jev import (
     JEV_MODEL_VERSION,
     QUESTIONS,
     CalibrationPlan,

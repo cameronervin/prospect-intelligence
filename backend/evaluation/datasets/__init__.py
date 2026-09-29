@@ -5,6 +5,7 @@ from evaluation.datasets.freight_prospect_v1 import (
     EvaluationExample,
     canonical_dataset_bytes,
     generate_dataset,
+    langsmith_examples,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "EvaluationExample",
     "canonical_dataset_bytes",
     "generate_dataset",
+    "langsmith_examples",
 ]

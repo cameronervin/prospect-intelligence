@@ -6,7 +6,7 @@ Copy this file for each approved live experiment. Keep only aggregate and synthe
 
 - Date:
 - Dataset version: `freight-prospect-v1`
-- Evaluator version: `freight-evaluators-v1`
+- Evaluator version: `freight-evaluators-v2`
 - Code revision:
 - Graph revision:
 - Prompt revision:
@@ -44,4 +44,3 @@ agreement, cost, latency, and the decision to retain, revise, split, or replace 
 - Accepted trade-offs:
 - Follow-up regression candidates:
 - Experiment owner:
-

@@ -99,9 +99,12 @@ def _feature_graph_files() -> dict[str, dict[str, str]]:
         "/research/market/volumes.json": _source_artifact({"lanes": []}, "faf"),
         "/analysis/lane_fit.json": {
             "content": (
-                '{"method_version":"lane_fit_v1","top_lanes":['
-                '{"origin":"ATL","destination":"DAL","matched_loads":8,'
-                '"fit_score":0.8}]}'
+                '{"method_version":"lane_fit_v1","verdict":"fit","top_lanes":['
+                '{"origin":"ATL","destination":"DAL","shipper_loads_per_week":8,'
+                '"matched_loads_per_week":8,"backhaul_fill":"1","density":"0.5",'
+                '"equipment_match":"0.75","fit_score":"0.8",'
+                '"modeled_annual_revenue":"582400","deadhead_miles_avoided":249600,'
+                '"method_version":"lane_fit_v1"}]}'
             ),
             "encoding": "utf-8",
         },

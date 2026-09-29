@@ -80,9 +80,12 @@ def completed_files() -> dict[str, FileData]:
         "/research/company/company.json": file_data(_sourced({"signals": []}, source="sec")),
         "/research/market/volumes.json": file_data(_sourced({"lanes": []}, source="faf")),
         "/analysis/lane_fit.json": file_data(
-            '{"method_version":"lane_fit_v1","top_lanes":['
-            '{"origin":"ATL","destination":"DAL","matched_loads":8,'
-            '"fit_score":0.8}]}'
+            '{"method_version":"lane_fit_v1","verdict":"fit","top_lanes":['
+            '{"origin":"ATL","destination":"DAL","shipper_loads_per_week":8,'
+            '"matched_loads_per_week":8,"backhaul_fill":"1","density":"0.5",'
+            '"equipment_match":"0.75","fit_score":"0.8",'
+            '"modeled_annual_revenue":"582400","deadhead_miles_avoided":249600,'
+            '"method_version":"lane_fit_v1"}]}'
         ),
         "/analysis/lane_fit.md": file_data("ATL to DAL: 8 matched loads; fit score 0.8."),
         "/output/brief.md": file_data(

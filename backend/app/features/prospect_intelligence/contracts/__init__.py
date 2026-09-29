@@ -8,6 +8,7 @@ from .filesystem import (
     ProspectFileContract,
 )
 from .jobs import ClaimedJob, JobRepository
+from .lane_analysis import LaneAnalysisArtifact
 from .models import (
     Account,
     AccountRelationship,
@@ -69,6 +70,7 @@ __all__ = [
     "FreightActivity",
     "FreightIntelligenceSource",
     "JobRepository",
+    "LaneAnalysisArtifact",
     "LaneFitResult",
     "MarketDataSource",
     "MarketLane",

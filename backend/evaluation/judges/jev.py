@@ -1,4 +1,4 @@
-"""Typed Jev question contracts with an injected, offline-testable gateway."""
+"""Typed Jev semantic-judge contracts with an injected, offline-testable gateway."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass

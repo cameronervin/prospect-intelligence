@@ -9,6 +9,7 @@ from .contracts import (
     ArtifactMediaType,
     Evidence,
     FitVerdict,
+    LaneAnalysisArtifact,
     LaneFitResult,
     NetworkLane,
     OutreachDraft,
@@ -28,6 +29,7 @@ from .contracts import (
     SourceCoverageStatus,
     SourceMode,
 )
+from .domain.lane_fit import rank_lane_fits
 from .fixtures.synthetic import (
     SYNTHETIC_DATASET_SEED,
     SYNTHETIC_DATASET_VERSION,
@@ -55,6 +57,7 @@ __all__ = [
     "Evidence",
     "FafSnapshotManifest",
     "FitVerdict",
+    "LaneAnalysisArtifact",
     "LaneFitResult",
     "NetworkLane",
     "OutreachDraft",
@@ -78,6 +81,7 @@ __all__ = [
     "canonical_scenarios_bytes",
     "generate_synthetic_scenarios",
     "load_faf_snapshot_manifest",
+    "rank_lane_fits",
     "scenario_payload",
     "verify_faf_snapshot",
 ]

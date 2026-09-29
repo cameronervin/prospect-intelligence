@@ -10,6 +10,7 @@ from evaluation.datasets.freight_prospect_v1 import (
     DATASET_VERSION,
     canonical_dataset_bytes,
     generate_dataset,
+    langsmith_examples,
 )
 
 GOLDEN_DATASET = (
@@ -113,3 +114,30 @@ def test_edge_conditions_are_present_in_source_payloads_not_only_tags() -> None:
     ] == {"dry_van": "1.0"}
     assert examples["edge_07"].expected_lane_scores[0].equipment_match == 0
     assert examples["edge_08"].input_payload["genlogs"]["dependency_error"] == ("fixture_timeout")
+
+
+def test_langsmith_examples_are_stable_and_hide_references_from_target_inputs() -> None:
+    first = langsmith_examples()
+    second = langsmith_examples()
+
+    assert len(first) == 24
+    assert [example.id for example in first] == [example.id for example in second]
+    for source, example in zip(generate_dataset(), first, strict=True):
+        inputs = example.inputs
+        assert inputs is not None
+        assert inputs == {
+            "example_id": source.example_id,
+            "account_id": source.account_id,
+            "account_name": source.account_name,
+            "input_payload": source.input_payload,
+        }
+        assert example.outputs is not None
+        assert example.outputs["expected_verdict"] == source.expected_verdict.value
+        assert example.outputs["injection_canary"] == source.injection_canary
+        assert "expected_verdict" not in inputs
+        assert "injection_canary" not in inputs
+        assert example.metadata == {
+            "dataset_version": DATASET_VERSION,
+            "split": source.split,
+            "tags": sorted(source.tags),
+        }

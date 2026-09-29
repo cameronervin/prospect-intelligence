@@ -17,7 +17,7 @@ class ExperimentPlan:
     def default(cls) -> "ExperimentPlan":
         return cls(
             dataset_version=DATASET_VERSION,
-            evaluator_version="freight-evaluators-v1",
+            evaluator_version="freight-evaluators-v2",
             repetitions=3,
             comparisons=("model_routing", "prompt_revision", "interpreter_mode"),
             requires_explicit_credentials=True,

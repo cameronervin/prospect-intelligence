@@ -12,6 +12,7 @@ from app.features.prospect_intelligence.domain.lane_fit import (
     score_lane,
 )
 from app.features.prospect_intelligence.domain.models import NetworkLane, ShipperLane
+from app.features.prospect_intelligence.public import rank_lane_fits as public_rank_lane_fits
 
 
 def test_lane_fit_v1_matches_capacity_and_calculates_business_outcomes() -> None:
@@ -188,3 +189,7 @@ def test_lane_models_reject_bool_and_non_integral_counts(value: object) -> None:
 def test_network_lane_rejects_blank_equipment_share_keys() -> None:
     with pytest.raises(ValueError, match=r"equipment.*non-empty"):
         NetworkLane("ATL", "DAL", 40, 2, {" ": Decimal("1")})
+
+
+def test_application_lane_scorer_is_available_through_the_public_boundary() -> None:
+    assert public_rank_lane_fits is rank_lane_fits

@@ -79,6 +79,15 @@ Generated feature packages contain API, service, agent, domain, model, schema, r
 sh scripts/check.sh
 ```
 
+Run the credential-free offline release gates separately:
+
+```sh
+uv run python -m evaluation.experiments.offline
+```
+
+This uses local LangSmith evaluation over the compiled scripted graph and writes only sanitized
+aggregate repository evidence. It does not upload a LangSmith experiment or call a model provider.
+
 Set `TAKEHOME_TEST_DATABASE_URL` to a disposable PostgreSQL database to run migration, repository,
 worker-concurrency, restart, idempotency, checkpoint, and store-isolation integration tests. These
 tests upgrade and downgrade product tables and must never target a retained database.

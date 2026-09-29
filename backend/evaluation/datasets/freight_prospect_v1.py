@@ -3,6 +3,9 @@
 import json
 from dataclasses import dataclass
 from typing import Literal, cast
+from uuid import UUID, uuid5
+
+from langsmith.schemas import Example
 
 from app.features.prospect_intelligence.public import (
     SYNTHETIC_DATASET_SEED,
@@ -19,6 +22,8 @@ from app.features.prospect_intelligence.public import (
 
 DATASET_VERSION = SYNTHETIC_DATASET_VERSION
 DatasetSplit = Literal["core", "edge"]
+_DATASET_NAMESPACE = UUID("36d66a0e-98d0-4cb4-8a1d-47a478d77a5f")
+_DATASET_ID = uuid5(_DATASET_NAMESPACE, DATASET_VERSION)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,3 +95,52 @@ def canonical_dataset_bytes() -> bytes:
         )
         + "\n"
     ).encode()
+
+
+def _lane_score_payload(score: LaneFitResult) -> dict[str, object]:
+    return {
+        "origin": score.origin,
+        "destination": score.destination,
+        "shipper_loads_per_week": score.shipper_loads_per_week,
+        "matched_loads_per_week": score.matched_loads_per_week,
+        "backhaul_fill": str(score.backhaul_fill),
+        "density": str(score.density),
+        "equipment_match": str(score.equipment_match),
+        "fit_score": str(score.fit_score),
+        "modeled_annual_revenue": str(score.modeled_annual_revenue),
+        "deadhead_miles_avoided": score.deadhead_miles_avoided,
+        "method_version": score.method_version,
+    }
+
+
+def langsmith_examples() -> tuple[Example, ...]:
+    """Build stable, in-memory rows without exposing references to the target."""
+
+    return tuple(
+        Example(
+            id=uuid5(_DATASET_ID, source.example_id),
+            dataset_id=_DATASET_ID,
+            inputs={
+                "example_id": source.example_id,
+                "account_id": source.account_id,
+                "account_name": source.account_name,
+                "input_payload": source.input_payload,
+            },
+            outputs={
+                "input_payload": source.input_payload,
+                "expected_top_lanes": list(source.expected_top_lanes),
+                "expected_verdict": source.expected_verdict.value,
+                "expected_next_step": source.expected_next_step.value,
+                "expected_lane_scores": [
+                    _lane_score_payload(score) for score in source.expected_lane_scores
+                ],
+                "injection_canary": source.injection_canary,
+            },
+            metadata={
+                "dataset_version": DATASET_VERSION,
+                "split": source.split,
+                "tags": sorted(source.tags),
+            },
+        )
+        for source in generate_dataset()
+    )

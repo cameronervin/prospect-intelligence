@@ -77,6 +77,18 @@ def test_semantic_provenance_is_required_for_source_artifacts() -> None:
         validate_workflow_artifacts(files)
 
 
+def test_lane_analysis_requires_complete_typed_ranked_scores() -> None:
+    files = completed_files()
+    files["/analysis/lane_fit.json"] = file_data(
+        '{"method_version":"lane_fit_v1","verdict":"fit","top_lanes":['
+        '{"origin":"ATL","destination":"DAL","matched_loads_per_week":8,'
+        '"fit_score":"0.8"}]}'
+    )
+
+    with pytest.raises(ValueError, match="lane score fields"):
+        validate_workflow_artifacts(files)
+
+
 def test_workflow_guardrail_rejects_noncanonical_artifact_paths() -> None:
     files = completed_files()
     files["/output/secret.txt"] = file_data("not role-owned")

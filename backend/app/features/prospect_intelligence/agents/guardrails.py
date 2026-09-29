@@ -9,12 +9,14 @@ from typing import cast
 from deepagents.backends.protocol import FileData
 
 from ..contracts.filesystem import PROSPECT_FILES, ArtifactMediaType
+from ..contracts.lane_analysis import LaneAnalysisArtifact
 from ..contracts.models import OutreachDraft
 from ..domain.errors import UnsafeOutreachError
 from ..domain.outreach import validate_customer_outreach
 from .specs import AgentSpec
 
 _NUMBER = re.compile(r"(?<![\w])[$]?(-?\d+(?:,\d{3})*(?:\.\d+)?)%?")
+_NUMERIC_TEXT = re.compile(r"^-?\d+(?:,\d{3})*(?:\.\d+)?$")
 _PROVENANCE_FIELDS = frozenset(
     {
         "source",
@@ -101,11 +103,8 @@ def validate_agent_artifacts(spec: AgentSpec, files: Mapping[str, FileData]) -> 
         value = _coerce_json(path, files[path])
         if path.startswith(("/context/", "/research/")):
             _validate_source_artifact(path, value)
-        lane: Mapping[object, object] = (
-            cast("Mapping[object, object]", value) if isinstance(value, dict) else {}
-        )
-        if path == PROSPECT_FILES.lane_fit_json and lane.get("method_version") != "lane_fit_v1":
-            raise ValueError("lane analysis must declare method_version lane_fit_v1")
+        if path == PROSPECT_FILES.lane_fit_json:
+            LaneAnalysisArtifact.from_json(artifact_content(files[path], path))
 
 
 def _numeric_values(files: Mapping[str, FileData]) -> set[Decimal]:
@@ -116,6 +115,8 @@ def _numeric_values(files: Mapping[str, FileData]) -> set[Decimal]:
             return
         if isinstance(value, (int, float)):
             values.add(Decimal(str(value)).normalize())
+        elif isinstance(value, str) and _NUMERIC_TEXT.fullmatch(value):
+            values.add(Decimal(value.replace(",", "")).normalize())
         elif isinstance(value, Mapping):
             for child in cast("Mapping[object, object]", value).values():
                 visit(child)
