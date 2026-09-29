@@ -11,10 +11,11 @@ slots.
 cp .env.example .env
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.bootstrap.api:create_app --factory --reload
+uv run uvicorn app.main:create_app --factory --reload
 ```
 
-The API exposes `/health/live` and `/health/ready`. Readiness checks PostgreSQL.
+The API exposes `/health/live` and `/health/ready`. Readiness requires PostgreSQL and the fully
+started prospect runtime when prospect routes are enabled.
 
 ## Feature creation
 

@@ -5,11 +5,6 @@ from uuid import UUID
 
 import pytest
 
-from app.features.prospect_intelligence.agents.definitions import (
-    AgentDefinition,
-    AgentRuntimeFactory,
-    build_agent_suite,
-)
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
     FitVerdict,
@@ -22,13 +17,13 @@ from app.features.prospect_intelligence.contracts.models import (
     SourceCoverageStatus,
 )
 from app.features.prospect_intelligence.domain.errors import UnsafeOutreachError
+from app.features.prospect_intelligence.domain.outreach import validate_customer_outreach
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
 )
-from app.features.prospect_intelligence.services.outreach import validate_customer_outreach
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
@@ -319,36 +314,6 @@ def test_qualitative_outreach_boundary_rejects_validator_reproductions(
                 tool_call_id="unsafe-qualitative-boundary-edit",
                 edited_outreach=unsafe_outreach,
             )
-
-
-class RecordingFactory(AgentRuntimeFactory):
-    def __init__(self) -> None:
-        self.created: list[str] = []
-
-    def create(self, definition: AgentDefinition) -> object:
-        self.created.append(definition.name)
-        return object()
-
-
-def test_agent_suite_keeps_models_tools_and_topology_explicit() -> None:
-    factory = RecordingFactory()
-
-    suite = build_agent_suite(factory)
-
-    assert factory.created == [
-        "account-context",
-        "external-research",
-        "lane-analyst",
-        "outreach-drafter",
-        "orchestrator",
-    ]
-    assert suite.orchestrator.definition.model == "gpt-6-sol"
-    assert suite.orchestrator.definition.reasoning_effort == "medium"
-    assert all(agent.definition.model == "gpt-6-luna" for agent in suite.specialists)
-    analyst = next(agent for agent in suite.specialists if agent.definition.name == "lane-analyst")
-    assert "send_outreach" not in analyst.definition.tools
-    assert suite.parallel_stage == ("account-context", "external-research")
-    assert suite.sequential_stage == ("lane-analyst", "outreach-drafter")
 
 
 def test_unknown_run_is_not_treated_as_an_execution_failure() -> None:

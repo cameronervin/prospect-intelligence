@@ -1,13 +1,13 @@
 # LangChain deployed-engineer take-home
 
-This repository is the implementation-ready scaffold for a freight prospect-intelligence take-home.
-It combines typed FastAPI contracts, a Playbook-style Deep Agents layer, a credential-free fixture
-worker, PostgreSQL persistence seams, a polished Next.js workflow, offline evaluator contracts, and a
-separate `agent_quality` feature.
+This repository contains a reviewable freight prospect-intelligence MVP. It combines typed FastAPI
+contracts, a compiled LangGraph and Deep Agents workflow, durable PostgreSQL work and review state, a
+polished Next.js experience, offline evaluator contracts, and a separate `agent_quality` feature.
 
-The scaffold is intentionally not the completed assessment. Live adapters, credentialed Deep Agents
-execution, LangSmith experiments/provisioning, Jev calibration, and full-stack acceptance evidence are
-tracked in Linear and must replace the documented seams.
+Repository verification uses credential-free model and source fakes. It demonstrates the application
+topology, permissions, persistence, and human-review behavior, but is not evidence of live model
+quality or production readiness. Credentialed provider smoke tests, LangSmith experiments, judge
+calibration, and deployment evidence remain separate delivery work.
 
 ## Start here
 

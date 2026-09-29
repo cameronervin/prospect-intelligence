@@ -4,7 +4,7 @@ from collections.abc import Mapping
 
 import httpx
 
-from app.bootstrap.dependencies import build_source_bundle
+from app.bootstrap.wiring import build_source_bundle
 from app.features.prospect_intelligence.contracts.sources import ProspectSources
 from app.features.prospect_intelligence.fixtures.synthetic import (
     SyntheticSourceCatalog,

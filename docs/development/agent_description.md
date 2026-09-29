@@ -1,6 +1,7 @@
-# Freight Prospect Intelligence Agent — Build Description (v2)
+# Freight Prospect Intelligence Agent — Implementation Description
 
-Hand-off brief for the spec agent. Produce a technical spec and task plan from this.
+Delivered MVP behavior is described directly; production evaluation and integration targets are
+identified as deferred where they are not wired.
 
 ---
 
@@ -34,7 +35,8 @@ instead of unsupported commercial claims.
   no sandbox). Note: interpreter code is JavaScript, not Python.
 - Filesystem: `CompositeBackend`
   - default: `StateBackend` (per-run, ephemeral)
-  - `/memories/`: `StoreBackend` namespaced by rep ID (persistent)
+  - `/memories/`: `StoreBackend` namespaced by tenant and rep ID (persistent)
+  - `/skills/`: packaged read-only skill source, mounted only for the lane analyst
 - LangSmith: tracing, datasets, experiments, online evaluators, annotation queues,
   dashboards, alerts
 - Judges: code for anything computable; Jev (TypeSafe decision model, pinned `jev-1.13`) as the
@@ -71,13 +73,13 @@ with synthetic facts.
 
 ## 4. Virtual filesystem contract
 
-Every subagent writes structured JSON plus a short markdown summary to its own directory.
-Every data point carries `source` (tool, endpoint, timestamp). The orchestrator and all
-evaluators rely on this contract.
+Each specialist writes only its canonical artifacts below. Source artifacts use structured JSON;
+analysis adds a short markdown summary, and final outputs are Markdown. Every evidence item carries
+complete provenance. The orchestrator and evaluators rely on this contract.
 
 ```
 /task/brief.md                 # task, account, objective, filesystem map. Orchestrator reads first.
-/INDEX.md                      # manifest; each subagent appends what it wrote
+/INDEX.md                      # manifest rebuilt by the outer workflow from canonical artifacts
 /context/account.json          # CRM record + current business with us
 /context/our_network.json      # our lanes, density, backhaul gaps
 /research/freight_intel/       # shipper lanes, facilities, volumes (GenLogs mock, FMCSA)
@@ -87,31 +89,50 @@ evaluators rely on this contract.
 /analysis/lane_fit.md          # human-readable summary
 /output/brief.md               # sales brief (orchestrator)
 /output/outreach_draft.md      # draft message (drafting subagent)
-/memories/{rep_id}/            # persistent rep preferences (tone, format, priorities)
+/memories/{tenant_id}/{rep_id}/preferences.md  # persistent rep preferences
 ```
 
 ---
 
-## 5. Agents
+## 5. Agents and middleware
 
 ### Orchestrator
 
-- Reads `/task/brief.md`, `/INDEX.md`, and `/memories/{rep_id}/` first; plans with `write_todos`.
-- Delegates via `task`; never calls data APIs directly.
-- Runs research subagents in parallel; runs the analyst after research completes.
+- Reads `/task/brief.md`, `/INDEX.md`, and `/memories/{tenant_id}/{rep_id}/preferences.md` first.
+- Delegates to exactly four registered subagents via `task`; never calls data APIs directly.
+- Requests account-context and external-research together. Delegation middleware requires both
+  research contracts before lane analysis and the internal brief before outreach drafting.
 - Writes `/output/brief.md` from files only. Every number must come from `/analysis` or `/research`.
-- Owns the HITL tools `send_outreach` and `update_crm`.
+- Owns the HITL tool `send_outreach`. The MVP has no CRM mutation tool.
 
 ### Subagents
 
 1. **account-context**: mock CRM + internal network → `/context/`
-2. **freight-intel**: GenLogs mock + FMCSA → `/research/freight_intel/`
-3. **company-research**: web search + SEC EDGAR → `/research/company/`
-4. **market-data**: FAF5 → `/research/market/`
-5. **lane-analyst**: uses the code interpreter with PTC. Reads `/context` and `/research`,
-   fans out lane lookups, and computes scores → `/analysis/`
-6. **outreach-drafter**: reads `/output/brief.md` + `/memories/{rep_id}/`, writes
+2. **external-research**: GenLogs-shaped freight activity, FMCSA, web search, SEC EDGAR, and FAF5
+   through separate injected source tools → `/research/`
+3. **lane-analyst**: uses the code interpreter with PTC. Reads `/context` and `/research`,
+   loads `/skills/lane_fit_v1/SKILL.md`, fans out lane lookups, and computes scores → `/analysis/`
+4. **outreach-drafter**: reads `/output/brief.md` plus tenant/rep-scoped preferences, writes
    `/output/outreach_draft.md`. Must not introduce numbers absent from the brief.
+
+The Deep Agents default general-purpose subagent is disabled. Specialists expose no `task` tool;
+only the orchestrator receives the four compiled specialists.
+
+### Context engineering
+
+Every chain receives a concrete middleware stack. Middleware projects the allowlisted task,
+manifest, artifacts, and rep preferences before model calls; applies model/tool budgets; redacts
+tool errors; treats source results as untrusted data; gates delegation and
+`send_outreach`; and validates each specialist's owned artifacts. Pure guardrails are reused at
+graph and persistence boundaries. LangGraph state contains checkpointed workflow data only, while
+tenant, rep, source handlers, and other request-scoped dependencies use runtime context.
+Platform trace privacy hides all run inputs, outputs, and metadata by default.
+
+The code layout keeps those concepts visible as `chains.py`, `prompts.py`, `specs.py`, `graphs.py`,
+`compiler.py`, `state.py`, `tools.py`, `guardrails.py`, `runtime.py`, and `context.py`.
+`middleware/` and SDK-formatted `skills/` remain directories. `ProspectRuntimeContext` stays in the
+feature contracts, while `agents/context.py` exposes it to the main graph and compiled subagents
+without copying invocation dependencies into checkpoint state.
 
 ### Lane-fit scoring (`lane_fit_v1`)
 
@@ -131,12 +152,13 @@ Per shipper lane (origin region, destination region, loads/week, equipment):
 Duplicate routes or malformed inputs produce `needs_more_data`; complete inputs with at least one
 matched lane produce `fit`, and complete inputs with no matched lane produce `no_fit`. The monetary
 and mileage values are internal models, not booked revenue, margin, or guaranteed savings. The
-formula lives in a versioned skill file and an independent Python evaluator reference verifies the
-analyst's numbers.
+formula lives in the runtime-loaded `lane_fit_v1` skill and an independent Python evaluator reference
+verifies the analyst's numbers.
 
 ### Code interpreter rules
 
-- PTC allowlist: `read_file`, `glob`, `write_file`, read-only data tools only.
+- PTC allowlist: `read_file`, `glob`, and read-only lane-analysis tools only.
+- Artifact writes use the lane analyst's path-scoped filesystem tools outside PTC.
 - Never allowlist `send_outreach` or `update_crm`. PTC calls bypass `interrupt_on`.
 - Defaults: `mode="thread"`, 5s timeout, 64MB memory; tune if lane fan-out needs more.
 
@@ -144,12 +166,15 @@ analyst's numbers.
 
 ## 6. Human-in-the-loop and memory
 
-- `interrupt_on`: `send_outreach`, `update_crm`; allowed decisions: approve, edit, reject.
+- Named durable interrupt: `send_outreach`; allowed decisions: approve, edit, reject.
 - Checkpointer required.
-- Every HITL decision is logged as LangSmith feedback on the run (decision, edit distance
-  between draft and final).
-- Rep edits are extracted into `/memories/{rep_id}/` (native Deep Agents memory; LangMem
-  background manager optional).
+- Review resumes that interrupt through the compiled runtime. If the graph review handler is
+  unavailable, the API returns retryable `503 service_unavailable`; it never records the decision
+  through a direct service fallback.
+- Every HITL decision and simulated receipt is persisted in PostgreSQL. LangSmith feedback remains a
+  privacy-reviewed production integration.
+- Rep edits produce a tenant/rep-scoped preference summary that is materialized into the agent's
+  StoreBackend memory on later runs. Rich LangMem extraction remains optional and deferred.
 
 ---
 
@@ -157,6 +182,11 @@ analyst's numbers.
 
 Principle: offline evals decide whether a version is ready to ship. Online evals tell you
 whether it is still working in production. Production failures become offline test cases.
+
+The repository contains the deterministic dataset, evaluator implementations, experiment
+configuration, and credential-free tests. The baseline LangSmith experiment, judge calibration, and
+online resources below require explicit credentials and must be reported as live evidence rather
+than inferred from repository checks.
 
 ### 7.1 Offline harness (Test)
 
@@ -206,12 +236,12 @@ Rules:
 - Qualitative claims are extracted from the brief with a parser where possible; otherwise
   extraction is an LLM step and Jev judges each claim.
 
-**Experiments:**
+**Credentialed experiments:**
 
 - Baseline run on all splits, 3 repetitions per example to measure variance.
 - Comparisons: model variants, prompt variants, interpreter on vs off for the analyst.
-- CI gate: pytest + LangSmith; block merge if groundedness or lane precision drops below
-  threshold vs baseline.
+- CI remains offline and runs deterministic repository checks. A separate credentialed promotion
+  gate compares LangSmith groundedness and lane precision against the recorded baseline.
 
 **Harbor (stretch, decide after core harness works):**
 
@@ -225,6 +255,8 @@ Rules:
   synthetic-account generator.
 
 ### 7.2 Online harness (Monitor)
+
+This section is a production target, not behavior delivered by the take-home MVP.
 
 - All runs traced to a LangSmith project with metadata: `agent_version`, `rep_id` (hashed),
   `account_id`, `tenant_id`, `prompt_version`. Trajectories view used for session review.
@@ -287,7 +319,8 @@ Jev operating rules:
 - Memory scoping: per-rep namespace; team-level shared namespace for playbooks; no cross-rep reads.
 - Auth: rep auth to the app; agent uses delegated rep credentials for CRM writes; service
   identity for read-only data APIs; per-tenant API keys.
-- Multi-tenancy: tenant ID in every store namespace, trace metadata, and data query.
+- Multi-tenancy: tenant ID in every store namespace and data query; trace metadata is hidden by
+  default until a privacy-reviewed hashed scope is implemented.
 - Data licensing: GenLogs terms may restrict what appears in customer-facing text; guardrail
   checks draft for restricted fields.
 - Third-party judge data retention: TypeSafe does not currently offer zero data retention;
@@ -302,27 +335,29 @@ Jev operating rules:
 
 ---
 
-## 9. Scope and priorities (1 week)
+## 9. Scope and evidence
 
-**Must have**
+**Reviewable MVP in this repository**
 
-- Orchestrator + 6 subagents, filesystem contract, HITL on send/CRM
-- Mocks: GenLogs, CRM, network. Real: web search, SEC EDGAR, FMCSA, FAF5
-- Offline: dataset (core + edge), code evaluators, Jev evaluator, baseline experiment
-- Online: tracing with metadata, online evaluators, dashboard, traffic simulator
-- Friction log maintained throughout
+- Compiled orchestrator plus four specialists, middleware-enforced filesystem contract, and a
+  role-scoped `lane_fit_v1` skill.
+- Durable HITL on outreach with no direct review fallback.
+- Deterministic CRM, GenLogs-shaped, and network sources; packaged FAF data; optional live SEC,
+  Tavily, and FMCSA adapters that disclose unavailability rather than substituting fixtures.
+- Versioned offline data, deterministic evaluators, experiment configuration, traffic simulation,
+  and sanitized quality-event contracts.
+- Friction and business-logic decision logs maintained with implementation changes.
 
-**Should have**
+**Credentialed/live evidence still required**
 
-- CI eval gate, annotation queue + regression flow demo, judge calibration
+- Model/provider smoke run and model-directed delegation trajectory.
+- LangSmith baseline experiment, judge calibration, and recorded result interpretation.
+- Privacy-reviewed tracing, online evaluators, dashboard, alerts, and annotation workflow.
 
-**Stretch**
+**Deferred/stretch**
 
 - Harbor tasks, LangMem extraction, broker mode
-
-**Out of scope**
-
-- Real GenLogs access, real email sending, auth implementation
+- Real GenLogs access, real email sending, CRM mutation, and authentication.
 
 ---
 

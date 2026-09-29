@@ -22,4 +22,4 @@ RUN uv sync --frozen --no-dev \
 USER 10001:10001
 EXPOSE 8000
 
-CMD ["uvicorn", "app.bootstrap.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

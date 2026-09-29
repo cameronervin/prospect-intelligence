@@ -33,16 +33,60 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ### 2026-09-29 — Agent workflow: four specialists with role-based models
 
-- **Decision:** Use GPT-6 Sol at medium reasoning for orchestration and GPT-6 Luna for account context,
-  external research, lane analysis, and outreach drafting. Context and research may run concurrently;
-  analysis and drafting run after their required inputs exist.
+- **Decision:** Use Settings-selected GPT-6 Sol at medium reasoning for orchestration and GPT-6 Luna
+  for account context, external research, lane analysis, and outreach drafting through the OpenAI
+  Responses API. Context and research are concurrently eligible; their exact scheduling remains
+  model-directed. Analysis, brief synthesis, and drafting run after their required inputs exist.
+  Missing model credentials fail startup rather than selecting a deterministic pipeline or a
+  different model.
+- **Decision:** QuickJS programmatic tool calls are limited to read-only filesystem and domain tools.
+  Agents write only their canonical role-owned artifacts through filesystem operations outside PTC;
+  the graph records those paths in `/INDEX.md`. `send_outreach` is a named interrupt and is never
+  available to QuickJS.
 - **Alternatives considered:** Six thin specialists; one dynamic worker pool; a single model for every role.
 - **Reasoning:** Four visible specialists preserve meaningful delegation and control boundaries while
   keeping artifacts and evaluation trajectories understandable.
 - **Consequences:** Model construction is injected and provider-neutral, but OpenAI is the supported
-  initial provider. Offline tests use fakes and never call models.
+  initial provider. Bootstrap owns and closes model transports separately from the shared SEC/Tavily/
+  FMCSA HTTP transport. The graph is compiled once per process after PostgreSQL checkpoint/store
+  startup. Offline tests use fakes and never call models. Salesforce, GenLogs, and TMS provider
+  clients remain post-MVP and will be independently injected into their adapters.
 - **Evidence:** Graph topology, trajectory, filesystem-contract, and permission tests; live experiments
   will be recorded separately when credentials are available.
+
+### 2026-09-29 — Agent workflow: Deep Agent-owned delegation and middleware context engineering
+
+- **Decision:** This entry supersedes the outer-graph scheduling portion of the preceding agent-workflow
+  decision. One root Deep Agent reads the task, manifest, and allowed rep memory and delegates through
+  `task` to exactly four explicit subagents: account context, external research, lane analysis, and
+  outreach drafting. Account and external research are concurrently eligible; middleware requires
+  both contracts before lane analysis, the analysis before the orchestrator's brief, and the brief
+  before outreach drafting. The outer LangGraph prepares durable state, invokes the root agent, and
+  finalizes the run but never calls specialists itself.
+- **Decision:** Feature-owned LangChain middleware is the context-engineering boundary. It projects
+  allowlisted context, enforces model/tool budgets and delegation prerequisites, treats source text
+  as untrusted data, and validates role-owned artifacts. Platform trace privacy hides inputs,
+  outputs, and metadata for every nested run. Checkpointed
+  LangGraph state and non-checkpointed runtime context remain distinct. Human review is the named
+  `send_outreach` approve/edit/reject interrupt; no model reviewer or CRM mutation is present.
+- **Decision:** Specialist tasks use isolated message mode; canonical shared files merge through the
+  task result, but parent conversation and rep-memory text cannot bypass a specialist's context
+  projection. Reviewed preference summaries remain product records and are materialized into the
+  tenant/rep StoreBackend namespace at the start of later runs.
+- **Alternatives considered:** Deterministic outer-graph fanout with the orchestrator used only for
+  synthesis; dual orchestration in both the outer graph and the root agent; a model-based reviewer.
+- **Reasoning:** Deep Agent-owned delegation makes the visible `task` trajectory the product's agent
+  topology, while middleware keeps ordering, context, permissions, and safety enforceable without a
+  second scheduler. Human approval remains the authoritative side-effect boundary.
+- **Consequences:** Exact concurrent scheduling is model-directed rather than guaranteed by outer
+  graph fanout, so release evidence includes trajectory tests and artifact prerequisites. The SDK's
+  implicit general-purpose subagent is disabled, specialists expose no `task`, and memory backends are
+  mounted only for agents allowed to read rep preferences. OpenAI client lifecycle remains platform
+  owned; the feature compiler compiles the complete runtime once after checkpoint/store startup. The
+  root Deep Agent is mounted as a checkpointed subgraph so same-thread retries resume after completed
+  specialist delegations instead of replaying them.
+- **Evidence:** Concrete middleware, exposed-tool, trajectory, artifact, memory-isolation, interrupt,
+  PostgreSQL resume, bootstrap, and lifecycle tests. Live model and LangSmith evidence remains separate.
 
 ### 2026-09-29 — Lane fit: direct empty-leg coverage and versioned scoring
 
@@ -92,14 +136,33 @@ include credentials, private customer data, raw traces, or generated result expo
   draft with another exact approved v1 invitation pair, or reject it; arbitrary custom copy is rejected.
   CRM writeback and real email are excluded. Sends are idempotent by run and tool call. Preference
   memory may record approved template selection but not customer facts.
-- **Alternatives considered:** Sequential send and CRM approvals; relying on review without a runtime
-  interrupt; storing customer facts as memory.
+- **Decision:** Review must resume the durable `send_outreach` graph interrupt. The API has no direct
+  service mutation fallback; if the graph review handler is unavailable it returns retryable
+  `503 service_unavailable` without accepting the decision.
+- **Alternatives considered:** Sequential send and CRM approvals; direct service fallback when the
+  graph is unavailable; relying on review without a runtime interrupt; storing customer facts as
+  memory.
 - **Reasoning:** This is the smallest meaningful side-effect boundary and demonstrates durable human
   control without pretending to integrate a real customer system.
-- **Consequences:** Rejection is terminal and sends nothing. V1 preference learning is deliberately
-  limited to safe template selection; customer-specific facts never enter preference memory. Production
-  CRM integration remains documented future work.
-- **Evidence:** Approve/edit/reject, resume, idempotency, and namespace-isolation tests.
+- **Consequences:** Rejection is terminal and sends nothing. Temporary runtime unavailability is
+  visible and retryable rather than allowing review state to diverge from the graph checkpoint. V1
+  preference learning is deliberately limited to safe template selection; customer-specific facts
+  never enter preference memory. Production CRM integration remains documented future work.
+- **Evidence:** Approve/edit/reject, graph-resume, handler-unavailable, idempotency, and
+  namespace-isolation tests.
+
+### 2026-09-29 — Lane analysis: runtime-loaded, role-scoped skill
+
+- **Decision:** Package `lane_fit_v1` as an SDK-formatted skill, mount the skill source read-only at
+  `/skills/`, and expose it only to the lane analyst. Other agents cannot discover or read the skill.
+- **Alternatives considered:** Repeat the formula only in prompts; expose every packaged skill to the
+  root and all specialists; treat the skill as documentation that is not loaded at runtime.
+- **Reasoning:** A role-scoped runtime skill keeps the versioned analysis method discoverable where it
+  is applied without expanding unrelated agents' context or permissions.
+- **Consequences:** Skill packaging and access policy are part of the runtime contract. Formula changes
+  require evaluator parity, skill-version review, and promotion evidence.
+- **Evidence:** Skill discovery, read isolation, package-content, and lane-fit parity tests. Live model
+  and LangSmith evidence remains separate.
 
 ### 2026-09-29 — Data policy: live-first public research with explicit source modes
 
@@ -130,20 +193,6 @@ include credentials, private customer data, raw traces, or generated result expo
   credentials and produce sanitized evidence rather than committed traces or result exports.
 - **Evidence:** Evaluator self-tests, calibration agreement analysis, and named LangSmith experiments.
 
-### 2026-09-29 — Agent architecture: Playbook-style separation with replaceable runtime seams
-
-- **Decision:** Structure the prospect agents layer as state, runtime context, prompts, context policy,
-  tool registry, nodes, topology, builders, provider cache, executor, and guardrails. The current layer
-  is framework-light scaffolding; credentialed Deep Agents compilation remains CAM-32 work.
-- **Alternatives considered:** Keep all agent definitions in one module; copy Playbook's product-specific
-  implementations; construct model clients and tools directly in service methods.
-- **Reasoning:** The Playbook separation makes graph topology, model-visible context, private runtime
-  dependencies, and tool permissions independently reviewable without importing unrelated domain code.
-- **Consequences:** Later agents must replace compiler and handler seams rather than treating the
-  scaffold as a completed runtime. Public workflow/tool boundaries stay stable while implementation can
-  adopt `create_deep_agent`, QuickJS, and PostgreSQL checkpoint/store resources.
-- **Evidence:** Agent-scaffold contract tests, architecture dependency tests, and CAM-32 handoff notes.
-
 ### 2026-09-29 — Offline demo: `lane_fit_v1` direct-match verdict
 
 - **Decision:** `lane_fit_v1` returns `fit` when complete, unambiguous evidence yields at least one direct
@@ -154,8 +203,8 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Reasoning:** The direct-match threshold is deterministic, independently reproducible, and consistent
   with the v1 eligibility rule. It lets the API/UI/HITL contracts be reviewed without presenting an
   uncalibrated confidence cutoff as production logic.
-- **Consequences:** CAM-32 and CAM-33 may replace the process-local fixture worker but must preserve this
-  v1 verdict contract. Introducing calibrated score thresholds changes business behavior and therefore
+- **Consequences:** The compiled agent worker and CAM-33 APIs must preserve this v1 verdict contract.
+  Introducing calibrated score thresholds changes business behavior and therefore
   requires a versioned `lane_fit_v2` decision, evaluation baseline, and promotion evidence.
 - **Evidence:** CAM-31 lane-fit parity, boundary, malformed-data, duplicate, and API bootstrap tests.
 
@@ -251,7 +300,7 @@ include credentials, private customer data, raw traces, or generated result expo
   reuse a normalized success or terminal unavailable result, but no cache entry crosses a run,
   tenant, or rep boundary.
 - **Decision:** Critical freight or carrier-network coverage must be complete before the
-  deterministic pipeline can recommend outreach; degraded inputs produce `needs_more_data`.
+  prospect workflow can recommend outreach; degraded inputs produce `needs_more_data`.
   The synthetic carrier network is tenant-scoped and the two demo aliases select reviewed scenarios
   with non-overlapping routes, so both demo scores remain identical to their reference outputs.
   Alias CRM identity remains consistent with the persisted demo account and is grounded in a

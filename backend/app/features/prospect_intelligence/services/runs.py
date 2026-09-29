@@ -25,7 +25,7 @@ from ..contracts.repositories import (
 )
 from ..contracts.workflow import checkpoint_thread_id
 from ..domain.errors import InvalidRunTransitionError
-from .outreach import validate_customer_outreach
+from ..domain.outreach import validate_customer_outreach
 
 
 class ProspectRunService:

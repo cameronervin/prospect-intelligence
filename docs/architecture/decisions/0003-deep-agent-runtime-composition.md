@@ -1,0 +1,62 @@
+# ADR 0003: Feature-owned Deep Agent runtime composition
+
+## Status
+
+Accepted for CAM-32.
+
+## Context
+
+The initial prospect-agent scaffold separated definitions, chain blueprints, graph builders, and a
+bootstrap-owned factory. The partial implementation left middleware metadata unused, placed
+prospect-specific handlers in bootstrap, and allowed both an outer graph and an orchestrator to own
+specialist scheduling. Those overlaps obscured the runtime's context, permission, and lifecycle
+boundaries.
+
+LangChain agent middleware is the feature's context-engineering boundary. LangGraph state is durable
+workflow data; invocation context carries non-checkpointed dependencies. Model-provider transports
+are platform resources, while prompts, tools, subagents, artifacts, and review behavior are prospect
+business behavior.
+
+## Decision
+
+- The prospect feature keeps explicit flat modules for `chains`, `prompts`, `specs`, `graphs`,
+  `compiler`, `state`, `tools`, `guardrails`, `runtime`, and `context`. Only `middleware/` and
+  SDK-formatted `skills/` remain nested multi-file boundaries. The compiler is the sole composition
+  entry point and compiles the complete runtime once after persistence starts.
+- A root Deep Agent owns delegation to exactly four explicit subagents: account context, external
+  research, lane analysis, and outreach drafting. The outer LangGraph prepares the run, invokes the
+  root agent, and finalizes it; it never schedules those specialists itself.
+- Agent middleware projects context, enforces budgets and delegation prerequisites, guards tool
+  calls, and validates specialist artifacts. Platform trace privacy hides nested run payloads and
+  metadata. Pure guardrail functions remain reusable at graph and persistence
+  boundaries.
+- `state` means checkpointed LangGraph state only. Tenant, rep, injected tools, and other private
+  invocation dependencies live in `ProspectRuntimeContext`. `context.py` owns LangGraph runtime
+  context access and the scoped propagation bridge required by compiled isolated subagents.
+- `chains.py` creates model-facing agents with `create_deep_agent`; `graphs.py` creates the application
+  workflow. `compiler.py` alone assembles specs, tools, middleware, chains, the graph, persistence,
+  and the typed runtime.
+- The packaged `lane_fit_v1` skill is mounted read-only at `/skills/` and supplied only to the lane
+  analyst. No other specialist can discover or read it.
+- Human review is the named `send_outreach` interrupt. There is no model reviewer. The runtime owns
+  execute, checkpoint inspection, and `Command(resume=...)` adaptation for approve, edit, and reject.
+  Review never falls back to direct service mutation; an unavailable graph review handler produces a
+  retryable `503 service_unavailable` response.
+- `platform/llm` owns OpenAI Responses clients and HTTP transports. Bootstrap constructs platform
+  resources and calls the feature compiler but contains no prospect-agent implementation.
+- `app/main.py` owns the FastAPI factory and ASGI entrypoint. Bootstrap groups the prospect runtime,
+  review handler, and worker supervisor as one lifecycle-managed component; readiness requires that
+  component and PostgreSQL to be healthy.
+
+## Consequences
+
+The runtime has one delegation owner and one feature composition entry point. Every model-visible
+capability is backed by concrete middleware or a tool registry entry, and provider replacement does
+not alter feature code. Agent-driven delegation can request account and external research together,
+while middleware enforces their completion before lane analysis; exact concurrent scheduling remains
+model-directed and is checked through trajectory evidence rather than encoded as outer-graph fanout.
+
+The Deep Agents SDK's implicit general-purpose subagent must be disabled. Store-backed memory is
+mounted only for agents allowed to read rep preferences, and state-backed artifacts retain canonical
+paths. Adding another specialist, provider, or review boundary requires updating specs, middleware
+policy, trajectory tests, and the business-logic decision log together.

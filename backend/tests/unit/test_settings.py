@@ -18,6 +18,8 @@ def test_settings_have_safe_local_defaults(
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.database_url.get_secret_value() == DEVELOPMENT_DATABASE_URL
     assert settings.log_json is False
+    assert settings.model_request_timeout_seconds == 60
+    assert settings.model_retry_attempts == 2
 
 
 def test_settings_reject_invalid_database_timeout(
@@ -27,6 +29,21 @@ def test_settings_reject_invalid_database_timeout(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ValidationError):
         Settings(database_connect_timeout_seconds=0)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("model_request_timeout_seconds", 0), ("model_retry_attempts", 6)),
+)
+def test_settings_reject_invalid_model_runtime_limits(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: int,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValidationError):
+        Settings(**{field: value})  # type: ignore[arg-type]
 
 
 def test_provider_managed_langsmith_environment_does_not_extend_app_settings(

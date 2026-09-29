@@ -1,21 +1,30 @@
 """Disposable-PostgreSQL coverage for durable prospect execution."""
 
 import asyncio
+import json
 import os
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-from typing import TypedDict
+from typing import Any, TypedDict, cast
+from uuid import UUID
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
+from app.features.prospect_intelligence.agents.runtime import CompiledProspectAgentRuntime
+from app.features.prospect_intelligence.contracts.agent_runtime import (
+    ProspectAgentInput,
+    ProspectReviewDecision,
+    ProspectRuntimeContext,
+)
 from app.features.prospect_intelligence.contracts.models import (
     OutreachDraft,
     ReviewAction,
@@ -37,9 +46,6 @@ from app.features.prospect_intelligence.repositories.postgres import (
     PostgresSendReceiptRepository,
     PostgresWorkflowRepository,
 )
-from app.features.prospect_intelligence.services.deterministic_pipeline import (
-    DeterministicProspectPipeline,
-)
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from app.features.prospect_intelligence.services.worker import (
     ProspectJobWorker,
@@ -47,9 +53,76 @@ from app.features.prospect_intelligence.services.worker import (
 )
 from app.platform.agent_runtime import PostgresAgentRuntime
 from app.platform.config.settings import Settings
+from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import synthetic_prospect_sources
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
+
+
+def _source_artifact(payload: Mapping[str, object], source: str) -> dict[str, str]:
+    content = {
+        **payload,
+        "coverage": {"source": source, "status": "complete"},
+        "evidence": [
+            {
+                "claim": "supported claim",
+                "provenance": {
+                    "source": source,
+                    "mode": "fixture",
+                    "endpoint_or_artifact": f"fixture://{source}",
+                    "retrieved_at": "2026-09-29T00:00:00+00:00",
+                    "evidence_location": "record:1",
+                    "source_version": "v1",
+                },
+            }
+        ],
+    }
+    return {"content": json.dumps(content), "encoding": "utf-8"}
+
+
+def _feature_graph_files() -> dict[str, dict[str, str]]:
+    lane = {"origin": "ATL", "destination": "DAL", "weekly_loads": 8}
+    return {
+        "/context/account.json": _source_artifact({"account": "Acme"}, "crm"),
+        "/context/our_network.json": _source_artifact({"lanes": [lane]}, "network"),
+        "/research/freight_intel/lanes.json": _source_artifact({"lanes": [lane]}, "genlogs"),
+        "/research/company/company.json": _source_artifact({"signals": []}, "sec"),
+        "/research/market/volumes.json": _source_artifact({"lanes": []}, "faf"),
+        "/analysis/lane_fit.json": {
+            "content": (
+                '{"method_version":"lane_fit_v1","top_lanes":['
+                '{"origin":"ATL","destination":"DAL","matched_loads":8,'
+                '"fit_score":0.8}]}'
+            ),
+            "encoding": "utf-8",
+        },
+        "/analysis/lane_fit.md": {
+            "content": "ATL to DAL: 8 matched loads; fit score 0.8.",
+            "encoding": "utf-8",
+        },
+        "/output/brief.md": {
+            "content": "Acme has 8 matched weekly loads on ATL to DAL with fit score 0.8.",
+            "encoding": "utf-8",
+        },
+        "/output/outreach_draft.md": {
+            "content": (
+                "Subject: ATL to DAL freight conversation\n\n"
+                "Would you be open to comparing notes on your ATL-to-DAL freight needs?"
+            ),
+            "encoding": "utf-8",
+        },
+    }
+
+
+class _FeatureRoot:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def run(self, state: dict[str, object]) -> Mapping[str, object]:
+        self.calls += 1
+        files = dict(cast("Mapping[str, object]", state["files"]))
+        files.update(_feature_graph_files())
+        return {"files": files, "review_requested": {"name": "send_outreach"}}
 
 
 @pytest.fixture
@@ -132,7 +205,7 @@ async def test_two_slot_worker_supervisor_processes_a_job_after_repository_resta
     workers = tuple(
         ProspectJobWorker(
             jobs=jobs,
-            handler=pipeline.run,
+            handler=pipeline.arun,
             worker_id=f"restart-worker-{slot}",
             clock=lambda: NOW,
         )
@@ -390,6 +463,59 @@ async def test_langgraph_setup_is_repeatable_and_store_is_scope_isolated(
     assert isolated is None
     assert resumed == {"count": 2}
     await restarted.close()
+
+
+@pytest.mark.postgresql
+@pytest.mark.asyncio
+async def test_feature_review_interrupt_survives_postgres_restart(
+    postgres_url: str,
+) -> None:
+    context = ProspectRuntimeContext(
+        run_id=UUID("00000000-0000-0000-0000-000000000032"),
+        tenant_id="tenant-demo",
+        rep_id="rep-a",
+    )
+    first_persistence = PostgresAgentRuntime(postgres_url)
+    await first_persistence.start()
+    assert first_persistence.checkpointer is not None
+    assert first_persistence.store is not None
+    first_root = _FeatureRoot()
+    first_graph = build_prospect_workflow(RunnableLambda(first_root.run)).compile(  # pyright: ignore[reportUnknownMemberType]
+        checkpointer=first_persistence.checkpointer,
+        store=first_persistence.store,
+    )
+    first_runtime = CompiledProspectAgentRuntime(cast(Any, first_graph))
+
+    paused = await first_runtime.execute(
+        ProspectAgentInput(task_brief="Research Acme freight fit.", account_id="acme-foods"),
+        context=context,
+    )
+    assert paused.pending_interrupt == "send_outreach"
+    assert first_root.calls == 1
+    await first_persistence.close()
+
+    restarted_persistence = PostgresAgentRuntime(postgres_url)
+    await restarted_persistence.start()
+    assert restarted_persistence.checkpointer is not None
+    assert restarted_persistence.store is not None
+    restarted_root = _FeatureRoot()
+    restarted_graph = build_prospect_workflow(RunnableLambda(restarted_root.run)).compile(  # pyright: ignore[reportUnknownMemberType]
+        checkpointer=restarted_persistence.checkpointer,
+        store=restarted_persistence.store,
+    )
+    restarted_runtime = CompiledProspectAgentRuntime(cast(Any, restarted_graph))
+
+    checkpoint = await restarted_runtime.checkpoint(context=context)
+    assert checkpoint.pending_interrupt == "send_outreach"
+    completed = await restarted_runtime.resume_review(
+        ProspectReviewDecision(action=ReviewAction.APPROVE),
+        context=context,
+    )
+
+    assert completed.pending_interrupt is None
+    assert completed.completed_stages == ("prepare", "root", "finalize")
+    assert restarted_root.calls == 0
+    await restarted_persistence.close()
 
 
 class _CounterState(TypedDict):

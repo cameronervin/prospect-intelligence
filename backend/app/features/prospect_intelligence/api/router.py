@@ -1,5 +1,7 @@
 """Thin HTTP mapping for the injected prospect-intelligence service."""
 
+import asyncio
+from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -24,6 +26,7 @@ from ..schemas.api import (
     SourceCoverageResponse,
     StartRunRequest,
 )
+from ..services.agent_reviews import ProspectAgentReviewHandler
 from ..services.runs import ProspectRunService
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -31,12 +34,16 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     409: {"model": ErrorResponse},
     422: {"model": ErrorResponse},
     500: {"model": ErrorResponse},
+    503: {"model": ErrorResponse},
 }
 TenantHeader = Annotated[ScopeId, Header(alias="X-Tenant-Id")]
 RepHeader = Annotated[ScopeId, Header(alias="X-Rep-Id")]
 
 
-def build_router(service: ProspectRunService) -> APIRouter:
+def build_router(
+    service: ProspectRunService,
+    review_handler_provider: Callable[[], ProspectAgentReviewHandler | None],
+) -> APIRouter:
     router = APIRouter(
         prefix="/api/v1",
         tags=["prospect-intelligence"],
@@ -96,7 +103,7 @@ def build_router(service: ProspectRunService) -> APIRouter:
         return _run_response(run)
 
     @router.post("/prospect-runs/{run_id}/review", response_model=ProspectRunResponse)
-    def review_run(
+    async def review_run(
         run_id: UUID,
         request: ReviewRunRequest,
         x_tenant_id: TenantHeader,
@@ -104,18 +111,30 @@ def build_router(service: ProspectRunService) -> APIRouter:
         response: Response,
     ) -> ProspectRunResponse:
         try:
-            service.get_scoped_run(run_id, x_tenant_id, x_rep_id)
-            run = service.review_run(
+            await asyncio.to_thread(
+                service.get_scoped_run,
+                run_id,
+                x_tenant_id,
+                x_rep_id,
+            )
+            edited_outreach = (
+                OutreachDraft(subject=request.subject, body=request.body)
+                if request.decision is ReviewAction.EDIT
+                and request.subject is not None
+                and request.body is not None
+                else None
+            )
+            review_handler = review_handler_provider()
+            if review_handler is None:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Prospect review is temporarily unavailable",
+                )
+            run = await review_handler(
                 run_id,
                 request.decision,
                 tool_call_id=request.tool_call_id,
-                edited_outreach=(
-                    OutreachDraft(subject=request.subject, body=request.body)
-                    if request.decision is ReviewAction.EDIT
-                    and request.subject is not None
-                    and request.body is not None
-                    else None
-                ),
+                edited_outreach=edited_outreach,
             )
         except LookupError as error:
             raise HTTPException(

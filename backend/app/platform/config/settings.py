@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     orchestrator_model: str = Field(default="gpt-6-sol", min_length=1, max_length=128)
     subagent_model: str = Field(default="gpt-6-luna", min_length=1, max_length=128)
     orchestrator_reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
+    model_request_timeout_seconds: int = Field(default=60, ge=1, le=300)
+    model_retry_attempts: int = Field(default=2, ge=0, le=5)
     external_live_enabled: bool = False
     external_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
     external_retry_attempts: int = Field(default=2, ge=0, le=5)

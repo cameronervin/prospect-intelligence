@@ -48,10 +48,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         code = {
             404: ApiErrorCode.NOT_FOUND,
             409: ApiErrorCode.CONFLICT,
+            503: ApiErrorCode.SERVICE_UNAVAILABLE,
         }.get(error.status_code, ApiErrorCode.INTERNAL_ERROR)
         return _response(
             error.status_code,
-            ErrorDetail(code=code, message=error.detail, retryable=False),
+            ErrorDetail(
+                code=code,
+                message=error.detail,
+                retryable=error.status_code == 503,
+            ),
             headers=error.headers,
         )
 

@@ -1,10 +1,10 @@
 """Lease-based worker loop for durable prospect jobs."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from datetime import datetime, timedelta
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import structlog
 
@@ -18,7 +18,7 @@ class ProspectJobWorker:
         self,
         *,
         jobs: JobRepository,
-        handler: Callable[[UUID, UUID], None],
+        handler: Callable[[UUID, UUID], Awaitable[None]],
         worker_id: str,
         clock: Callable[[], datetime],
         lease_duration: timedelta = timedelta(minutes=5),
@@ -46,7 +46,7 @@ class ProspectJobWorker:
         stop_heartbeat = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat(claim, stop_heartbeat))
         try:
-            await asyncio.to_thread(self._handler, claim.run_id, claim.claim_token)
+            await self._handler(claim.run_id, claim.claim_token)
         except Exception:
             await asyncio.to_thread(
                 self._jobs.fail,
@@ -129,3 +129,23 @@ class ProspectWorkerSupervisor:
         if self._tasks:
             await asyncio.gather(*self._tasks)
             self._tasks.clear()
+
+
+def build_worker_supervisor(
+    service_name: str,
+    jobs: JobRepository,
+    handler: Callable[[UUID, UUID], Awaitable[None]],
+) -> ProspectWorkerSupervisor:
+    """Create exactly two feature-owned worker slots around one graph handler."""
+
+    worker_group = uuid4().hex[:12]
+    workers = tuple(
+        ProspectJobWorker(
+            jobs=jobs,
+            handler=handler,
+            worker_id=f"{service_name}-{worker_group}-{slot}",
+            clock=lambda: datetime.now(UTC),
+        )
+        for slot in (1, 2)
+    )
+    return ProspectWorkerSupervisor((workers[0], workers[1]))

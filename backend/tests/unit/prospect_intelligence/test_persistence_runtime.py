@@ -1,11 +1,12 @@
 """Persistence identities and retry-safe worker behavior."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
-from app.features.prospect_intelligence.agents.runtime_context import ProspectRuntimeContext
+from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
 from app.features.prospect_intelligence.contracts.jobs import ClaimedJob, JobRepository
 from app.features.prospect_intelligence.contracts.workflow import (
     checkpoint_thread_id,
@@ -46,8 +47,6 @@ def test_workflow_identity_rejects_delimiter_injection() -> None:
         run_id=RUN_ID,
         tenant_id="tenant-a",
         rep_id="rep-a",
-        checkpointer=None,
-        store=None,
     )
     assert context.thread_id == checkpoint_thread_id("tenant-a", "rep-a", RUN_ID)
     assert context.preference_namespace == preference_namespace("tenant-a", "rep-a")
@@ -105,7 +104,8 @@ async def test_worker_completes_only_the_fenced_claim() -> None:
     jobs: JobRepository = FakeJobs()
     handled: list[tuple[UUID, UUID]] = []
 
-    def handle(run_id: UUID, claim_token: UUID) -> None:
+    async def handle(run_id: UUID, claim_token: UUID) -> None:
+        await asyncio.sleep(0)
         handled.append((run_id, claim_token))
 
     worker = ProspectJobWorker(
@@ -126,7 +126,8 @@ async def test_worker_completes_only_the_fenced_claim() -> None:
 async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() -> None:
     jobs = FakeJobs(attempts=3)
 
-    def fail_with_private_data(run_id: UUID, claim_token: UUID) -> None:
+    async def fail_with_private_data(run_id: UUID, claim_token: UUID) -> None:
+        await asyncio.sleep(0)
         del claim_token
         raise RuntimeError(f"customer secret for {run_id}")
 

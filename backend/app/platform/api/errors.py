@@ -9,6 +9,7 @@ class ApiErrorCode(StrEnum):
     VALIDATION_ERROR = "validation_error"
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"
+    SERVICE_UNAVAILABLE = "service_unavailable"
     INTERNAL_ERROR = "internal_error"
 
 

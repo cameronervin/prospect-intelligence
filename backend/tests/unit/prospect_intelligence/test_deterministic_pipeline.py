@@ -20,10 +20,8 @@ from app.features.prospect_intelligence.repositories.memory import (
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
 )
-from app.features.prospect_intelligence.services.deterministic_pipeline import (
-    DeterministicProspectPipeline,
-)
 from app.features.prospect_intelligence.services.runs import ProspectRunService
+from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import synthetic_prospect_sources
 
 

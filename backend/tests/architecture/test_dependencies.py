@@ -44,6 +44,31 @@ def test_platform_and_shared_kernel_do_not_depend_on_features() -> None:
     assert not {path: imported for path, imported in violations.items() if imported}
 
 
+def test_model_provider_implementation_is_platform_owned() -> None:
+    forbidden_roots = (APP_ROOT / "bootstrap", FEATURE_ROOT / "prospect_intelligence")
+    violations = {
+        str(path.relative_to(APP_ROOT)): sorted(
+            imported
+            for imported in imports(path)
+            if imported.startswith(("langchain_openai", "openai"))
+        )
+        for root in forbidden_roots
+        for path in python_files(root)
+    }
+
+    assert not {path: imported for path, imported in violations.items() if imported}
+
+
+def test_prospect_agent_implementation_is_not_in_bootstrap() -> None:
+    forbidden = {
+        APP_ROOT / "bootstrap" / "agent_factory.py",
+        APP_ROOT / "bootstrap" / "prospect_agent_handler.py",
+        APP_ROOT / "bootstrap" / "prospect_workers.py",
+    }
+
+    assert not {str(path.relative_to(APP_ROOT)) for path in forbidden if path.exists()}
+
+
 def test_cross_feature_imports_use_public_contracts() -> None:
     violations: list[str] = []
     for path in python_files(FEATURE_ROOT):

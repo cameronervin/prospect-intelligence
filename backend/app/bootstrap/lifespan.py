@@ -7,7 +7,7 @@ from typing import cast
 import structlog
 from fastapi import FastAPI
 
-from app.bootstrap.dependencies import Container
+from app.bootstrap.container import Container
 
 logger = structlog.get_logger(__name__)
 

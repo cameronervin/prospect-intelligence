@@ -27,9 +27,8 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-(cd "$root/backend" && uv run uvicorn app.bootstrap.api:create_app --factory --reload) &
+(cd "$root/backend" && uv run uvicorn app.main:create_app --factory --reload) &
 backend_pid=$!
 (cd "$root/frontend" && BACKEND_BASE_URL=http://127.0.0.1:8000 npm run dev) &
 frontend_pid=$!
 wait "$backend_pid" "$frontend_pid"
-
