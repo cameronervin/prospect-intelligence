@@ -14,4 +14,6 @@ paths:
 - Keep strict Pyright and Ruff clean. Use async only at real I/O boundaries.
 - Bound external I/O, classify retryable failures, and make side effects idempotent before retrying.
 - Use structured logging and never log prompts, credentials, private data, or full model outputs by default.
-
+- Record backend decisions that change business behavior, formulas, thresholds, workflow, data
+  interpretation, or safety boundaries in `docs/delivery/business_logic.md` with the implementing
+  change.

@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic>=1.14,<2",
+  "deepagents>=0.3,<1",
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
   "langchain>=1,<2",
+  "langchain-openai>=1,<2",
+  "langchain-quickjs>=0.2,<1",
   "langgraph>=1,<2",
   "langgraph-checkpoint-postgres>=3,<4",
   "langsmith>=0.4,<1",

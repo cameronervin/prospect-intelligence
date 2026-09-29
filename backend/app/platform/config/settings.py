@@ -16,13 +16,17 @@ class Environment(StrEnum):
 
 
 class Settings(BaseSettings):
-    """Settings loaded from ``TAKEHOME_`` environment variables."""
+    """Application settings plus canonical provider credential variables.
+
+    Application-owned fields use ``TAKEHOME_``. Provider keys retain their single
+    standard names so SDK configuration is not duplicated through aliases.
+    """
 
     model_config = SettingsConfigDict(
         env_prefix="TAKEHOME_",
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="forbid",
+        extra="ignore",
         case_sensitive=False,
         frozen=True,
         validate_default=True,
@@ -36,3 +40,35 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(DEVELOPMENT_DATABASE_URL)
     database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
     database_statement_timeout_ms: int = Field(default=5_000, ge=100, le=60_000)
+    model_provider: str = Field(default="openai", min_length=1, max_length=32)
+    orchestrator_model: str = Field(default="gpt-6-sol", min_length=1, max_length=128)
+    subagent_model: str = Field(default="gpt-6-luna", min_length=1, max_length=128)
+    orchestrator_reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
+    external_live_enabled: bool = False
+    external_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    external_retry_attempts: int = Field(default=2, ge=0, le=5)
+    sec_user_agent: str = Field(
+        default="freight-prospect-takehome contact@example.invalid",
+        min_length=8,
+        max_length=256,
+    )
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="OPENAI_API_KEY",
+    )
+    langsmith_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="LANGSMITH_API_KEY",
+    )
+    typesafe_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="TYPESAFE_API_KEY",
+    )
+    tavily_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="TAVILY_API_KEY",
+    )
+    fmcsa_web_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="FMCSA_WEB_KEY",
+    )

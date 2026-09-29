@@ -1,8 +1,13 @@
 # LangChain deployed-engineer take-home
 
-This private repository is a domain-neutral foundation for the LangChain Deployed Engineer take-home. It combines a feature-first FastAPI/LangGraph backend, a minimal Next.js application shell, PostgreSQL durability, LangSmith-ready evaluation plumbing, and a compact coding-agent harness.
+This repository is the implementation-ready scaffold for a freight prospect-intelligence take-home.
+It combines typed FastAPI contracts, a Playbook-style Deep Agents layer, a credential-free fixture
+worker, PostgreSQL persistence seams, a polished Next.js workflow, offline evaluator contracts, and a
+separate `agent_quality` feature.
 
-The scaffold deliberately contains no product feature, sample agent, model provider, authentication scheme, or evaluation metric. Those decisions belong to the selected enterprise problem.
+The scaffold is intentionally not the completed assessment. Live adapters, credentialed Deep Agents
+execution, LangSmith experiments/provisioning, Jev calibration, and full-stack acceptance evidence are
+tracked in Linear and must replace the documented seams.
 
 ## Start here
 
@@ -14,17 +19,14 @@ make verify
 make docker-up
 ```
 
-Open the frontend at `http://localhost:3000`. The backend exposes only:
+Open the frontend at `http://localhost:3000`. The backend exposes:
 
 - `GET /health/live`
 - `GET /health/ready`
-
-Create a feature package after the product domain is selected:
-
-```sh
-make feature NAME=case_management DRY_RUN=1
-make feature NAME=case_management
-```
+- `GET /api/v1/accounts`
+- `POST /api/v1/prospect-runs`
+- `GET /api/v1/prospect-runs/{run_id}`
+- `POST /api/v1/prospect-runs/{run_id}/review`
 
 ## Repository map
 
@@ -39,4 +41,3 @@ scripts/       Repository-wide automation
 ```
 
 See [system architecture](docs/architecture/system.md), [local setup](docs/development/setup.md), and [evaluation guidance](docs/evaluation/README.md).
-

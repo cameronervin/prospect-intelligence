@@ -15,3 +15,8 @@ paths:
 - Record dataset, evaluator, prompt/graph revision, experiment URL, and result interpretation for live experiments.
 - Treat traces as sensitive. Minimize captured inputs and outputs and document retention assumptions.
 - Never equate passing repository tests with a successful LangSmith experiment or production deployment.
+- Record dataset populations, evaluator semantics, thresholds, judge fallbacks, and promotion rules in
+  `docs/delivery/business_logic.md` when they are decided or changed.
+- Add evaluation or LangSmith friction only when it materially blocks/delays delivery, reveals a
+  reproducible product limitation, requires a non-trivial reusable workaround, or leaves an
+  unresolved risk. Do not log normal API discovery, routine configuration, or transient failures.

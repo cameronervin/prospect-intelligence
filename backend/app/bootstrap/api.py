@@ -6,6 +6,7 @@ from app.bootstrap.dependencies import Container, build_container
 from app.bootstrap.exception_handlers import register_exception_handlers
 from app.bootstrap.lifespan import lifespan
 from app.bootstrap.middleware import register_middleware
+from app.features.prospect_intelligence.api.router import build_router as build_prospect_router
 from app.platform.api.health import router as health_router
 from app.platform.config.settings import Settings
 from app.platform.observability.logging import configure_logging
@@ -31,8 +32,18 @@ def create_app(
         openapi_url=openapi_url,
         lifespan=lifespan,
     )
-    app.state.container = container or build_container(resolved_settings)
+    resolved_container = container or build_container(resolved_settings)
+    app.state.container = resolved_container
     register_exception_handlers(app)
     register_middleware(app)
     app.include_router(health_router)
+    if resolved_container.prospect_service is not None:
+        submit_run = (
+            resolved_container.prospect_pipeline.run
+            if resolved_container.prospect_pipeline is not None
+            else None
+        )
+        app.include_router(
+            build_prospect_router(resolved_container.prospect_service, submit_run=submit_run)
+        )
     return app

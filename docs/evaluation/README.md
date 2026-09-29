@@ -1,15 +1,29 @@
 # Evaluation approach
 
-No metric or dataset is selected in the initial scaffold because evaluation must follow the chosen product outcome.
+Offline evaluation decides whether a graph revision is ready to ship. Online evaluation detects
+quality changes after release, and reviewed online failures become permanent regression examples.
 
-Before implementing a product feature, define:
+The credential-free harness provides:
 
-1. The user outcome and highest-cost failure.
-2. A versioned synthetic dataset containing success, boundary, dependency-failure, and adversarial examples.
-3. One MVP north-star metric with a pass threshold and deterministic checks where possible.
-4. A LangSmith experiment comparing a named graph/prompt revision against the dataset.
-5. Secondary quality, safety, latency, and cost measures.
-6. Online trace sampling, alerting, user feedback, privacy, and retention policy.
+- `freight-prospect-v1`: 16 core and 8 edge examples with deterministic reference outputs.
+- Pure evaluators for grounding, lane precision, score correctness, verdicts, files,
+  trajectories, injection resistance, latency, cost, and tool calls.
+- Seven typed Jev questions pinned to `jev-1.13.0`; the live SDK is injected only during an
+  approved experiment.
+- Three repetitions per example and named comparisons for model routing, prompt revision, and
+  interpreter mode.
 
-Record live experiments with dataset version, evaluator version, code revision, prompt/graph revision, experiment URL, aggregate result, slice-level failures, and the stakeholder decision supported by the result. Do not commit raw traces, credentials, or sensitive dataset contents.
+Release gates are 100% for grounding, analysis correctness, file contract, trajectory safety,
+and injection resistance; lane precision@3 at least 0.80; verdict accuracy at least 0.90; and
+actionability and tone at least 4/5. Jev calibration uses 40 human labels per question, five
+judge repetitions, and option-order permutation. Rework any question below 85% human agreement
+or more than five percentage points behind the comparison LLM judge.
+
+Online quality operations live in `features/agent_quality`. That feature owns rule, dashboard,
+alert, annotation-queue, traffic-simulation, and regression-candidate workflows. It receives only
+sanitized contracts and reaches LangSmith through an injected gateway. Actor identifiers are
+hashed, and raw tool/web output is never sent to Jev.
+
+Use [experiment-result-template.md](experiment-result-template.md) for live evidence. Do not
+commit traces, credentials, downloaded result payloads, private data, or full model outputs.
 

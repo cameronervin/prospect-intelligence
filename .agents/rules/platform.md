@@ -17,5 +17,7 @@ paths:
 - Keep CI offline from model providers, LangSmith, Linear, and private customer systems.
 - Use placeholders and synthetic identifiers in reviewable artifacts.
 - Preserve the assignment source documents and clearly label scaffold, planned, experimental, and production behavior.
-- Record assumptions, rollback considerations, operational gaps, and friction as they are discovered.
-
+- Record assumptions, rollback considerations, and operational gaps as they are discovered.
+- Add delivery or tooling friction only for confirmed external blockers, reproducible defects,
+  unexpected limitations requiring a non-trivial workaround, or unresolved operational risk. Do not
+  log routine setup, ordinary debugging, expected configuration alignment, or transient failures.

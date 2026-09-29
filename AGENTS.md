@@ -18,7 +18,15 @@ Build the smallest complete, reviewable slice for the deployed-engineer take-hom
 3. Keep repository evidence distinct from live LangSmith experiment evidence.
 4. Use Context7 for library docs, Playwright for browser checks, Linear only for approved ticket work, and LangSmith only with explicit credentials.
 5. Run `make verify`; use `make test-e2e` for browser behavior and `make docker-config` for delivery changes.
-6. Keep prose direct and record assumptions, trade-offs, and friction as the work evolves.
+6. Keep prose direct and record assumptions and trade-offs as the work evolves.
+7. Record every decision that changes business behavior, formulas, thresholds, workflow,
+   user-visible outcomes, data interpretation, or safety boundaries in
+   `docs/delivery/business_logic.md` as part of the same change.
+8. Update `docs/delivery/friction-log.md` only for confirmed, material friction: an external blocker,
+   reproducible framework/integration defect, unexpected limitation requiring a non-trivial
+   workaround, or unresolved delivery risk. Do not log routine setup, ordinary debugging, expected
+   configuration alignment, or transient test failures. For qualifying entries, include delivery
+   impact, workaround or decision, and follow-up in the same change.
 
 ## Where to look
 
@@ -34,4 +42,5 @@ Build the smallest complete, reviewable slice for the deployed-engineer take-hom
 - Tests cover success, failure, boundary, and adversarial behavior appropriate to the change.
 - Ruff, strict Pyright, frontend lint/typecheck/tests/build, and secret scanning pass.
 - Containers run as non-root users and expose working health checks.
-- Documentation and the friction log reflect the delivered behavior.
+- Documentation and the business-logic decision log reflect delivered behavior; the friction log is
+  updated when the change encountered qualifying material friction.

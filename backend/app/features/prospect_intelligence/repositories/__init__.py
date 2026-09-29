@@ -1,0 +1,1 @@
+"""Prospect-intelligence persistence adapters."""

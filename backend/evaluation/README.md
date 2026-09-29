@@ -1,6 +1,9 @@
 # Offline evaluation harness
 
-This directory will hold versioned datasets, evaluators, experiment adapters, and sanitized result summaries after the product problem and north-star metric are selected.
+This package contains the deterministic `freight-prospect-v1` dataset, pure code evaluators,
+typed Jev question contracts, and a declarative experiment plan. Nothing in this package
+creates a provider or LangSmith client.
 
-Repository tests and CI must remain offline. Live LangSmith experiments require an explicit `LANGSMITH_API_KEY`, a named `LANGSMITH_PROJECT`, a reviewed synthetic dataset, and a result entry under `docs/evaluation/`.
-
+Repository tests and CI remain offline. Live experiments require explicit credentials, a
+reviewed synthetic dataset, and a sanitized result entry under `docs/evaluation/`. Raw traces,
+inputs, customer data, API keys, and downloaded LangSmith results must not be committed.
