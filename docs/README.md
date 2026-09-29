@@ -7,6 +7,7 @@
 - [Source-adapter decision](architecture/decisions/0002-source-adapter-boundaries.md)
 - [Deep Agent runtime decision](architecture/decisions/0003-deep-agent-runtime-composition.md)
 - [Local development](development/setup.md)
+- [Frontend design guidance](development/frontend-design.md)
 - [Evaluation approach](evaluation/README.md)
 - [Production path](production/README.md)
 - [MVP scope and production deferrals](delivery/mvp-scoping.md)
