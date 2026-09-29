@@ -6,6 +6,7 @@ from pathlib import Path
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 FEATURE_ROOT = APP_ROOT / "features"
 FEATURE_PREFIX = "app.features."
+MAX_APPLICATION_MODULE_LINES = 250
 
 
 def imports(path: Path, app_root: Path = APP_ROOT) -> set[str]:
@@ -154,3 +155,13 @@ def test_feature_layers_follow_dependency_direction() -> None:
                         violations.append(f"{path.relative_to(APP_ROOT)}: {imported}")
 
     assert not violations
+
+
+def test_application_modules_stay_reviewable() -> None:
+    oversized = {
+        str(path.relative_to(APP_ROOT)): len(path.read_text(encoding="utf-8").splitlines())
+        for path in python_files(APP_ROOT)
+        if len(path.read_text(encoding="utf-8").splitlines()) > MAX_APPLICATION_MODULE_LINES
+    }
+
+    assert not oversized

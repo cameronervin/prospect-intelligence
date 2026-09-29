@@ -9,6 +9,7 @@ from ..contracts.models import (
     Account,
     AnalysisOutput,
     FitVerdict,
+    OutreachDraft,
     ProspectRun,
     RepPreference,
     ReviewAction,
@@ -102,10 +103,9 @@ class ProspectRunService:
     def submit_analysis(self, run_id: UUID, output: AnalysisOutput) -> ProspectRun:
         run = self.get_run(run_id)
         self._require(run, RunStatus.RUNNING)
-        verdict = FitVerdict(output.verdict)
-        normalized = replace(output, verdict=verdict)
-        if normalized.outreach_draft is not None:
-            validate_customer_outreach(normalized.outreach_draft)
+        verdict = output.verdict
+        if output.outreach is not None:
+            validate_customer_outreach(output.outreach.body)
         status = (
             RunStatus.COMPLETED
             if verdict in {FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA}
@@ -123,7 +123,7 @@ class ProspectRunService:
             status=status,
             stage=stage,
             progress_percent=100,
-            output=normalized,
+            output=output,
             updated_at=self._clock(),
         )
         self._runs.save(updated)
@@ -135,7 +135,7 @@ class ProspectRunService:
         action: ReviewAction,
         *,
         tool_call_id: str,
-        edited_outreach: str | None = None,
+        edited_outreach: OutreachDraft | None = None,
     ) -> ProspectRun:
         run = self.get_run(run_id)
         existing = self._receipts.get(run_id, tool_call_id)
@@ -153,15 +153,15 @@ class ProspectRunService:
             )
             self._runs.save(updated)
             return updated
-        if run.output is None or run.output.outreach_draft is None:
+        if run.output is None or run.output.outreach is None:
             raise InvalidRunTransitionError("run has no outreach draft to review")
         if action is ReviewAction.EDIT:
             if edited_outreach is None:
                 raise InvalidRunTransitionError("edited outreach is required for an edit decision")
             outreach = edited_outreach
         else:
-            outreach = run.output.outreach_draft
-        validate_customer_outreach(outreach)
+            outreach = run.output.outreach
+        validate_customer_outreach(outreach.body)
         now = self._clock()
         receipt = SendReceipt(
             id=self._id_factory(),

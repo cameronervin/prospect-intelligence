@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+import pytest
+
 from app.features.prospect_intelligence.public import (
     FitVerdict,
     QualityEvent,
@@ -59,3 +61,18 @@ def test_quality_event_serialization_contains_only_sanitized_allowlist() -> None
         "provider_payload",
         "model_output",
     }.intersection(payload)
+
+
+def test_quality_event_requires_sha256_scope_hashes() -> None:
+    with pytest.raises(ValueError, match="SHA-256"):
+        QualityEvent(
+            event_id=UUID("00000000-0000-0000-0000-000000000001"),
+            run_id=UUID("00000000-0000-0000-0000-000000000002"),
+            account_id="acme-foods",
+            tenant_id_hash="tenant-demo-is-not-a-hash",
+            rep_id_hash="rep-demo-is-not-a-hash",
+            event_type=QualityEventType.RUN_CREATED,
+            occurred_at=datetime(2026, 9, 29, 12, tzinfo=UTC),
+            agent_version="prospect-intelligence-v1",
+            prompt_version="v1",
+        )

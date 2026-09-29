@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+
 from .prompts import SPECIALIST_PROMPTS
 from .tools import tools_for_agent
 
@@ -51,7 +53,7 @@ def specialist_definitions() -> tuple[AgentDefinition, ...]:
                 "write_file",
                 *(tool.name for tool in tools_for_agent("account-context")),
             ),
-            output_paths=("/context/account.json", "/context/our_network.json"),
+            output_paths=(PROSPECT_FILES.account_context, PROSPECT_FILES.network_context),
         ),
         AgentDefinition(
             name="external-research",
@@ -62,7 +64,11 @@ def specialist_definitions() -> tuple[AgentDefinition, ...]:
                 "write_file",
                 *(tool.name for tool in tools_for_agent("external-research")),
             ),
-            output_paths=("/research/freight_intel/", "/research/company/", "/research/market/"),
+            output_paths=(
+                PROSPECT_FILES.freight_research,
+                PROSPECT_FILES.company_research,
+                PROSPECT_FILES.market_research,
+            ),
         ),
         AgentDefinition(
             name="lane-analyst",
@@ -73,14 +79,14 @@ def specialist_definitions() -> tuple[AgentDefinition, ...]:
                 "write_file",
                 *(tool.name for tool in tools_for_agent("lane-analyst")),
             ),
-            output_paths=("/analysis/lane_fit.json", "/analysis/lane_fit.md"),
+            output_paths=(PROSPECT_FILES.lane_fit_json, PROSPECT_FILES.lane_fit_markdown),
         ),
         AgentDefinition(
             name="outreach-drafter",
             model="gpt-6-luna",
             instructions=SPECIALIST_PROMPTS["outreach-drafter"],
             tools=(*read_only, "write_file"),
-            output_paths=("/output/outreach_draft.md",),
+            output_paths=(PROSPECT_FILES.outreach_draft,),
         ),
     )
 
@@ -99,7 +105,7 @@ def orchestrator_definition() -> AgentDefinition:
             "write_todos",
             *(tool.name for tool in tools_for_agent("orchestrator")),
         ),
-        output_paths=("/output/brief.md",),
+        output_paths=(PROSPECT_FILES.sales_brief,),
     )
 
 

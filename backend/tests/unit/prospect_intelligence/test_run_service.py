@@ -12,8 +12,14 @@ from app.features.prospect_intelligence.agents.definitions import (
 )
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
+    FitVerdict,
+    OutreachDraft,
+    ProspectBrief,
+    RecommendedNextStep,
     ReviewAction,
     RunStatus,
+    SourceCoverage,
+    SourceCoverageStatus,
 )
 from app.features.prospect_intelligence.domain.errors import UnsafeOutreachError
 from app.features.prospect_intelligence.repositories.memory import (
@@ -37,6 +43,24 @@ def build_service() -> ProspectRunService:
     )
 
 
+def analysis(draft: str, *, markdown: str = "A supported recommendation.") -> AnalysisOutput:
+    return AnalysisOutput(
+        verdict=FitVerdict.FIT,
+        brief=ProspectBrief(
+            summary=markdown,
+            markdown=markdown,
+            recommended_next_step=RecommendedNextStep.NEW_LANE_PITCH,
+            recommendation="Review the supported outreach.",
+            lanes=(),
+        ),
+        outreach=OutreachDraft(subject="Capacity conversation", body=draft),
+        source_coverage=(
+            SourceCoverage(source="CRM", status=SourceCoverageStatus.COMPLETE),
+            SourceCoverage(source="Network", status=SourceCoverageStatus.COMPLETE),
+        ),
+    )
+
+
 def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
     service = build_service()
     account = service.list_accounts("tenant-demo")[0]
@@ -46,12 +70,9 @@ def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
     service.start_run(run.id)
     pending = service.submit_analysis(
         run.id,
-        AnalysisOutput(
-            verdict="fit",
-            brief_markdown="Recommend an Atlanta to Dallas lane conversation.",
-            outreach_draft="Would you be open to discussing Atlanta to Dallas capacity?",
-            scored_lanes=(),
-            source_coverage=("crm", "network", "genlogs_fixture"),
+        analysis(
+            "Would you be open to discussing Atlanta to Dallas capacity?",
+            markdown="Recommend an Atlanta to Dallas lane conversation.",
         ),
     )
     assert pending.status is RunStatus.AWAITING_REVIEW
@@ -71,13 +92,7 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
     service.start_run(rejected.id)
     service.submit_analysis(
         rejected.id,
-        AnalysisOutput(
-            verdict="fit",
-            brief_markdown="A supported recommendation.",
-            outreach_draft="Could we learn more about your freight network?",
-            scored_lanes=(),
-            source_coverage=("crm",),
-        ),
+        analysis("Could we learn more about your freight network?"),
     )
 
     result = service.review_run(rejected.id, ReviewAction.REJECT, tool_call_id="reject-1")
@@ -90,21 +105,22 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
     service.start_run(edited.id)
     service.submit_analysis(
         edited.id,
-        AnalysisOutput(
-            verdict="fit",
-            brief_markdown="A supported recommendation.",
-            outreach_draft="Would you be open to discussing capacity?",
-            scored_lanes=(),
-            source_coverage=("crm", "network"),
-        ),
+        analysis("Would you be open to discussing capacity?"),
     )
-    service.review_run(
+    reviewed = service.review_run(
         edited.id,
         ReviewAction.EDIT,
         tool_call_id="edit-1",
-        edited_outreach="Could we compare notes on your Atlanta freight next week?",
+        edited_outreach=OutreachDraft(
+            subject="Atlanta freight",
+            body="Could we compare notes on your Atlanta freight next week?",
+        ),
     )
 
+    assert reviewed.reviewed_outreach == OutreachDraft(
+        subject="Atlanta freight",
+        body="Could we compare notes on your Atlanta freight next week?",
+    )
     assert service.get_preferences("tenant-demo", "rep-a")
     assert service.get_preferences("tenant-demo", "rep-b") == ()
 
@@ -118,12 +134,9 @@ def test_internal_business_data_is_blocked_from_customer_outreach() -> None:
     with pytest.raises(UnsafeOutreachError, match="internal-only"):
         service.submit_analysis(
             run.id,
-            AnalysisOutput(
-                verdict="fit",
-                brief_markdown="Internal details may remain in the brief.",
-                outreach_draft="Our margin is 18% because we have empty capacity there.",
-                scored_lanes=(),
-                source_coverage=("crm", "network"),
+            analysis(
+                "Our margin is 18% because we have empty capacity there.",
+                markdown="Internal details may remain in the brief.",
             ),
         )
 
@@ -148,12 +161,9 @@ def test_customer_outreach_rejects_restricted_business_and_vendor_fields(
     with pytest.raises(UnsafeOutreachError):
         service.submit_analysis(
             run.id,
-            AnalysisOutput(
-                verdict="fit",
-                brief_markdown="Internal evidence is available to the rep.",
-                outreach_draft=unsafe_draft,
-                scored_lanes=(),
-                source_coverage=("crm", "network"),
+            analysis(
+                unsafe_draft,
+                markdown="Internal evidence is available to the rep.",
             ),
         )
 

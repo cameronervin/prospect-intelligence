@@ -1,5 +1,6 @@
 """Deterministic synthetic evaluation dataset tests."""
 
+from app.features.prospect_intelligence.public import FitVerdict, RecommendedNextStep
 from evaluation.datasets.freight_prospect_v1 import DATASET_VERSION, generate_dataset
 
 
@@ -32,11 +33,7 @@ def test_edge_split_covers_required_failure_and_adversarial_cases() -> None:
 def test_examples_include_reference_outputs_for_code_evaluators() -> None:
     for example in generate_dataset():
         assert example.account_id.startswith("syn_")
-        assert example.expected_verdict in {
-            "expand_existing_lanes",
-            "new_lane_pitch",
-            "not_a_fit",
-            "needs_more_data",
-        }
+        assert example.expected_verdict in set(FitVerdict)
+        assert example.expected_next_step in set(RecommendedNextStep)
         assert example.valid_numeric_values
         assert example.known_facts

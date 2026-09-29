@@ -31,9 +31,9 @@ def test_pipeline_produces_reviewable_fit_from_seeded_evidence() -> None:
     completed = service.get_run(run.id)
     assert completed.status is RunStatus.AWAITING_REVIEW
     assert completed.output is not None
-    assert completed.output.verdict == "fit"
-    assert completed.output.scored_lanes[0].matched_loads_per_week == 8
-    assert completed.output.lane_evidence[0][0].provenance.mode.value == "fixture"
+    assert completed.output.verdict.value == "fit"
+    assert completed.output.brief.lanes[0].score.matched_loads_per_week == 8
+    assert completed.output.brief.lanes[0].evidence[0].provenance.mode.value == "fixture"
 
 
 def test_pipeline_returns_needs_more_data_without_lane_evidence() -> None:
@@ -51,4 +51,4 @@ def test_pipeline_returns_needs_more_data_without_lane_evidence() -> None:
     completed = service.get_run(run.id)
     assert completed.status is RunStatus.COMPLETED
     assert completed.output is not None
-    assert completed.output.verdict == "needs_more_data"
+    assert completed.output.verdict.value == "needs_more_data"

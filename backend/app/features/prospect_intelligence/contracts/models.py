@@ -1,9 +1,9 @@
 """Typed cross-layer and cross-feature contracts."""
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
 from uuid import UUID
 
 from ..domain.models import LaneFitResult
@@ -13,6 +13,11 @@ class SourceMode(StrEnum):
     LIVE = "live"
     FIXTURE = "fixture"
     SNAPSHOT = "snapshot"
+
+
+class AccountRelationship(StrEnum):
+    PROSPECT = "Prospect"
+    CUSTOMER = "Customer"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +43,7 @@ class Account:
     id: str
     tenant_id: str
     name: str
-    relationship: Literal["Prospect", "Customer"]
+    relationship: AccountRelationship
     industry: str
     location: str | None = None
 
@@ -58,6 +63,13 @@ class FitVerdict(StrEnum):
     NEEDS_MORE_DATA = "needs_more_data"
 
 
+class RecommendedNextStep(StrEnum):
+    EXPAND_EXISTING_LANES = "expand_existing_lanes"
+    NEW_LANE_PITCH = "new_lane_pitch"
+    NOT_A_FIT = "not_a_fit"
+    NEEDS_MORE_DATA = "needs_more_data"
+
+
 class ReviewAction(StrEnum):
     APPROVE = "approve"
     EDIT = "edit"
@@ -71,24 +83,53 @@ class QualityEventType(StrEnum):
     RUN_FAILED = "run_failed"
 
 
+class SourceCoverageStatus(StrEnum):
+    COMPLETE = "complete"
+    DEGRADED = "degraded"
+    UNAVAILABLE = "unavailable"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceCoverage:
     source: str
-    status: Literal["complete", "degraded", "unavailable"]
+    status: SourceCoverageStatus
     detail: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
+class ScoredLane:
+    score: LaneFitResult
+    evidence: tuple[Evidence, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProspectBrief:
+    summary: str
+    markdown: str
+    recommended_next_step: RecommendedNextStep
+    recommendation: str
+    lanes: tuple[ScoredLane, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OutreachDraft:
+    subject: str
+    body: str
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisOutput:
-    verdict: FitVerdict | str
-    brief_markdown: str
-    outreach_draft: str | None
-    scored_lanes: tuple[LaneFitResult, ...]
-    source_coverage: tuple[SourceCoverage | str, ...]
-    brief_summary: str | None = None
-    recommended_next_step: str | None = None
-    outreach_subject: str | None = None
-    lane_evidence: tuple[tuple[Evidence, ...], ...] = ()
+    verdict: FitVerdict
+    brief: ProspectBrief
+    outreach: OutreachDraft | None
+    source_coverage: tuple[SourceCoverage, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RunError:
+    code: str
+    message: str
+    retryable: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,10 +144,10 @@ class ProspectRun:
     created_at: datetime
     updated_at: datetime
     output: AnalysisOutput | None = None
-    reviewed_outreach: str | None = None
+    reviewed_outreach: OutreachDraft | None = None
     review_action: ReviewAction | None = None
     send_receipt_id: UUID | None = None
-    error: str | None = None
+    error: RunError | None = None
     quality_metadata: dict[str, str] = field(default_factory=lambda: dict[str, str]())
 
 
@@ -117,7 +158,7 @@ class SendReceipt:
     tool_call_id: str
     simulated: bool
     sent_at: datetime
-    outreach: str
+    outreach: OutreachDraft
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,8 +195,11 @@ class QualityEvent:
     def __post_init__(self) -> None:
         if self.edit_distance is not None and not 0 <= self.edit_distance <= 1:
             raise ValueError("edit distance must be between 0 and 1")
-        if len(self.tenant_id_hash) < 16 or len(self.rep_id_hash) < 16:
-            raise ValueError("quality events require hashed tenant and rep identifiers")
+        sha256_hex = re.compile(r"^[0-9a-f]{64}$")
+        if not sha256_hex.fullmatch(self.tenant_id_hash) or not sha256_hex.fullmatch(
+            self.rep_id_hash
+        ):
+            raise ValueError("quality events require lowercase SHA-256 tenant and rep hashes")
 
     def to_payload(self) -> dict[str, object]:
         """Serialize only the explicit sanitized allowlist."""

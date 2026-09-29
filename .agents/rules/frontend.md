@@ -12,6 +12,9 @@ paths:
 - Use accessible semantic HTML and explicit loading, empty, degraded, denied, and retry states.
 - Keep API contracts typed and validate untrusted responses at the boundary.
 - Preserve keyboard access, focus visibility, readable status announcements, and reduced-motion preferences.
-- Use Playwright for owned browser behavior on desktop and mobile viewports.
+- Use the Playwright MCP (`mcp__playwright__*`) as the default for interactive browser work and use
+  repository Playwright tests for repeatable desktop and mobile behavior. Start by inspecting the
+  MCP's existing tabs/session; do not substitute a Browser or Chrome integration unless explicitly
+  requested or the Playwright MCP is unavailable and the user approves the fallback.
 - Record decisions that change user-visible workflow, status meaning, disclosure, or approval behavior
   in `docs/delivery/business_logic.md` with the implementing change.

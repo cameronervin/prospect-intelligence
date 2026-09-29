@@ -6,19 +6,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-REQUIRED_ARTIFACTS = (
-    "/task/brief.md",
-    "/INDEX.md",
-    "/context/account.json",
-    "/context/our_network.json",
-    "/research/freight_intel/data.json",
-    "/research/company/data.json",
-    "/research/market/data.json",
-    "/analysis/lane_fit.json",
-    "/analysis/lane_fit.md",
-    "/output/brief.md",
-    "/output/outreach_draft.md",
-)
+from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+
+REQUIRED_ARTIFACTS = PROSPECT_FILES.required_artifacts()
 _NUMBER = re.compile(r"(?<![\w])[-+]?\$?\d[\d,]*(?:\.\d+)?%?")
 _REQUIRED_STAGES = frozenset(
     {

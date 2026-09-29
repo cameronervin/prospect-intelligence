@@ -123,3 +123,36 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Consequences:** CAM-32 and CAM-33 must replace the process-local fixture worker, and any final verdict
   threshold must be separately decided, documented, and evaluated.
 - **Evidence:** Offline pipeline and FastAPI bootstrap tests.
+
+### 2026-09-29 — Contracts: separate workflow state, fit verdict, and recommended action
+
+- **Decision:** Run status is limited to `queued`, `running`, `awaiting_review`, `completed`,
+  `rejected`, and `failed`. Freight fit is independently `fit`, `no_fit`, or `needs_more_data`;
+  recommended action is independently `expand_existing_lanes`, `new_lane_pitch`, `not_a_fit`, or
+  `needs_more_data`. Briefs carry scored lanes with their evidence, outreach is a typed subject/body
+  value, and run failures carry code, message, and retryability.
+- **Alternatives considered:** Reuse one verdict field for workflow state and sales action; retain the
+  scaffold's unvalidated strings and parallel lane/evidence arrays.
+- **Reasoning:** Separate types prevent downstream persistence, UI, and evaluation tickets from
+  assigning business meaning to execution state or pairing evidence with the wrong lane.
+- **Consequences:** The API keeps human-readable recommendation text and adds a stable action code.
+  Existing scaffold JSON is rewritten through the finalized serializer; no migration is needed before
+  CAM-29 owns durable persistence.
+- **Evidence:** Shared-contract, repository round-trip, API, frontend-boundary, and strict-type tests.
+
+### 2026-09-29 — Trust boundaries: complete provenance and sanitized typed failures
+
+- **Decision:** Every exported evidence item includes source mode, endpoint or artifact, retrieval
+  time, evidence location, and source version. Quality events require lowercase SHA-256 tenant and rep
+  hashes and serialize only their explicit allowlist. Request failures use one typed envelope and never
+  echo submitted bodies or values. Agent artifacts use the canonical contract paths and memory paths
+  reject unsafe scope identifiers.
+- **Alternatives considered:** Return FastAPI's default validation details; expose partial provenance;
+  accept arbitrary hash-like strings; maintain independent path lists in agents and evaluators.
+- **Reasoning:** These boundaries make lineage reviewable while preventing private request data and raw
+  identifiers from crossing into errors or online-quality processing.
+- **Consequences:** `agent_quality` continues to consume only `prospect_intelligence.public`; clients
+  receive safe field locations and error types, not submitted values. Canonical research filenames are
+  `lanes.json`, `company.json`, and `volumes.json`.
+- **Evidence:** Validation-error, provenance-response, filesystem, architecture, quality-event, and
+  frontend parser tests.

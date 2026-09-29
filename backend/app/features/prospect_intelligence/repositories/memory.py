@@ -2,7 +2,13 @@
 
 from uuid import UUID
 
-from ..contracts.models import Account, ProspectRun, RepPreference, SendReceipt
+from ..contracts.models import (
+    Account,
+    AccountRelationship,
+    ProspectRun,
+    RepPreference,
+    SendReceipt,
+)
 
 
 class InMemoryAccountRepository:
@@ -17,7 +23,7 @@ class InMemoryAccountRepository:
                     id="acme-foods",
                     tenant_id="tenant-demo",
                     name="Acme Foods",
-                    relationship="Prospect",
+                    relationship=AccountRelationship.PROSPECT,
                     industry="Food distribution",
                     location="Dallas, TX",
                 ),
@@ -25,7 +31,7 @@ class InMemoryAccountRepository:
                     id="northstar-retail",
                     tenant_id="tenant-demo",
                     name="Northstar Retail",
-                    relationship="Customer",
+                    relationship=AccountRelationship.CUSTOMER,
                     industry="Retail",
                     location="Atlanta, GA",
                 ),

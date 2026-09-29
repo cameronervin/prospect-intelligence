@@ -86,9 +86,7 @@ function SourceCoverage({ sources }: Readonly<{ sources: ProspectRun["source_cov
                 className={
                   source.status === "complete"
                     ? "text-ready"
-                    : source.status === "pending"
-                      ? "text-muted-foreground"
-                      : "text-degraded"
+                    : "text-degraded"
                 }
               >
                 {source.status}
@@ -262,12 +260,11 @@ function OutreachReview({
           type="button"
           disabled={submitting || subject.trim() === "" || body.trim() === ""}
           onClick={() =>
-            onReview({
-              decision: changed ? "edit" : "approve",
-              subject,
-              body,
-              tool_call_id: toolCallId,
-            })
+            onReview(
+              changed
+                ? { decision: "edit", subject, body, tool_call_id: toolCallId }
+                : { decision: "approve", tool_call_id: toolCallId },
+            )
           }
           className="rounded-xl bg-accent px-5 py-3 font-bold text-white shadow-lg shadow-accent/15 disabled:opacity-60"
         >
@@ -525,7 +522,7 @@ export function ProspectWorkspace({
               >
                 <h2 className="font-semibold">Research could not be completed</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {run.error ?? "No customer-facing output was produced."}
+              {run.error?.message ?? "No customer-facing output was produced."}
                 </p>
               </div>
             ) : null}

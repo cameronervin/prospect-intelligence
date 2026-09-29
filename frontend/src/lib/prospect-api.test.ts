@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createProspectClient } from "@/lib/prospect-api";
+import { createProspectClient, ProspectApiError } from "@/lib/prospect-api";
 
 describe("prospect API boundary", () => {
   it("sends the synthetic identity headers when a run is created", async () => {
@@ -39,5 +39,47 @@ describe("prospect API boundary", () => {
     const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
+  });
+
+  it("accepts explicit nulls for run fields that are not available yet", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "queued",
+        stage: "Preparing research",
+        progress_percent: 0,
+        source_coverage: [],
+        verdict: null,
+        brief: null,
+        outreach: null,
+        error: null,
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).resolves.toMatchObject({ verdict: null, error: null });
+  });
+
+  it("parses the typed API error envelope", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          error: {
+            code: "validation_error",
+            message: "Request validation failed.",
+            retryable: false,
+            issues: [{ location: "header.X-Tenant-Id", message: "Invalid", type: "pattern" }],
+          },
+        },
+        { status: 422 },
+      ),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "bad value", repId: "rep" });
+
+    const error = await client.listAccounts().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ProspectApiError);
+    expect(error).toMatchObject({ code: "validation_error", retryable: false });
   });
 });

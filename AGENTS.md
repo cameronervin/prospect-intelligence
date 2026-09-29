@@ -16,7 +16,13 @@ Build the smallest complete, reviewable slice for the deployed-engineer take-hom
 1. Read `docs/development/TAKE_HOME_ASSIGNMENT.md` and the applicable `.agents/rules/*.md` file.
 2. Start behavior changes with a failing focused test.
 3. Keep repository evidence distinct from live LangSmith experiment evidence.
-4. Use Context7 for library docs, Playwright for browser checks, Linear only for approved ticket work, and LangSmith only with explicit credentials.
+4. Use Context7 for library docs, the Playwright MCP (`mcp__playwright__*`) for browser work,
+   Linear only for approved ticket work, and LangSmith only with explicit credentials.
+   Reach for the Playwright MCP first for navigation, inspection, interaction, screenshots, and
+   browser verification. Reuse its current tabs/session when possible. Use another browser
+   integration only when the user explicitly requests it or the Playwright MCP is unavailable and
+   the user approves the fallback. If authentication is required, ask the user to sign in within
+   the Playwright window; never request or enter their credentials.
 5. Run `make verify`; use `make test-e2e` for browser behavior and `make docker-config` for delivery changes.
 6. Keep prose direct and record assumptions and trade-offs as the work evolves.
 7. Record every decision that changes business behavior, formulas, thresholds, workflow,

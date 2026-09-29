@@ -1,5 +1,6 @@
 """Deterministic evaluator tests."""
 
+from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from evaluation.evaluators.deterministic import (
     REQUIRED_ARTIFACTS,
     EfficiencyBudget,
@@ -44,6 +45,7 @@ def test_lane_and_analysis_evaluators_handle_partial_and_tolerant_matches() -> N
 
 
 def test_verdict_and_file_contract_are_strict() -> None:
+    assert PROSPECT_FILES.required_artifacts() == REQUIRED_ARTIFACTS
     artifacts = {path: "{}" for path in REQUIRED_ARTIFACTS}
 
     assert fit_verdict_accuracy("not_a_fit", "not_a_fit").passed

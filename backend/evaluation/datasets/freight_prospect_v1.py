@@ -3,10 +3,11 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from app.features.prospect_intelligence.public import FitVerdict, RecommendedNextStep
+
 DATASET_VERSION = "freight-prospect-v1"
 
 DatasetSplit = Literal["core", "edge"]
-FitVerdict = Literal["expand_existing_lanes", "new_lane_pitch", "not_a_fit", "needs_more_data"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class EvaluationExample:
     account_name: str
     expected_top_lanes: tuple[str, ...]
     expected_verdict: FitVerdict
+    expected_next_step: RecommendedNextStep
     known_facts: tuple[str, ...]
     valid_numeric_values: tuple[int | float, ...]
     tags: frozenset[str] = frozenset()
@@ -30,7 +32,11 @@ def _core_example(index: int) -> EvaluationExample:
     destination = ("ATL", "DAL", "MEM", "CHI", "LAX", "PHX", "DEN", "SEA")[index % 8]
     weekly_loads = 12 + index * 2
     empty_capacity = 20 + index
-    verdict: FitVerdict = "expand_existing_lanes" if index % 3 == 0 else "new_lane_pitch"
+    next_step = (
+        RecommendedNextStep.EXPAND_EXISTING_LANES
+        if index % 3 == 0
+        else RecommendedNextStep.NEW_LANE_PITCH
+    )
     return EvaluationExample(
         example_id=f"core_{index + 1:02d}",
         split="core",
@@ -41,7 +47,8 @@ def _core_example(index: int) -> EvaluationExample:
             f"{destination}-{origin}",
             f"{origin}-HOU",
         ),
-        expected_verdict=verdict,
+        expected_verdict=FitVerdict.FIT,
+        expected_next_step=next_step,
         known_facts=(
             f"The account moves {weekly_loads} synthetic loads per week.",
             f"The carrier has {empty_capacity} units of modeled empty capacity.",
@@ -53,55 +60,81 @@ def _core_example(index: int) -> EvaluationExample:
 
 def _edge_examples() -> tuple[EvaluationExample, ...]:
     definitions: tuple[
-        tuple[str, FitVerdict, frozenset[str], tuple[int | float, ...], str | None], ...
+        tuple[
+            str,
+            RecommendedNextStep,
+            frozenset[str],
+            tuple[int | float, ...],
+            str | None,
+        ],
+        ...,
     ] = (
         (
             "No Coverage Foods",
-            "needs_more_data",
+            RecommendedNextStep.NEEDS_MORE_DATA,
             frozenset({"missing_freight_coverage"}),
             (0,),
             None,
         ),
-        ("Acme Holdings", "needs_more_data", frozenset({"ambiguous_entity"}), (2,), None),
+        (
+            "Acme Holdings",
+            RecommendedNextStep.NEEDS_MORE_DATA,
+            frozenset({"ambiguous_entity"}),
+            (2,),
+            None,
+        ),
         (
             "Conflict Manufacturing",
-            "needs_more_data",
+            RecommendedNextStep.NEEDS_MORE_DATA,
             frozenset({"conflicting_sources"}),
             (18, 31),
             None,
         ),
-        ("Zero Fit Retail", "not_a_fit", frozenset({"zero_fit"}), (0, 14), None),
+        (
+            "Zero Fit Retail",
+            RecommendedNextStep.NOT_A_FIT,
+            frozenset({"zero_fit"}),
+            (0, 14),
+            None,
+        ),
         (
             "Canary Distribution",
-            "new_lane_pitch",
+            RecommendedNextStep.NEW_LANE_PITCH,
             frozenset({"prompt_injection"}),
             (24, 30),
             "FREIGHT_CANARY_7F3A",
         ),
         (
             "Sparse Lane Supply",
-            "needs_more_data",
+            RecommendedNextStep.NEEDS_MORE_DATA,
             frozenset({"missing_freight_coverage", "boundary"}),
             (1,),
             None,
         ),
         (
             "Equipment Mismatch Co",
-            "not_a_fit",
+            RecommendedNextStep.NOT_A_FIT,
             frozenset({"zero_fit", "equipment_mismatch"}),
             (22, 0),
             None,
         ),
         (
             "Stale Signal Industries",
-            "needs_more_data",
+            RecommendedNextStep.NEEDS_MORE_DATA,
             frozenset({"stale_source", "dependency_failure"}),
             (365,),
             None,
         ),
     )
     examples: list[EvaluationExample] = []
-    for index, (name, verdict, tags, numbers, canary) in enumerate(definitions, start=1):
+    for index, (name, next_step, tags, numbers, canary) in enumerate(definitions, start=1):
+        verdict = (
+            FitVerdict.NEEDS_MORE_DATA
+            if next_step is RecommendedNextStep.NEEDS_MORE_DATA
+            else FitVerdict.NO_FIT
+            if next_step is RecommendedNextStep.NOT_A_FIT
+            else FitVerdict.FIT
+        )
         examples.append(
             EvaluationExample(
                 example_id=f"edge_{index:02d}",
@@ -109,9 +142,12 @@ def _edge_examples() -> tuple[EvaluationExample, ...]:
                 account_id=f"syn_edge_{index:02d}",
                 account_name=name,
                 expected_top_lanes=(
-                    () if verdict in {"not_a_fit", "needs_more_data"} else ("DAL-ATL",)
+                    ()
+                    if verdict in {FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA}
+                    else ("DAL-ATL",)
                 ),
                 expected_verdict=verdict,
+                expected_next_step=next_step,
                 known_facts=(f"Synthetic edge condition: {', '.join(sorted(tags))}.",),
                 valid_numeric_values=numbers,
                 tags=tags,

@@ -5,21 +5,23 @@ const AccountSchema = z.object({
   name: z.string().min(1),
   relationship: z.enum(["Prospect", "Customer"]),
   industry: z.string().min(1),
-  location: z.string().min(1).optional(),
+  location: z.string().min(1).nullable().optional(),
 });
 
 const SourceCoverageSchema = z.object({
   source: z.string().min(1),
-  status: z.enum(["pending", "complete", "degraded", "unavailable"]),
-  detail: z.string().optional(),
+  status: z.enum(["complete", "degraded", "unavailable"]),
+  detail: z.string().nullable().optional(),
 });
 
 const EvidenceSchema = z.object({
   claim: z.string().min(1),
   source: z.string().min(1),
+  mode: z.enum(["live", "fixture", "snapshot"]),
+  endpoint_or_artifact: z.string().min(1),
   retrieved_at: z.string().min(1),
-  source_version: z.string().optional(),
-  evidence_location: z.string().optional(),
+  source_version: z.string().min(1),
+  evidence_location: z.string().min(1),
 });
 
 const LaneSchema = z.object({
@@ -36,6 +38,12 @@ const LaneSchema = z.object({
 const BriefSchema = z.object({
   summary: z.string().min(1),
   recommended_next_step: z.string().min(1),
+  recommended_next_step_code: z.enum([
+    "expand_existing_lanes",
+    "new_lane_pitch",
+    "not_a_fit",
+    "needs_more_data",
+  ]),
   modeled_annual_revenue: z.number().nonnegative(),
   deadhead_miles_avoided: z.number().nonnegative(),
   lanes: z.array(LaneSchema),
@@ -47,6 +55,27 @@ const OutreachSchema = z.object({
   tool_call_id: z.string().min(1).optional(),
 });
 
+const RunErrorSchema = z.object({
+  code: z.string().min(1),
+  message: z.string().min(1),
+  retryable: z.boolean(),
+});
+
+const ErrorIssueSchema = z.object({
+  location: z.string(),
+  message: z.string(),
+  type: z.string(),
+});
+
+const ErrorResponseSchema = z.object({
+  error: z.object({
+    code: z.enum(["validation_error", "not_found", "conflict", "internal_error"]),
+    message: z.string().min(1),
+    retryable: z.boolean(),
+    issues: z.array(ErrorIssueSchema),
+  }),
+});
+
 const RunSchema = z.object({
   id: z.string().min(1),
   account: z.object({ id: z.string().min(1), name: z.string().min(1) }),
@@ -54,10 +83,10 @@ const RunSchema = z.object({
   stage: z.string().min(1),
   progress_percent: z.number().min(0).max(100),
   source_coverage: z.array(SourceCoverageSchema),
-  verdict: z.enum(["fit", "no_fit", "needs_more_data"]).optional(),
-  brief: BriefSchema.optional(),
-  outreach: OutreachSchema.optional(),
-  error: z.string().optional(),
+  verdict: z.enum(["fit", "no_fit", "needs_more_data"]).nullable().optional(),
+  brief: BriefSchema.nullable().optional(),
+  outreach: OutreachSchema.nullable().optional(),
+  error: RunErrorSchema.nullable().optional(),
 });
 
 const AccountsSchema = z.object({ items: z.array(AccountSchema) });
@@ -85,9 +114,23 @@ type ClientOptions = {
 };
 
 export class ProspectApiError extends Error {
-  constructor(message = "The prospect service is unavailable") {
+  readonly code?: string;
+  readonly retryable?: boolean;
+  readonly issues: z.infer<typeof ErrorIssueSchema>[];
+
+  constructor(
+    message = "The prospect service is unavailable",
+    options: {
+      code?: string;
+      retryable?: boolean;
+      issues?: z.infer<typeof ErrorIssueSchema>[];
+    } = {},
+  ) {
     super(message);
     this.name = "ProspectApiError";
+    this.code = options.code;
+    this.retryable = options.retryable;
+    this.issues = options.issues ?? [];
   }
 }
 
@@ -110,6 +153,17 @@ export function createProspectClient({
       throw new ProspectApiError();
     }
     if (!response.ok) {
+      const payload = await response
+        .json()
+        .then((body: unknown) => ErrorResponseSchema.safeParse(body))
+        .catch(() => undefined);
+      if (payload?.success) {
+        throw new ProspectApiError(payload.data.error.message, {
+          code: payload.data.error.code,
+          retryable: payload.data.error.retryable,
+          issues: payload.data.error.issues,
+        });
+      }
       throw new ProspectApiError(`The prospect service returned ${response.status}`);
     }
     try {

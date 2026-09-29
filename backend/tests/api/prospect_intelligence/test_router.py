@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.bootstrap.exception_handlers import register_exception_handlers
 from app.features.prospect_intelligence.api.router import build_router
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
@@ -24,6 +25,7 @@ def client() -> TestClient:
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
     app = FastAPI()
+    register_exception_handlers(app)
     app.include_router(build_router(service))
     return TestClient(app)
 
@@ -31,12 +33,15 @@ def client() -> TestClient:
 def test_accounts_require_validated_synthetic_scope_headers() -> None:
     response = client().get("/api/v1/accounts")
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert "input" not in response.text
 
     response = client().get(
         "/api/v1/accounts",
         headers={"X-Tenant-Id": "tenant demo", "X-Rep-Id": "rep-demo"},
     )
     assert response.status_code == 422
+    assert response.json()["error"]["issues"][0]["location"].startswith("header.")
 
     response = client().get(
         "/api/v1/accounts",
@@ -80,3 +85,66 @@ def test_tenant_cannot_poll_another_tenants_run() -> None:
     )
 
     assert response.status_code == 404
+    assert response.json() == {
+        "error": {
+            "code": "not_found",
+            "message": "Run not found",
+            "retryable": False,
+            "issues": [],
+        }
+    }
+
+
+def test_malformed_payload_has_typed_failure_without_echoing_body() -> None:
+    response = client().post(
+        "/api/v1/prospect-runs",
+        headers={
+            "Content-Type": "application/json",
+            "X-Tenant-Id": "tenant-demo",
+            "X-Rep-Id": "rep-demo",
+        },
+        content='{"account_id": "secret-value"',
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert "secret-value" not in response.text
+
+
+def test_edit_review_requires_a_body_at_the_api_boundary() -> None:
+    response = client().post(
+        "/api/v1/prospect-runs/00000000-0000-0000-0000-000000000001/review",
+        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"},
+        json={"decision": "edit", "subject": "Edited subject", "tool_call_id": "edit-1"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_invalid_review_transition_has_typed_conflict() -> None:
+    api = client()
+    headers = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"}
+    created = api.post(
+        "/api/v1/prospect-runs",
+        headers=headers,
+        json={"account_id": "acme-foods"},
+    ).json()
+
+    response = api.post(
+        f"/api/v1/prospect-runs/{created['id']}/review",
+        headers=headers,
+        json={"decision": "approve", "tool_call_id": "approve-1"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "conflict"
+
+
+def test_openapi_declares_typed_error_response() -> None:
+    schema = client().get("/openapi.json").json()
+    validation_response = schema["paths"]["/api/v1/prospect-runs"]["post"]["responses"]["422"]
+
+    assert validation_response["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/ErrorResponse"
+    )

@@ -33,6 +33,7 @@ const reviewRun: ProspectRun = {
   brief: {
     summary: "Atlas has a strong return-lane opportunity into the carrier's Dallas network.",
     recommended_next_step: "Pitch the highest-fit Atlanta to Dallas lane.",
+    recommended_next_step_code: "new_lane_pitch",
     modeled_annual_revenue: 624000,
     deadhead_miles_avoided: 18400,
     lanes: [
@@ -48,7 +49,11 @@ const reviewRun: ProspectRun = {
           {
             claim: "12 observed loads per week",
             source: "GenLogs fixture",
+            mode: "fixture",
+            endpoint_or_artifact: "fixtures/genlogs/atlas-foods.json",
             retrieved_at: "2026-09-29T12:00:00Z",
+            evidence_location: "$.lanes[0].weekly_loads",
+            source_version: "synthetic-v1",
           },
         ],
       },
@@ -115,6 +120,7 @@ describe("ProspectWorkspace", () => {
         brief: {
           summary: "Freight coverage is too sparse to score this account reliably.",
           recommended_next_step: "Verify shipper lanes before outreach.",
+          recommended_next_step_code: "needs_more_data",
           modeled_annual_revenue: 0,
           deadhead_miles_avoided: 0,
           lanes: [],
