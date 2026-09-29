@@ -6,6 +6,7 @@ quality changes after release, and reviewed online failures become permanent reg
 The credential-free harness provides:
 
 - `freight-prospect-v1`: 16 core and 8 edge examples with deterministic reference outputs.
+- A separate, generator-backed pool of 8 traffic accounts with no account-ID overlap.
 - Pure evaluators for grounding, lane precision, score correctness, verdicts, files,
   trajectories, injection resistance, latency, cost, and tool calls.
 - Seven typed Jev questions pinned to `jev-1.13.0`; the live SDK is injected only during an
@@ -27,3 +28,19 @@ hashed, and raw tool/web output is never sent to Jev.
 Use [experiment-result-template.md](experiment-result-template.md) for live evidence. Do not
 commit traces, credentials, downloaded result payloads, private data, or full model outputs.
 
+## Dataset provenance and interpretation
+
+`freight-prospect-v1` is generated with seed `28029` and compared byte-for-byte with a committed
+golden artifact. The same versioned generator owns the offline and traffic populations. Core cases
+plant supported lane overlap; edge cases encode missing coverage, entity ambiguity, source conflict,
+no fit, prompt injection, a sparse boundary, equipment mismatch, and dependency failure in the
+source payload itself rather than only as labels.
+
+The only non-fictional input is a small FAF5.7.1 snapshot of final 2023 regional truck tonnage from
+the U.S. Bureau of Transportation Statistics and Federal Highway Administration. Its manifest stores
+the official download, DOI, extraction, retrieval date, upstream SHA-256, and derived snapshot
+SHA-256. Raw tonnage is never presented as shipper activity. Synthetic loads/week use a seeded
+fictional shipper share between 0.25% and 1.0%, 20 tons per load, 52 weeks per year, and half-up
+rounding to a whole load. They are always labeled `project-owned synthetic estimate`. We retain
+BTS/FHWA attribution and treat broader
+commercial redistribution as requiring legal review.

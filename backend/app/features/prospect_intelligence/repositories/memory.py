@@ -69,6 +69,11 @@ class InMemoryRunRepository:
             raise LookupError(f"unknown run: {run.id}")
         self._runs[run.id] = run
 
+    def save_claimed(self, run: ProspectRun, claim_token: UUID) -> bool:
+        del claim_token
+        self.save(run)
+        return True
+
 
 class InMemorySendReceiptRepository:
     def __init__(self) -> None:

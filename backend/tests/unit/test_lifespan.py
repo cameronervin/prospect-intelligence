@@ -5,7 +5,7 @@ import pytest
 from app.bootstrap.api import create_app
 from app.bootstrap.dependencies import Container
 from app.platform.config.settings import Environment, Settings
-from tests.fakes import FakeDatabase
+from tests.fakes import FakeDatabase, FakeSyncLifecycle
 
 
 @pytest.mark.asyncio
@@ -27,7 +27,12 @@ async def test_lifespan_marks_ready_and_closes_dependencies() -> None:
 async def test_lifespan_fails_closed_when_database_is_unavailable() -> None:
     settings = Settings(environment=Environment.TEST)
     database = FakeDatabase(healthy=False)
-    container = Container(settings=settings, database=database)
+    source_client = FakeSyncLifecycle()
+    container = Container(
+        settings=settings,
+        database=database,
+        source_http_client=source_client,
+    )
     app = create_app(settings, container=container)
 
     with pytest.raises(RuntimeError, match="database failed startup readiness check"):
@@ -35,3 +40,5 @@ async def test_lifespan_fails_closed_when_database_is_unavailable() -> None:
             pass
 
     assert container.started is False
+    assert database.closed is True
+    assert source_client.closed is True

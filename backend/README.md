@@ -1,6 +1,9 @@
 # Backend
 
-This package is a domain-neutral FastAPI foundation for future LangGraph features. It owns application assembly, shared technical capabilities, PostgreSQL connectivity, and architecture enforcement. It does not contain a product feature or initialize LangGraph checkpoint tables.
+This package contains the FastAPI foundation and the freight prospect-intelligence MVP. PostgreSQL
+owns durable runs, worker claims, reviews, receipts, and preference metadata. Application startup
+explicitly initializes the LangGraph PostgreSQL checkpointer and store before starting two local worker
+slots.
 
 ## Development
 
@@ -28,5 +31,13 @@ Generated feature packages contain API, service, agent, domain, model, schema, r
 sh scripts/check.sh
 ```
 
-Set `TAKEHOME_TEST_DATABASE_URL` to a disposable PostgreSQL database to include the integration test. The integration test never creates product tables.
+Set `TAKEHOME_TEST_DATABASE_URL` to a disposable PostgreSQL database to run migration, repository,
+worker-concurrency, restart, idempotency, checkpoint, and store-isolation integration tests. These
+tests upgrade and downgrade product tables and must never target a retained database.
 
+## Persistence limitations
+
+The MVP retains product rows, checkpoints, and memory until they are manually deleted. Alembic owns
+the feature tables and its downgrade is destructive. LangGraph owns its checkpoint/store migrations;
+those tables intentionally survive the feature downgrade. The in-process PostgreSQL poller is suitable
+for the local MVP, not horizontally scaled production delivery.

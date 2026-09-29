@@ -36,6 +36,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("tenant_id", sa.String(length=100), nullable=False),
         sa.Column("rep_id", sa.String(length=100), nullable=False),
+        sa.Column("thread_id", sa.String(length=400), nullable=False),
         sa.Column("account_id", sa.String(length=100), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("stage", sa.String(length=200), nullable=False),
@@ -49,6 +50,7 @@ def upgrade() -> None:
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("quality_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("thread_id"),
     )
     op.create_index("ix_prospect_runs_scope", "prospect_runs", ["tenant_id", "rep_id"])
     op.create_index("ix_prospect_runs_status", "prospect_runs", ["status"])
@@ -57,9 +59,11 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("run_id", sa.Uuid(), nullable=False),
         sa.Column("decision", sa.String(length=32), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=200), nullable=False),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["run_id"], ["prospect_runs.id"]),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("run_id"),
     )
     op.create_index("ix_prospect_approvals_run_id", "prospect_approvals", ["run_id"])
     op.create_table(
@@ -72,7 +76,7 @@ def upgrade() -> None:
         sa.Column("outreach", sa.Text(), nullable=False),
         sa.ForeignKeyConstraint(["run_id"], ["prospect_runs.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("run_id", "tool_call_id"),
+        sa.UniqueConstraint("run_id"),
     )
     op.create_index("ix_prospect_send_receipts_run_id", "prospect_send_receipts", ["run_id"])
     op.create_table(
@@ -92,6 +96,11 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("attempts", sa.Integer(), nullable=False),
         sa.Column("available_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("claim_token", sa.Uuid(), nullable=True),
+        sa.Column("claimed_by", sa.String(length=200), nullable=True),
+        sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error_code", sa.String(length=100), nullable=True),
         sa.ForeignKeyConstraint(["run_id"], ["prospect_runs.id"]),
         sa.PrimaryKeyConstraint("id"),
@@ -99,6 +108,11 @@ def upgrade() -> None:
     )
     op.create_index("ix_prospect_worker_jobs_run_id", "prospect_worker_jobs", ["run_id"])
     op.create_index("ix_prospect_worker_jobs_status", "prospect_worker_jobs", ["status"])
+    op.create_index(
+        "ix_prospect_worker_jobs_lease_expires_at",
+        "prospect_worker_jobs",
+        ["lease_expires_at"],
+    )
 
     accounts = sa.table(
         "prospect_accounts",

@@ -8,6 +8,7 @@ from app.features.agent_quality.services.traffic import (
     generate_live_accounts,
     simulate_traffic,
 )
+from app.features.prospect_intelligence.public import generate_synthetic_scenarios
 
 
 @pytest.mark.asyncio
@@ -23,6 +24,11 @@ async def test_live_pool_is_disjoint_and_generates_24_sessions() -> None:
 
     assert LIVE_POOL_VERSION == "freight-live-v1"
     assert len(accounts) == 8
-    assert all(account.account_id.startswith("syn_live_") for account in accounts)
+    offline_ids = {
+        scenario.account.account_id
+        for scenario in generate_synthetic_scenarios()
+        if scenario.split != "traffic"
+    }
+    assert {account.account_id for account in accounts}.isdisjoint(offline_ids)
     assert len(sessions) == 24
     assert {decision for _, decision in observed} == set(SimulatedDecision)

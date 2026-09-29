@@ -1,5 +1,6 @@
 """Logging privacy tests."""
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -42,3 +43,19 @@ def test_unexpected_errors_do_not_log_exception_messages(
     assert private_marker not in response.text
     assert private_marker not in captured.out
     assert private_marker not in captured.err
+
+
+def test_http_client_request_logs_cannot_expose_query_credentials(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret = "synthetic-web-key-leak-canary"
+    configure_logging(level="DEBUG", json_output=False)
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, request=request))
+    )
+
+    client.get("https://provider.example/carrier", params={"webKey": secret})
+    captured = capsys.readouterr()
+
+    assert secret not in captured.out
+    assert secret not in captured.err

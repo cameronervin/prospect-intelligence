@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from sqlalchemy import insert, select
+from sqlalchemy.orm import Session
 
 from ...contracts.models import SendReceipt
 from ...models.records import SendReceiptRecord
@@ -15,25 +16,25 @@ class PostgresSendReceiptRepository:
         self._engine = store.engine
 
     def get(self, run_id: UUID, tool_call_id: str) -> SendReceipt | None:
-        with self._engine.connect() as connection:
-            row = connection.execute(
+        with Session(self._engine) as session:
+            row = session.scalars(
                 select(SendReceiptRecord).where(
                     SendReceiptRecord.run_id == run_id,
                     SendReceiptRecord.tool_call_id == tool_call_id,
                 )
-            ).scalar_one_or_none()
+            ).one_or_none()
             return receipt_from_record(row) if row is not None else None
 
     def add(self, receipt: SendReceipt) -> None:
-        with self._engine.begin() as connection:
-            existing = connection.execute(
+        with Session(self._engine) as session, session.begin():
+            existing = session.scalar(
                 select(SendReceiptRecord.id).where(
                     SendReceiptRecord.run_id == receipt.run_id,
                     SendReceiptRecord.tool_call_id == receipt.tool_call_id,
                 )
-            ).scalar_one_or_none()
+            )
             if existing is None:
-                connection.execute(
+                session.execute(
                     insert(SendReceiptRecord).values(
                         id=receipt.id,
                         run_id=receipt.run_id,

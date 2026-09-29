@@ -1,79 +1,70 @@
 """Credential-free prospect worker used by tests and the local Docker demo."""
 
-from typing import Protocol
 from uuid import UUID
 
 from ..contracts.models import (
     AnalysisOutput,
-    Evidence,
     FitVerdict,
     OutreachDraft,
     ProspectBrief,
     RecommendedNextStep,
+    RunStatus,
     ScoredLane,
-    SourceCoverage,
     SourceCoverageStatus,
 )
+from ..contracts.sources import ProspectSources, RunSourceCache, SourceCallContext
 from ..domain.lane_fit import score_lane
-from ..domain.models import NetworkLane, ShipperLane
 from .runs import ProspectRunService
 
 
-class ProspectSourceData(Protocol):
-    @property
-    def account_id(self) -> str: ...
-
-    @property
-    def shipper_lanes(self) -> tuple[ShipperLane, ...]: ...
-
-    @property
-    def network_lanes(self) -> tuple[NetworkLane, ...]: ...
-
-    @property
-    def evidence(self) -> tuple[Evidence, ...]: ...
-
-
 class DeterministicProspectPipeline:
-    """Execute the same business boundary as the live graph using reviewed fixtures."""
+    """Execute the same business boundary as the live graph through source ports."""
 
-    def __init__(
-        self,
-        service: ProspectRunService,
-        sources: tuple[ProspectSourceData, ...],
-    ) -> None:
+    def __init__(self, service: ProspectRunService, sources: ProspectSources) -> None:
         self._service = service
         self._sources = sources
 
-    def run(self, run_id: UUID) -> None:
-        running = self._service.start_run(run_id)
-        source = next(
-            (item for item in self._sources if item.account_id == running.account.id),
-            None,
+    def run(self, run_id: UUID, claim_token: UUID | None = None) -> None:
+        current = self._service.get_run(run_id)
+        if current.status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+            return
+        running = (
+            self._service.start_run(run_id, claim_token=claim_token)
+            if current.status is RunStatus.QUEUED
+            else current
         )
-        if source is None:
+        context = SourceCallContext(
+            run_id=running.id,
+            tenant_id=running.tenant_id,
+            rep_id=running.rep_id,
+            cache=RunSourceCache(running.id, running.tenant_id, running.rep_id),
+        )
+        freight = self._sources.freight.get_activity(context, running.account)
+        network = self._sources.network.get_network(context)
+        if (
+            freight.value is None
+            or freight.coverage.status is not SourceCoverageStatus.COMPLETE
+            or network.value is None
+            or network.coverage.status is not SourceCoverageStatus.COMPLETE
+            or not freight.value.lanes
+        ):
             self._service.submit_analysis(
                 run_id,
                 AnalysisOutput(
                     verdict=FitVerdict.NEEDS_MORE_DATA,
                     brief=ProspectBrief(
                         summary=(
-                            "The account is known, but the available fixtures do not support a "
-                            "lane recommendation."
+                            "The available source coverage does not support a lane recommendation."
                         ),
-                        markdown="No lane-level freight evidence is available for this account.",
+                        markdown="No usable lane-level freight and network evidence is available.",
                         recommended_next_step=RecommendedNextStep.NEEDS_MORE_DATA,
                         recommendation="Verify shipper lanes before outreach.",
                         lanes=(),
                     ),
                     outreach=None,
-                    source_coverage=(
-                        SourceCoverage(
-                            source="Freight intelligence",
-                            status=SourceCoverageStatus.UNAVAILABLE,
-                            detail="No reviewed fixture or live result was available.",
-                        ),
-                    ),
+                    source_coverage=(freight.coverage, network.coverage),
                 ),
+                claim_token=claim_token,
             )
             return
 
@@ -83,23 +74,31 @@ class DeterministicProspectPipeline:
                 next(
                     (
                         lane
-                        for lane in source.network_lanes
+                        for lane in network.value.lanes
                         if (lane.origin, lane.destination) == (shipper.origin, shipper.destination)
                     ),
                     None,
                 ),
             )
-            for shipper in source.shipper_lanes
+            for shipper in freight.value.lanes
         )
         ranked = tuple(sorted(scored, key=lambda lane: lane.fit_score, reverse=True)[:3])
         has_direct_match = any(lane.matched_loads_per_week > 0 for lane in ranked)
         verdict = FitVerdict.FIT if has_direct_match else FitVerdict.NO_FIT
+        top_lane = ranked[0] if ranked else None
         outreach = (
             OutreachDraft(
-                subject="Atlanta to Dallas capacity conversation",
+                subject=(
+                    f"{top_lane.origin} to {top_lane.destination} capacity conversation"
+                    if top_lane is not None
+                    else "Capacity conversation"
+                ),
                 body=(
-                    "Would you be open to comparing notes on your Atlanta-to-Dallas freight needs? "
-                    "Our network may be able to support that lane."
+                    f"Would you be open to comparing notes on your {top_lane.origin}-to-"
+                    f"{top_lane.destination} freight needs? Our network may be able to support "
+                    "that lane."
+                    if top_lane is not None
+                    else "Would you be open to comparing notes on your freight needs?"
                 ),
             )
             if verdict is FitVerdict.FIT
@@ -112,7 +111,7 @@ class DeterministicProspectPipeline:
                 brief=ProspectBrief(
                     markdown="Direct lane evidence supports a carrier-sales conversation.",
                     summary=(
-                        "Reviewed freight and carrier-network fixtures show a direct lane overlap "
+                        "Reviewed freight and carrier-network evidence shows a direct lane overlap "
                         "worth a sales conversation."
                     ),
                     recommended_next_step=(
@@ -126,21 +125,12 @@ class DeterministicProspectPipeline:
                         else "Do not prioritize outreach for this account."
                     ),
                     lanes=tuple(
-                        ScoredLane(score=lane, evidence=source.evidence) for lane in ranked
+                        ScoredLane(score=lane, evidence=freight.evidence + network.evidence)
+                        for lane in ranked
                     ),
                 ),
                 outreach=outreach,
-                source_coverage=(
-                    SourceCoverage(
-                        source="GenLogs",
-                        status=SourceCoverageStatus.DEGRADED,
-                        detail="Deterministic synthetic fixture; no live credential was used.",
-                    ),
-                    SourceCoverage(
-                        source="Carrier network",
-                        status=SourceCoverageStatus.COMPLETE,
-                        detail="Tenant-scoped synthetic network fixture.",
-                    ),
-                ),
+                source_coverage=(freight.coverage, network.coverage),
             ),
+            claim_token=claim_token,
         )

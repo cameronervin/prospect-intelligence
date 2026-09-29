@@ -21,14 +21,14 @@ from ..contracts.repositories import (
     PreferenceRepository,
     RunRepository,
     SendReceiptRepository,
+    WorkflowRepository,
 )
+from ..contracts.workflow import checkpoint_thread_id
 from ..domain.errors import InvalidRunTransitionError
 from .outreach import validate_customer_outreach
 
 
 class ProspectRunService:
-    """Coordinates state transitions and the named human-review boundary."""
-
     def __init__(
         self,
         *,
@@ -38,6 +38,7 @@ class ProspectRunService:
         preferences: PreferenceRepository,
         clock: Callable[[], datetime],
         id_factory: Callable[[], UUID] = uuid4,
+        workflows: WorkflowRepository | None = None,
     ) -> None:
         self._accounts = accounts
         self._runs = runs
@@ -45,6 +46,7 @@ class ProspectRunService:
         self._preferences = preferences
         self._clock = clock
         self._id_factory = id_factory
+        self._workflows = workflows
 
     def list_accounts(self, tenant_id: str) -> tuple[Account, ...]:
         return self._accounts.list_for_tenant(tenant_id)
@@ -54,8 +56,9 @@ class ProspectRunService:
         if account is None:
             raise LookupError(f"unknown account: {account_id}")
         now = self._clock()
+        run_id = self._id_factory()
         run = ProspectRun(
-            id=self._id_factory(),
+            id=run_id,
             tenant_id=tenant_id,
             rep_id=rep_id,
             account=account,
@@ -71,8 +74,12 @@ class ProspectRunService:
                 "agent_version": "prospect-intelligence-v1",
                 "prompt_version": "v1",
             },
+            thread_id=checkpoint_thread_id(tenant_id, rep_id, run_id),
         )
-        self._runs.add(run)
+        if self._workflows is not None:
+            self._workflows.create_run(run)
+        else:
+            self._runs.add(run)
         return run
 
     def get_run(self, run_id: UUID) -> ProspectRun:
@@ -87,7 +94,7 @@ class ProspectRunService:
             raise LookupError(f"unknown run: {run_id}")
         return run
 
-    def start_run(self, run_id: UUID) -> ProspectRun:
+    def start_run(self, run_id: UUID, *, claim_token: UUID | None = None) -> ProspectRun:
         run = self.get_run(run_id)
         self._require(run, RunStatus.QUEUED)
         updated = replace(
@@ -97,10 +104,16 @@ class ProspectRunService:
             progress_percent=20,
             updated_at=self._clock(),
         )
-        self._runs.save(updated)
+        self._save_execution_state(updated, claim_token)
         return updated
 
-    def submit_analysis(self, run_id: UUID, output: AnalysisOutput) -> ProspectRun:
+    def submit_analysis(
+        self,
+        run_id: UUID,
+        output: AnalysisOutput,
+        *,
+        claim_token: UUID | None = None,
+    ) -> ProspectRun:
         run = self.get_run(run_id)
         self._require(run, RunStatus.RUNNING)
         verdict = output.verdict
@@ -126,7 +139,7 @@ class ProspectRunService:
             output=output,
             updated_at=self._clock(),
         )
-        self._runs.save(updated)
+        self._save_execution_state(updated, claim_token)
         return updated
 
     def review_run(
@@ -138,9 +151,14 @@ class ProspectRunService:
         edited_outreach: OutreachDraft | None = None,
     ) -> ProspectRun:
         run = self.get_run(run_id)
-        existing = self._receipts.get(run_id, tool_call_id)
-        if existing is not None:
-            return replace(run, send_receipt_id=existing.id)
+        if self._workflows is not None:
+            replayed = self._workflows.replay_review(run_id, tool_call_id)
+            if replayed is not None:
+                return replayed
+        else:
+            existing = self._receipts.get(run_id, tool_call_id)
+            if existing is not None:
+                return replace(run, send_receipt_id=existing.id)
         self._require(run, RunStatus.AWAITING_REVIEW)
         if action is ReviewAction.REJECT:
             updated = replace(
@@ -151,6 +169,15 @@ class ProspectRunService:
                 review_action=action,
                 updated_at=self._clock(),
             )
+            if self._workflows is not None:
+                return self._workflows.commit_review(
+                    original=run,
+                    updated=updated,
+                    action=action,
+                    idempotency_key=tool_call_id,
+                    receipt=None,
+                    preference=None,
+                )
             self._runs.save(updated)
             return updated
         if run.output is None or run.output.outreach is None:
@@ -171,15 +198,13 @@ class ProspectRunService:
             sent_at=now,
             outreach=outreach,
         )
-        self._receipts.add(receipt)
+        preference = None
         if action is ReviewAction.EDIT:
-            self._preferences.add(
-                RepPreference(
-                    tenant_id=run.tenant_id,
-                    rep_id=run.rep_id,
-                    summary="Rep prefers the reviewed outreach wording and structure.",
-                    learned_at=now,
-                )
+            preference = RepPreference(
+                tenant_id=run.tenant_id,
+                rep_id=run.rep_id,
+                summary="Rep prefers the reviewed outreach wording and structure.",
+                learned_at=now,
             )
         updated = replace(
             run,
@@ -191,11 +216,30 @@ class ProspectRunService:
             send_receipt_id=receipt.id,
             updated_at=now,
         )
+        if self._workflows is not None:
+            return self._workflows.commit_review(
+                original=run,
+                updated=updated,
+                action=action,
+                idempotency_key=tool_call_id,
+                receipt=receipt,
+                preference=preference,
+            )
+        self._receipts.add(receipt)
+        if preference is not None:
+            self._preferences.add(preference)
         self._runs.save(updated)
         return updated
 
     def get_preferences(self, tenant_id: str, rep_id: str) -> tuple[RepPreference, ...]:
         return self._preferences.list(tenant_id, rep_id)
+
+    def _save_execution_state(self, run: ProspectRun, claim_token: UUID | None) -> None:
+        if claim_token is None:
+            self._runs.save(run)
+            return
+        if not self._runs.save_claimed(run, claim_token):
+            raise InvalidRunTransitionError("worker claim is no longer active")
 
     @staticmethod
     def _require(run: ProspectRun, expected: RunStatus) -> None:

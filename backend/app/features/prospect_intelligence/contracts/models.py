@@ -149,6 +149,7 @@ class ProspectRun:
     send_receipt_id: UUID | None = None
     error: RunError | None = None
     quality_metadata: dict[str, str] = field(default_factory=lambda: dict[str, str]())
+    thread_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,6 +4,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.features.prospect_intelligence.public import generate_synthetic_scenarios
+
 LIVE_POOL_VERSION = "freight-live-v1"
 
 
@@ -30,14 +32,15 @@ TrafficRunner = Callable[[str, SimulatedDecision], Awaitable[str]]
 
 
 def generate_live_accounts() -> tuple[LiveAccount, ...]:
-    """Return eight IDs explicitly disjoint from core and edge dataset prefixes."""
+    """Project the traffic split from the shared synthetic scenario generator."""
 
     return tuple(
         LiveAccount(
-            account_id=f"syn_live_{index:02d}",
-            account_name=f"Live Pool Shipper {index:02d}",
+            account_id=scenario.account.account_id,
+            account_name=scenario.account.account_name,
         )
-        for index in range(1, 9)
+        for scenario in generate_synthetic_scenarios()
+        if scenario.split == "traffic"
     )
 
 

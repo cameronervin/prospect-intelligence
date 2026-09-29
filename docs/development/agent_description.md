@@ -57,6 +57,14 @@ Dallas → Atlanta; we run empty Atlanta → Dallas") instead of cold outreach.
 
 All mocks are deterministic and seeded so offline evals have ground truth.
 
+Source access is injected through narrow CRM, freight-intelligence, carrier-network, market-data,
+SEC, web-search, and carrier-registry Protocols. Bootstrap selects implementations. The MVP uses
+synthetic private-source adapters plus real public SEC, Tavily, FMCSA, and pinned FAF adapters; it
+does not create placeholder private-vendor clients. Every adapter returns normalized typed data,
+explicit coverage, and evidence, and keeps its provider payload inside the integration boundary.
+Live-source failures are disclosed as degraded or unavailable coverage and never silently replaced
+with synthetic facts.
+
 ---
 
 ## 4. Virtual filesystem contract

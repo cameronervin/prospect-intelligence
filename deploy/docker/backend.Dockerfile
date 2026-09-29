@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir "uv>=0.11,<1" \
 
 COPY backend/pyproject.toml backend/uv.lock backend/README.md ./
 COPY backend/app ./app
+COPY backend/evaluation/datasets/golden ./evaluation/datasets/golden
 COPY backend/migrations ./migrations
 COPY backend/alembic.ini ./alembic.ini
 RUN uv sync --frozen --no-dev \
@@ -22,4 +23,3 @@ USER 10001:10001
 EXPOSE 8000
 
 CMD ["uvicorn", "app.bootstrap.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
-

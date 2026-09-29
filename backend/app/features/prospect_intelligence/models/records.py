@@ -31,6 +31,7 @@ class ProspectRunRecord(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(100))
     rep_id: Mapped[str] = mapped_column(String(100))
+    thread_id: Mapped[str] = mapped_column(String(400), unique=True)
     account_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(32), index=True)
     stage: Mapped[str] = mapped_column(String(200))
@@ -47,16 +48,18 @@ class ProspectRunRecord(Base):
 
 class ApprovalRecord(Base):
     __tablename__ = "prospect_approvals"
+    __table_args__ = (UniqueConstraint("run_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     run_id: Mapped[UUID] = mapped_column(ForeignKey("prospect_runs.id"), index=True)
     decision: Mapped[str] = mapped_column(String(32))
+    idempotency_key: Mapped[str] = mapped_column(String(200))
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SendReceiptRecord(Base):
     __tablename__ = "prospect_send_receipts"
-    __table_args__ = (UniqueConstraint("run_id", "tool_call_id"),)
+    __table_args__ = (UniqueConstraint("run_id"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     run_id: Mapped[UUID] = mapped_column(ForeignKey("prospect_runs.id"), index=True)
@@ -86,4 +89,11 @@ class WorkerJobRecord(Base):
     status: Mapped[str] = mapped_column(String(32), index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[UUID | None] = mapped_column(nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -1,0 +1,19 @@
+{
+  "accounts": {
+    "acme-foods": {
+      "industry": "Food distribution",
+      "location": "Dallas, TX",
+      "name": "Acme Foods",
+      "relationship": "Prospect",
+      "scenario_id": "core_01"
+    },
+    "northstar-retail": {
+      "industry": "Retail",
+      "location": "Atlanta, GA",
+      "name": "Northstar Retail",
+      "relationship": "Customer",
+      "scenario_id": "core_03"
+    }
+  },
+  "dataset_version": "freight-prospect-v1"
+}

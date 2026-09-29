@@ -7,6 +7,8 @@
 - [Local development](development/setup.md)
 - [Evaluation approach](evaluation/README.md)
 - [Production path](production/README.md)
+- [MVP scope and production deferrals](delivery/mvp-scoping.md)
+- [Business logic decisions](delivery/business_logic.md)
 - [Friction log](delivery/friction-log.md)
 
 The assignment and preparation guide are source material. The remaining documents describe the repository scaffold and must not be read as evidence that a product feature, LangSmith experiment, or production deployment exists.

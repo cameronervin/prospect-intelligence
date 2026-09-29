@@ -1,0 +1,1 @@
+"""Feature-owned deterministic fixtures."""

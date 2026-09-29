@@ -20,6 +20,7 @@ def run_record_values(run: ProspectRun) -> dict[str, object]:
         "id": run.id,
         "tenant_id": run.tenant_id,
         "rep_id": run.rep_id,
+        "thread_id": run.thread_id,
         "account_id": run.account.id,
         "status": run.status.value,
         "stage": run.stage,
@@ -52,6 +53,7 @@ def run_from_record(row: ProspectRunRecord, account: Account) -> ProspectRun:
         send_receipt_id=row.send_receipt_id,
         error=deserialize_run_error(row.error),
         quality_metadata=row.quality_metadata,
+        thread_id=row.thread_id,
     )
 
 

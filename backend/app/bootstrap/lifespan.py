@@ -17,16 +17,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Validate dependencies at startup and close them on shutdown."""
 
     container = cast(Container, app.state.container)
-    if not await container.database.ping():
-        raise RuntimeError("database failed startup readiness check")
-
-    container.started = True
-    await logger.ainfo(
-        "application_started",
-        service=container.settings.service_name,
-        environment=container.settings.environment.value,
-    )
     try:
+        if not await container.database.ping():
+            raise RuntimeError("database failed startup readiness check")
+        await container.start_resources()
+        container.started = True
+        await logger.ainfo(
+            "application_started",
+            service=container.settings.service_name,
+            environment=container.settings.environment.value,
+        )
         yield
     finally:
         await container.close()

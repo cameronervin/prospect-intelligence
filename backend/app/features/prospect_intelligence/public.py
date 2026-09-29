@@ -28,15 +28,32 @@ from .contracts import (
     SourceCoverageStatus,
     SourceMode,
 )
+from .fixtures.synthetic import (
+    SYNTHETIC_DATASET_SEED,
+    SYNTHETIC_DATASET_VERSION,
+    ScenarioInputPayload,
+    SyntheticScenario,
+    canonical_scenarios_bytes,
+    generate_synthetic_scenarios,
+    scenario_payload,
+)
+from .integrations.market_data import (
+    FafSnapshotManifest,
+    load_faf_snapshot_manifest,
+    verify_faf_snapshot,
+)
 
 __all__ = [
     "PROSPECT_FILES",
+    "SYNTHETIC_DATASET_SEED",
+    "SYNTHETIC_DATASET_VERSION",
     "Account",
     "AccountRelationship",
     "AnalysisOutput",
     "ArtifactManifestEntry",
     "ArtifactMediaType",
     "Evidence",
+    "FafSnapshotManifest",
     "FitVerdict",
     "LaneFitResult",
     "NetworkLane",
@@ -51,9 +68,16 @@ __all__ = [
     "ReviewAction",
     "RunError",
     "RunStatus",
+    "ScenarioInputPayload",
     "ScoredLane",
     "ShipperLane",
     "SourceCoverage",
     "SourceCoverageStatus",
     "SourceMode",
+    "SyntheticScenario",
+    "canonical_scenarios_bytes",
+    "generate_synthetic_scenarios",
+    "load_faf_snapshot_manifest",
+    "scenario_payload",
+    "verify_faf_snapshot",
 ]

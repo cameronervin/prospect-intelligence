@@ -71,7 +71,8 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ### 2026-09-29 — Data policy: live-first public research with explicit source modes
 
-- **Decision:** SEC, Tavily, and credentialed FMCSA are live-first with disclosed fixture fallback;
+- **Decision:** SEC, Tavily, and credentialed FMCSA are live-only when enabled and configured;
+  failures return disclosed unavailable or degraded coverage and never substitute fixture facts.
   FAF5.7.1 is a checksummed bulk snapshot; GenLogs, CRM, and carrier-network data are deterministic
   synthetic fixtures. Every fact records source mode and provenance.
 - **Alternatives considered:** Live APIs in offline evaluation; silently substituting fixtures; real
@@ -81,7 +82,7 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Consequences:** Missing optional sources degrade visibly. Missing critical freight/network evidence
   produces `needs_more_data`; the system never invents facts.
 - **Evidence:** Adapter contract tests, dataset repeatability tests, source documentation, and
-  credential-gated smoke evidence.
+  credential-free HTTP fakes. Credential-gated smoke commands remain outside CI.
 
 ### 2026-09-29 — Evaluation: strict deterministic gates and calibrated semantic judges
 
@@ -156,3 +157,75 @@ include credentials, private customer data, raw traces, or generated result expo
   `lanes.json`, `company.json`, and `volumes.json`.
 - **Evidence:** Validation-error, provenance-response, filesystem, architecture, quality-event, and
   frontend parser tests.
+
+### 2026-09-29 — Deterministic data: one seeded population and explicit FAF estimates
+
+- **Decision:** `freight-prospect-v1` uses seed `28029` and one generator for 16 core, 8 edge,
+  and 8 account-ID-disjoint traffic cases. Source payloads, rather than tags alone, carry each
+  expected edge condition. Canonical JSON is UTF-8, key-sorted, indented, and newline-terminated.
+- **Decision:** The FAF5.7.1 snapshot aggregates finalized 2023 truck-mode regional tons for eight
+  reviewed origin-destination pairs. Synthetic loads per week use a seeded fictional 0.25%–1.0%
+  shipper share, 20 tons per load, and 52 weeks, rounded half-up; a zero result retries at the 1%
+  share. Raw FAF tonnage remains separate and every derived value is labeled a project-owned
+  synthetic estimate. Release and extraction metadata, selected fields, aggregation, row pairs,
+  upstream archive hash, and snapshot hash are pinned and verified before use.
+- **Alternatives considered:** Independent offline and traffic fixtures; live public reads in CI;
+  presenting regional FAF tonnage as observed shipper activity.
+- **Reasoning:** A shared population prevents fixture drift and evaluation leakage, while a
+  checksummed public-data anchor gives realistic relative magnitude without claiming shipper-level
+  ground truth.
+- **Consequences:** Generator, formula, or version changes require golden-file review. The snapshot
+  carries BTS/FHWA provenance and DOI; broader commercial redistribution still requires legal review.
+- **Evidence:** Dataset schema and edge-semantic tests, repeat byte generation, golden SHA-256
+  `d5ed38772ba98dd9195295f851b7d548509e826c0a9c2900dc5195a6220f30c8`, snapshot SHA-256
+  `df7f8931e85a8b6a5650b1e84f6fe661b173f20ebe21d637c94bb8e2f69e3e17`, traffic disjointness,
+  and wheel artifact inspection.
+
+### 2026-09-29 — Persistence: leased PostgreSQL work and durable review state
+
+- **Decision:** The MVP runs two lifespan-owned worker slots backed by PostgreSQL claims with a
+  five-minute lease, one-minute heartbeat, three attempts, immediate durable retry, and fenced claim
+  tokens. Thread identity is `prospect:v1:{tenant}:{rep}:{run}` and preference memory is namespaced by
+  feature version, tenant, and rep.
+- **Decision:** Run creation and enqueue are atomic. Review, approval, simulated-send receipt,
+  preference metadata, and terminal run state commit atomically. Reusing an idempotency key returns
+  the canonical result; another key after a terminal decision conflicts. Only one simulated-send
+  receipt is allowed per run. If a final-attempt lease expires after terminal run state commits but
+  before job completion commits, recovery preserves the terminal run and reconciles the job as
+  completed.
+- **Alternatives considered:** FastAPI background tasks; an unleased jobs table; Celery or Temporal
+  for the MVP; separate best-effort writes for review state.
+- **Reasoning:** Database claims are the smallest durable mechanism available in the required stack,
+  and transactional review state prevents duplicate sends or partially recorded human decisions.
+- **Consequences:** Product rows, checkpoints, and memory are retained indefinitely in the MVP; no
+  automated purge exists. Product downgrade is destructive, while LangGraph-owned tables use their
+  package migrations and intentionally survive it. Credentials and raw prompts are never persisted,
+  but analysis and reviewed outreach are retained for resume and audit. Production should separate
+  web and worker processes and adopt a supported broker or orchestrator such as Celery with a broker,
+  Temporal, or a managed queue. The MVP poller has no retry backoff.
+- **Evidence:** Disposable-PostgreSQL migration, restart, concurrent-claim, fencing, crash-recovery,
+  atomic-review, receipt-idempotency, checkpoint-resume, and store-isolation tests.
+
+### 2026-09-29 — Source selection: explicit modes and disclosed failure
+
+- **Decision:** CRM, freight intelligence, carrier network, market data, SEC, web search, and carrier
+  registry are independently injected sources. The MVP uses deterministic synthetic adapters only
+  for private CRM, freight, and network data; FAF is a verified snapshot, while SEC, Tavily, and
+  FMCSA are live only when external access and required credentials are available.
+- **Decision:** Expected source failure returns typed degraded or unavailable coverage with evidence
+  collected before failure. Live failures never silently fall back to synthetic facts. A run may
+  reuse a normalized success or terminal unavailable result, but no cache entry crosses a run,
+  tenant, or rep boundary.
+- **Decision:** Critical freight or carrier-network coverage must be complete before the
+  deterministic pipeline can recommend outreach; degraded inputs produce `needs_more_data`.
+  The synthetic carrier network is tenant-scoped and the two demo aliases select reviewed scenarios
+  with non-overlapping routes, so both demo scores remain identical to their reference outputs.
+  Alias CRM identity remains consistent with the persisted demo account and is grounded in a
+  committed alias fixture, while lane data comes from the shared reviewed scenario.
+- **Decision:** External calls receive one initial attempt plus two retries for timeouts, rate limits,
+  and server errors. Other client errors and malformed payloads are not retried. External text is
+  untrusted, and secrets, credential-bearing query strings, and raw private payloads are excluded
+  from logs and persistence.
+- **Reasoning:** Explicit source modes preserve user trust and make degraded evidence visible, while
+  narrow replaceable contracts allow post-MVP private integrations without changing agent behavior.
+- **Evidence:** CAM-30 contract, adapter, retry, cache-isolation, provenance, and redaction tests.

@@ -3,8 +3,8 @@
 !backend/uv.lock
 !backend/README.md
 !backend/app/**
+!backend/evaluation/datasets/golden/**
 !backend/migrations/**
 !backend/alembic.ini
 backend/app/**/__pycache__/
 backend/app/**/*.pyc
-

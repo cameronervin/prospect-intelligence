@@ -1,0 +1,36 @@
+{
+  "citation": "U.S. Department of Transportation, Bureau of Transportation Statistics and Federal Highway Administration. Freight Analysis Framework, FAF5.",
+  "doi": "https://doi.org/10.21949/1529116",
+  "extraction": {
+    "aggregation": "sum tons_2023 across commodity and trade rows by selected domestic origin/destination pair",
+    "fields": [
+      "dms_orig",
+      "dms_dest",
+      "dms_mode",
+      "tons_2023"
+    ],
+    "mode_code": 1,
+    "origin_destination_pairs": [
+      ["041", "061"],
+      ["061", "041"],
+      ["081", "531"],
+      ["131", "484"],
+      ["171", "471"],
+      ["471", "171"],
+      ["484", "131"],
+      ["531", "081"]
+    ],
+    "source_file": "FAF5.7.1_2018-2024.csv",
+    "year": 2023
+  },
+  "license_assumption": "Public U.S. federal statistical data; retain BTS/FHWA attribution and DOI. Confirm downstream redistribution terms before commercial reuse.",
+  "mode_code": 1,
+  "release": "FAF5.7.1",
+  "retrieved_at": "2026-09-29",
+  "snapshot_path": "faf5_7_1_2023_truck_snapshot.csv",
+  "snapshot_sha256": "df7f8931e85a8b6a5650b1e84f6fe661b173f20ebe21d637c94bb8e2f69e3e17",
+  "source_url": "https://faf.ornl.gov/faf5/data/download_files/FAF5.7.1_2018-2024.zip",
+  "unit": "thousand short tons",
+  "upstream_sha256": "803036bb693a81fdf3e2c4a6d561feb71b102470c1602e9b35e3094e79485b71",
+  "year": 2023
+}

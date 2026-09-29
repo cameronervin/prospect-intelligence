@@ -2,18 +2,20 @@
 
 ## Current boundary
 
-The repository currently proves a runnable full-stack foundation and nothing more. The Next.js server checks FastAPI readiness; FastAPI checks PostgreSQL; LangGraph, LangSmith, feature-layer, evaluation, and deployment extension points are present but no business graph or product workflow exists.
+The repository now includes a deterministic freight prospect-intelligence slice. The Next.js client
+creates and polls runs through FastAPI; PostgreSQL stores run, worker, review, receipt, preference,
+checkpoint, and cross-run memory state. The current worker executes the deterministic pipeline; the
+credentialed LangGraph topology remains a later ticket.
 
 ```text
-Browser
-  -> Next.js server component
-      -> GET backend /health/ready
-          -> PostgreSQL SELECT 1
+Browser -> Next.js -> FastAPI API -> prospect services -> PostgreSQL job/run state
+                                     |                     ^
+                                     v                     |
+                              two-slot worker -> deterministic pipeline
 
-Future feature
-  api -> services / agents -> contracts / domain
-                              ^             ^
-                  repositories / integrations
+api -> services / agents -> contracts / domain
+                            ^             ^
+                repositories / integrations
 ```
 
 ## Backend ownership
@@ -28,7 +30,40 @@ Cross-feature imports use the target feature's `public.py` or `contracts/`. Stat
 
 ## Agent boundary
 
-A future feature owns its LangGraph state, graph, nodes, tools, prompts, human-review interrupt, and structured result. Shared checkpoint construction belongs to `platform/agent_runtime`, but checkpoint schema setup remains an explicit feature/deployment decision. LangSmith tracing is disabled by default.
+The prospect feature owns its LangGraph state, graph seams, nodes, tools, prompts, review boundary,
+thread identity, and structured result. `platform/agent_runtime` owns the lifespan-managed PostgreSQL
+checkpointer/store and explicitly runs their idempotent schema setup. CAM-32 will replace the injected
+deterministic handler with the compiled graph. LangSmith tracing remains disabled by default.
+
+## Source-adapter boundary
+
+CAM-30 uses source-specific contracts rather than a universal integration superclass. Services and
+future agent tools receive a bootstrap-owned source bundle; they do not import concrete adapters.
+
+```text
+services / agent tools -> source Protocols <- synthetic private-source adapters
+                                      ^     <- FAF snapshot adapter
+                                      |     <- SEC / Tavily / FMCSA adapters
+                                 bootstrap wiring
+
+reviewed scenario fixtures -> synthetic source catalog -> synthetic adapters
+```
+
+Adapters normalize provider responses into typed data, source coverage, and evidence. Provider wire
+payloads remain inside `integrations`. Expected unavailability is data, not an exception and never a
+reason to invent facts. The run-scoped cache is isolated by run, tenant, and rep. Real CRM, GenLogs,
+and carrier-network implementations remain post-MVP substitutions behind the same contracts.
+
+The source Protocols are defined in `features/prospect_intelligence/contracts/sources.py`.
+`fixtures/synthetic` owns deterministic source records, scenario construction, edge cases, and
+canonical serialization used by both demo adapters and offline evaluation. The evaluation harness
+itself remains under `backend/evaluation`: `datasets/freight_prospect_v1.py` projects the shared
+scenarios, `datasets/golden/freight_prospect_v1.json` is the reviewed artifact, and `evaluators` and
+`experiments` retain scoring and experiment configuration. Moving scenario construction into the
+feature did not remove the evaluation harness; it removed a duplicate integration-shaped copy.
+
+Carrier-network and carrier-registry adapters remain separate. The former is private operational
+capacity owned by the carrier; the latter is public FMCSA identity, authority, and safety data.
 
 ## Frontend boundary
 

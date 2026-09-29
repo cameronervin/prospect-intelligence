@@ -38,12 +38,5 @@ def create_app(
     register_middleware(app)
     app.include_router(health_router)
     if resolved_container.prospect_service is not None:
-        submit_run = (
-            resolved_container.prospect_pipeline.run
-            if resolved_container.prospect_pipeline is not None
-            else None
-        )
-        app.include_router(
-            build_prospect_router(resolved_container.prospect_service, submit_run=submit_run)
-        )
+        app.include_router(build_prospect_router(resolved_container.prospect_service))
     return app

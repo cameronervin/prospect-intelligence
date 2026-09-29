@@ -1,10 +1,9 @@
 """Thin HTTP mapping for the injected prospect-intelligence service."""
 
-from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Response, status
+from fastapi import APIRouter, Header, HTTPException, Response, status
 
 from app.platform.api.errors import ErrorResponse
 
@@ -37,11 +36,7 @@ TenantHeader = Annotated[ScopeId, Header(alias="X-Tenant-Id")]
 RepHeader = Annotated[ScopeId, Header(alias="X-Rep-Id")]
 
 
-def build_router(
-    service: ProspectRunService,
-    *,
-    submit_run: Callable[[UUID], None] | None = None,
-) -> APIRouter:
+def build_router(service: ProspectRunService) -> APIRouter:
     router = APIRouter(
         prefix="/api/v1",
         tags=["prospect-intelligence"],
@@ -76,7 +71,6 @@ def build_router(
         request: StartRunRequest,
         x_tenant_id: TenantHeader,
         x_rep_id: RepHeader,
-        background_tasks: BackgroundTasks,
     ) -> ProspectRunResponse:
         try:
             run = service.create_run(x_tenant_id, x_rep_id, request.account_id)
@@ -85,8 +79,6 @@ def build_router(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
             ) from error
         response = _run_response(run)
-        if submit_run is not None:
-            background_tasks.add_task(submit_run, run.id)
         return response
 
     @router.get("/prospect-runs/{run_id}", response_model=ProspectRunResponse)

@@ -42,6 +42,10 @@ def configure_logging(*, level: str, json_output: bool) -> None:
     """Configure standard logging and structlog once per app creation."""
 
     logging.basicConfig(level=level, format="%(message)s", force=True)
+    # HTTPX includes complete query strings in its INFO request log. Provider credentials such as
+    # FMCSA WebKey are required query parameters, so application logging must never emit that line.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     renderer: Processor = (
         structlog.processors.JSONRenderer()
         if json_output
