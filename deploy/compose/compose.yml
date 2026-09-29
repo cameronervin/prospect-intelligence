@@ -1,0 +1,118 @@
+name: langchain-takehome
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-takehome}
+      POSTGRES_USER: ${POSTGRES_USER:-takehome}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-takehome}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    user: "${POSTGRES_RUNTIME_UID:-70}:${POSTGRES_RUNTIME_GID:-70}"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /run/postgresql:size=16m,mode=0770,uid=70,gid=70
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/backend.Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      TAKEHOME_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-takehome}:${POSTGRES_PASSWORD:-takehome}@postgres:5432/${POSTGRES_DB:-takehome}
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/backend.Dockerfile
+    env_file:
+      - path: ../envs/.env.local
+        required: false
+    environment:
+      TAKEHOME_ENVIRONMENT: ${TAKEHOME_ENVIRONMENT:-production}
+      TAKEHOME_LOG_LEVEL: ${TAKEHOME_LOG_LEVEL:-INFO}
+      TAKEHOME_LOG_JSON: ${TAKEHOME_LOG_JSON:-true}
+      TAKEHOME_DOCS_ENABLED: ${TAKEHOME_DOCS_ENABLED:-false}
+      TAKEHOME_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-takehome}:${POSTGRES_PASSWORD:-takehome}@postgres:5432/${POSTGRES_DB:-takehome}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-langchain-takehome-local}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/frontend.Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      BACKEND_BASE_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+volumes:
+  postgres_data:

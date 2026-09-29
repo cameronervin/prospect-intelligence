@@ -1,0 +1,21 @@
+---
+paths:
+  - "docs/**"
+  - "deploy/**"
+  - "scripts/**"
+  - ".github/**"
+  - ".agents/**"
+  - ".codex/**"
+  - "mcp.json"
+---
+
+# Platform and delivery rules
+
+- Keep deployment cloud-neutral and run application containers as non-root users with health checks.
+- Keep Docker assets under `deploy/` and executable automation under `scripts/`.
+- Make scripts noninteractive, fail fast, validate prerequisites, and never print or embed secrets.
+- Keep CI offline from model providers, LangSmith, Linear, and private customer systems.
+- Use placeholders and synthetic identifiers in reviewable artifacts.
+- Preserve the assignment source documents and clearly label scaffold, planned, experimental, and production behavior.
+- Record assumptions, rollback considerations, operational gaps, and friction as they are discovered.
+

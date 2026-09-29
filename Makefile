@@ -1,0 +1,53 @@
+.DEFAULT_GOAL := help
+SHELL := /bin/sh
+
+.PHONY: help setup dev verify test-e2e audit docker-config docker-up docker-down feature secret-scan cleanup
+
+help:
+	@echo "LangChain take-home development targets"
+	@echo "  setup          Install backend and frontend dependencies"
+	@echo "  dev            Start PostgreSQL, backend, and frontend for development"
+	@echo "  verify         Run repository checks and tests"
+	@echo "  test-e2e       Run Playwright browser tests"
+	@echo "  audit          Audit production dependencies"
+	@echo "  docker-config  Validate the Compose configuration"
+	@echo "  docker-up      Build and start the container stack"
+	@echo "  docker-down    Stop the container stack"
+	@echo "  feature        Create a feature with NAME=<snake_case> [DRY_RUN=1]"
+	@echo "  secret-scan    Scan project files for likely credentials"
+	@echo "  cleanup        Remove generated caches; CLEAN_VOLUMES=1 also removes local DB data"
+
+setup:
+	@sh scripts/setup.sh
+
+dev:
+	@sh scripts/dev.sh
+
+verify:
+	@sh scripts/verify.sh
+
+test-e2e:
+	@sh scripts/test-e2e.sh
+
+audit:
+	@sh scripts/audit.sh
+
+docker-config:
+	@sh scripts/docker.sh config
+
+docker-up:
+	@sh scripts/docker.sh up
+
+docker-down:
+	@sh scripts/docker.sh down
+
+feature:
+	@test -n "$(NAME)" || (echo "error: NAME=<snake_case> is required" >&2; exit 2)
+	@cd backend && uv run python scripts/scaffold_feature.py "$(NAME)" $(if $(DRY_RUN),--dry-run,)
+
+secret-scan:
+	@sh scripts/secret-scan.sh
+
+cleanup:
+	@sh scripts/cleanup.sh
+

@@ -1,0 +1,11 @@
+**
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/next-env.d.ts
+!frontend/next.config.ts
+!frontend/tsconfig.json
+!frontend/postcss.config.mjs
+!frontend/src/**
+frontend/node_modules/
+frontend/.next/
+

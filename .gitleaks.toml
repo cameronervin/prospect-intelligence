@@ -1,0 +1,5 @@
+title = "LangChain take-home secret scanning"
+
+[extend]
+useDefault = true
+

@@ -1,0 +1,10 @@
+**
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/README.md
+!backend/app/**
+!backend/migrations/**
+!backend/alembic.ini
+backend/app/**/__pycache__/
+backend/app/**/*.pyc
+

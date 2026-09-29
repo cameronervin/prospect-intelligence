@@ -1,0 +1,14 @@
+# Context7 is configured at user scope to avoid a duplicate merged transport.
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+
+[mcp_servers.langsmith]
+url = "https://api.smith.langchain.com/mcp"
+env_http_headers = { "X-Api-Key" = "LANGSMITH_API_KEY" }
+required = false
+

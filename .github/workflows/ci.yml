@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install project dependencies
+        run: sh scripts/setup.sh
+
+      - name: Verify repository
+        run: sh scripts/verify.sh
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser smoke tests
+        run: sh scripts/test-e2e.sh
+
+      - name: Validate Compose
+        run: sh scripts/docker.sh config
+
+      - name: Build and smoke-test containers
+        run: |
+          cleanup() {
+            docker compose --env-file deploy/envs/.env.local.example -f deploy/compose/compose.yml down --remove-orphans
+          }
+          trap cleanup EXIT
+          docker compose --env-file deploy/envs/.env.local.example -f deploy/compose/compose.yml up --build --detach --wait
+          curl --fail --silent --show-error http://127.0.0.1:8000/health/ready
+          curl --fail --silent --show-error http://127.0.0.1:3000/
+

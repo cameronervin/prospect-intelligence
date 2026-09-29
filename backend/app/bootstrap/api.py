@@ -1,0 +1,38 @@
+"""FastAPI application factory."""
+
+from fastapi import FastAPI
+
+from app.bootstrap.dependencies import Container, build_container
+from app.bootstrap.exception_handlers import register_exception_handlers
+from app.bootstrap.lifespan import lifespan
+from app.bootstrap.middleware import register_middleware
+from app.platform.api.health import router as health_router
+from app.platform.config.settings import Settings
+from app.platform.observability.logging import configure_logging
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    container: Container | None = None,
+) -> FastAPI:
+    """Create an application with injectable settings and dependencies."""
+
+    resolved_settings = settings or Settings()
+    configure_logging(level=resolved_settings.log_level, json_output=resolved_settings.log_json)
+
+    docs_url = "/docs" if resolved_settings.docs_enabled else None
+    openapi_url = "/openapi.json" if resolved_settings.docs_enabled else None
+    app = FastAPI(
+        title="LangChain Take-Home API",
+        version="0.1.0",
+        docs_url=docs_url,
+        redoc_url=None,
+        openapi_url=openapi_url,
+        lifespan=lifespan,
+    )
+    app.state.container = container or build_container(resolved_settings)
+    register_exception_handlers(app)
+    register_middleware(app)
+    app.include_router(health_router)
+    return app
