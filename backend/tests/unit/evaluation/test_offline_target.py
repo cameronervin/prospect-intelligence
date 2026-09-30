@@ -38,7 +38,7 @@ def test_snapshot_observes_unexpected_runtime_file_without_exposing_its_body() -
     observations = cast("Mapping[str, object]", snapshot["artifact_observations"])
     contract = cast("Mapping[str, object]", observations["file_contract"])
     assert contract["unexpected"] == ["/output/secret.txt"]
-    assert contract["actual_count"] == 12
+    assert contract["actual_count"] == 13
     result = evaluate_file_contract(snapshot, {})
     assert isinstance(result.score, (int, float)) and result.score < 1.0
     metadata = cast(
@@ -79,8 +79,8 @@ async def test_target_runs_one_scenario_through_compiled_graph(
     assert cast(str, example.inputs["account_id"]) not in repr(snapshot)
     observations = cast("Mapping[str, object]", snapshot["artifact_observations"])
     assert observations["file_contract"] == {
-        "actual_count": 11,
-        "expected_count": 11,
+        "actual_count": 12,
+        "expected_count": 12,
         "invalid_json": [],
         "invalid_schema": [],
         "missing": [],
@@ -93,13 +93,14 @@ async def test_target_runs_one_scenario_through_compiled_graph(
         "external_research.completed",
         "lane_analyst.completed",
         "outreach_drafter.completed",
+        "quality_review.completed",
         "review.requested",
     ]
     tool_calls = cast("Sequence[str]", snapshot["tool_calls"])
-    assert tool_calls.count("task") == 4
-    assert tool_calls.count("write_file") == 9
+    assert tool_calls.count("task") == 5
+    assert tool_calls.count("write_file") == 10
     assert "send_outreach" in tool_calls
-    assert snapshot["tool_call_count"] == 17
+    assert snapshot["tool_call_count"] == 19
     semantic = cast("Mapping[str, object]", snapshot["semantic_observations"])
     assert set(semantic) == {
         "claim_supported",

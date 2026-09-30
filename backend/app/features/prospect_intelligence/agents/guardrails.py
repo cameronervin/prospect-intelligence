@@ -11,6 +11,7 @@ from deepagents.backends.protocol import FileData
 from ..contracts.filesystem import PROSPECT_FILES, ArtifactMediaType
 from ..contracts.lane_analysis import LaneAnalysisArtifact
 from ..contracts.models import OutreachDraft
+from ..contracts.review import QualityReviewArtifact
 from ..domain.errors import UnsafeOutreachError
 from ..domain.outreach import validate_customer_outreach
 from .specs import AgentSpec
@@ -105,6 +106,8 @@ def validate_agent_artifacts(spec: AgentSpec, files: Mapping[str, FileData]) -> 
             _validate_source_artifact(path, value)
         if path == PROSPECT_FILES.lane_fit_json:
             LaneAnalysisArtifact.from_json(artifact_content(files[path], path))
+        if path == PROSPECT_FILES.review_findings:
+            QualityReviewArtifact.from_json(artifact_content(files[path], path))
 
 
 def _numeric_values(files: Mapping[str, FileData]) -> set[Decimal]:
@@ -171,12 +174,10 @@ def validate_workflow_artifacts(
     missing = sorted(expected.difference(files))
     if missing:
         raise ValueError(f"required artifacts are missing: {missing}")
+    # Draft content (grounding, safety, format) is judged by the quality reviewer before this
+    # gate; here only the artifact data contracts are enforced.
     for spec in _all_specs():
         validate_agent_artifacts(spec, files)
-    brief = artifact_content(files[PROSPECT_FILES.sales_brief], PROSPECT_FILES.sales_brief)
-    validate_numeric_grounding(brief, files)
-    outreach = artifact_content(files[PROSPECT_FILES.outreach_draft], PROSPECT_FILES.outreach_draft)
-    validate_outreach(outreach, files)
 
 
 def _all_specs() -> tuple[AgentSpec, ...]:

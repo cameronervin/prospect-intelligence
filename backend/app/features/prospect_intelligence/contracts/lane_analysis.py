@@ -8,6 +8,7 @@ from typing import Self, cast
 
 from ..domain.models import LaneFitResult
 from .models import FitVerdict
+from .strict_json import require_exact_fields, require_text, strict_json_object
 
 _LANE_ANALYSIS_METHOD_VERSION = "lane_fit_v1"
 _LANE_ANALYSIS_FIELDS = frozenset({"method_version", "verdict", "top_lanes"})
@@ -26,32 +27,6 @@ _LANE_FIT_FIELDS = frozenset(
         "method_version",
     }
 )
-
-
-def _strict_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    value: dict[str, object] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError(f"duplicate JSON field: {key}")
-        value[key] = item
-    return value
-
-
-def _require_exact_fields(
-    value: Mapping[object, object], expected: frozenset[str], label: str
-) -> None:
-    actual = {key for key in value if isinstance(key, str)}
-    expected_fields = set(expected)
-    if len(actual) != len(value) or actual != expected_fields:
-        missing = sorted(expected_fields.difference(actual))
-        extra = sorted(str(item) for item in value if item not in expected_fields)
-        raise ValueError(f"{label} fields must be exact; missing={missing}, extra={extra}")
-
-
-def _require_text(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} must be a non-empty string")
-    return value
 
 
 def _require_integer(value: object, field_name: str) -> int:
@@ -76,10 +51,10 @@ def _lane_fit_from_payload(value: object) -> LaneFitResult:
     if not isinstance(value, Mapping):
         raise ValueError("lane score must be a JSON object")
     payload = cast("Mapping[object, object]", value)
-    _require_exact_fields(payload, _LANE_FIT_FIELDS, "lane score")
+    require_exact_fields(payload, _LANE_FIT_FIELDS, "lane score")
     return LaneFitResult(
-        origin=_require_text(payload["origin"], "origin"),
-        destination=_require_text(payload["destination"], "destination"),
+        origin=require_text(payload["origin"], "origin"),
+        destination=require_text(payload["destination"], "destination"),
         shipper_loads_per_week=_require_integer(
             payload["shipper_loads_per_week"], "shipper_loads_per_week"
         ),
@@ -96,7 +71,7 @@ def _lane_fit_from_payload(value: object) -> LaneFitResult:
         deadhead_miles_avoided=_require_integer(
             payload["deadhead_miles_avoided"], "deadhead_miles_avoided"
         ),
-        method_version=_require_text(payload["method_version"], "lane method_version"),
+        method_version=require_text(payload["method_version"], "lane method_version"),
     )
 
 
@@ -163,19 +138,27 @@ class LaneAnalysisArtifact:
             raise ValueError("top lanes must use the canonical rank order")
 
     @classmethod
+    def lane_fit_v1(cls, verdict: FitVerdict, top_lanes: tuple[LaneFitResult, ...]) -> Self:
+        """Build the canonical artifact for the current lane_fit_v1 method."""
+
+        return cls(
+            method_version=_LANE_ANALYSIS_METHOD_VERSION, verdict=verdict, top_lanes=top_lanes
+        )
+
+    @classmethod
     def from_json(cls, raw: str) -> Self:
         """Parse a fail-closed JSON artifact without accepting unknown or partial fields."""
 
         try:
-            value = cast(object, json.loads(raw, object_pairs_hook=_strict_json_object))
+            value = cast(object, json.loads(raw, object_pairs_hook=strict_json_object))
         except (json.JSONDecodeError, TypeError) as error:
             raise ValueError("lane analysis must contain valid JSON") from error
         if not isinstance(value, Mapping):
             raise ValueError("lane analysis must be a JSON object")
         payload = cast("Mapping[object, object]", value)
-        _require_exact_fields(payload, _LANE_ANALYSIS_FIELDS, "lane analysis artifact")
-        method_version = _require_text(payload["method_version"], "method_version")
-        verdict_value = _require_text(payload["verdict"], "verdict")
+        require_exact_fields(payload, _LANE_ANALYSIS_FIELDS, "lane analysis artifact")
+        method_version = require_text(payload["method_version"], "method_version")
+        verdict_value = require_text(payload["verdict"], "verdict")
         try:
             verdict = FitVerdict(verdict_value)
         except ValueError as error:

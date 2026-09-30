@@ -18,48 +18,16 @@ from langgraph.types import Command
 from ...contracts.agent_runtime import ProspectRuntimeContext
 from ...contracts.filesystem import PROSPECT_FILES
 from ..context import current_runtime_context
-from ..guardrails import artifact_content, validate_agent_artifacts, validate_workflow_artifacts
+from ..guardrails import artifact_content
 from ..specs import AgentSpec
-
-_RESEARCH_ARTIFACTS = (
-    PROSPECT_FILES.account_context,
-    PROSPECT_FILES.network_context,
-    PROSPECT_FILES.freight_research,
-    PROSPECT_FILES.company_research,
-    PROSPECT_FILES.market_research,
-)
+from .delegation import validate_delegation
 
 
-def _files(state: object) -> Mapping[str, FileData]:
+def state_files(state: object) -> Mapping[str, FileData]:
     if not isinstance(state, Mapping):
         return {}
     raw = cast("Mapping[object, object]", state).get("files")
     return cast("Mapping[str, FileData]", raw) if isinstance(raw, Mapping) else {}
-
-
-def validate_delegation(
-    tool_name: str,
-    arguments: Mapping[str, object],
-    files: Mapping[str, FileData],
-    *,
-    allowed_memory_path: str | None = None,
-) -> None:
-    if tool_name == "task":
-        subagent = arguments.get("subagent_type")
-        if subagent in {"account-context", "external-research"}:
-            return
-        if subagent == "lane-analyst":
-            missing = sorted(set(_RESEARCH_ARTIFACTS).difference(files))
-            if missing:
-                raise ValueError(f"lane analysis requires research artifacts: {missing}")
-            return
-        if subagent == "outreach-drafter":
-            if PROSPECT_FILES.sales_brief not in files:
-                raise ValueError("outreach drafting requires the approved brief")
-            return
-        raise ValueError(f"unregistered prospect subagent: {subagent}")
-    if tool_name == "send_outreach":
-        validate_workflow_artifacts(files, allowed_memory_path=allowed_memory_path)
 
 
 class ProspectMiddleware(AgentMiddleware[Any, ProspectRuntimeContext, Any]):
@@ -84,7 +52,7 @@ class ContextProjectionMiddleware(ProspectMiddleware):
     ) -> ModelResponse[Any]:
         visible = {
             path: file
-            for path, file in _files(request.state).items()
+            for path, file in state_files(request.state).items()
             if path.startswith(self._paths)
         }
         sections: list[str] = []
@@ -189,23 +157,16 @@ class DelegationPolicyMiddleware(ProspectMiddleware):
         arguments = cast("Mapping[str, object]", request.tool_call.get("args", {}))
         explicit = cast(ProspectRuntimeContext | None, cast(Any, request).runtime.context)
         context = current_runtime_context(explicit)
+        state = cast("Mapping[str, object]", request.state)
         validate_delegation(
             request.tool_call["name"],
             arguments,
-            _files(request.state),
+            state_files(state),
             allowed_memory_path=PROSPECT_FILES.rep_memory(context.tenant_id, context.rep_id),
+            messages=cast("Sequence[object]", state.get("messages", ())),
+            current_call_id=request.tool_call["id"],
         )
         return await handler(request)
-
-
-class ArtifactValidationMiddleware(ProspectMiddleware):
-    def __init__(self, spec: AgentSpec) -> None:
-        super().__init__(spec.name)
-        self._spec = spec
-
-    def after_agent(self, state: Any, runtime: Any) -> None:
-        del runtime
-        validate_agent_artifacts(self._spec, _files(state))
 
 
 class SafeToolErrorMiddleware(ProspectMiddleware):

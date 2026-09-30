@@ -2,8 +2,9 @@
 
 from enum import StrEnum
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEVELOPMENT_DATABASE_URL = "postgresql+psycopg://takehome:takehome@localhost:5432/takehome"
@@ -30,6 +31,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
         frozen=True,
         validate_default=True,
+        hide_input_in_errors=True,
     )
 
     service_name: str = Field(default="langchain-takehome-backend", min_length=1, max_length=64)
@@ -46,6 +48,7 @@ class Settings(BaseSettings):
     orchestrator_reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     model_request_timeout_seconds: int = Field(default=60, ge=1, le=300)
     model_retry_attempts: int = Field(default=2, ge=0, le=5)
+    openai_base_url: str | None = Field(default=None, max_length=512)
     external_live_enabled: bool = False
     external_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
     external_retry_attempts: int = Field(default=2, ge=0, le=5)
@@ -74,3 +77,22 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="FMCSA_WEB_KEY",
     )
+
+    @field_validator("openai_base_url")
+    @classmethod
+    def _validate_openai_base_url(cls, value: str | None) -> str | None:
+        """Accept only a credential-free HTTPS endpoint; errors never echo the value."""
+
+        if value is None or not value.strip():
+            return None
+        parts = urlsplit(value.strip())
+        if (
+            parts.scheme != "https"
+            or not parts.hostname
+            or parts.username is not None
+            or parts.password is not None
+            or parts.query
+            or parts.fragment
+        ):
+            raise ValueError("openai_base_url must be a credential-free https URL")
+        return parts.geturl().rstrip("/")

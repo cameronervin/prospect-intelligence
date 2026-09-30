@@ -44,6 +44,23 @@ def _sourced(payload: Mapping[str, object], *, source: str) -> str:
     return json.dumps(value)
 
 
+def review_findings(
+    *,
+    verdict: str = "pass",
+    round_number: int = 1,
+    findings: list[dict[str, object]] | None = None,
+    resolved_prior: list[str] | None = None,
+) -> str:
+    return json.dumps(
+        {
+            "round": round_number,
+            "verdict": verdict,
+            "findings": findings or [],
+            "resolved_prior": resolved_prior or [],
+        }
+    )
+
+
 def completed_files() -> dict[str, FileData]:
     return {
         "/task/brief.md": file_data("Research Acme freight fit."),
@@ -95,12 +112,49 @@ def completed_files() -> dict[str, FileData]:
             "Subject: ATL to DAL freight conversation\n\n"
             "Would you be open to comparing notes on your ATL-to-DAL freight needs?"
         ),
+        "/review/findings.json": file_data(review_findings()),
     }
 
 
+_REVISE_FINDINGS: list[dict[str, object]] = [
+    {
+        "id": "F1",
+        "file": "brief",
+        "category": "structure_format",
+        "severity": "blocking",
+        "excerpt": "Acme has 8 matched weekly loads",
+        "problem": "The brief skips the template headings.",
+        "required_change": "Use the brief template headings.",
+    },
+    {
+        "id": "F2",
+        "file": "outreach",
+        "category": "rep_preferences",
+        "severity": "blocking",
+        "excerpt": "Subject: ATL to DAL freight conversation",
+        "problem": "The rep prefers a generic invitation.",
+        "required_change": "Use the generic template.",
+    },
+]
+_OWNED_PATHS: dict[str, tuple[str, ...]] = {
+    "account-context": ("/context/account.json", "/context/our_network.json"),
+    "external-research": (
+        "/research/freight_intel/lanes.json",
+        "/research/company/company.json",
+        "/research/market/volumes.json",
+    ),
+    "lane-analyst": ("/analysis/lane_fit.json", "/analysis/lane_fit.md"),
+    "outreach-drafter": ("/output/outreach_draft.md",),
+}
+
+
 class TrajectoryModel(BaseChatModel):
+    """Scripted models for every role; the root reacts to the reviewer's scripted verdicts."""
+
     call_counts: dict[str, int] = Field(default_factory=dict)
     root_task_batches: list[tuple[str, ...]] = Field(default_factory=lambda: [])
+    review_verdicts: list[str] = Field(default_factory=lambda: ["pass"])
+    reviews_written: int = 0
     fail_orchestrator_turn: int | None = None
     injected_failures: int = 0
 
@@ -132,9 +186,93 @@ class TrajectoryModel(BaseChatModel):
             "external-research": "Collect public freight",
             "lane-analyst": "Apply lane_fit_v1",
             "outreach-drafter": "Draft customer-safe outreach",
+            "quality-reviewer": "Review the brief and outreach drafts",
             "orchestrator": "Delegate research and analysis",
         }
         return next(role for role, marker in markers.items() if marker in system)
+
+    def _task(self, identifier: str, subagent: str) -> dict[str, object]:
+        return self._tool(
+            "task",
+            identifier,
+            description=f"Scripted delegation to {subagent}.",
+            subagent_type=subagent,
+        )
+
+    def _orchestrator(self, turn: int, messages: list[BaseMessage]) -> list[dict[str, object]]:
+        files = completed_files()
+        if turn == 0:
+            return [
+                self._tool("read_file", "read-task", file_path="/task/brief.md"),
+                self._tool("read_file", "read-index", file_path="/INDEX.md"),
+                self._tool(
+                    "read_file",
+                    "read-memory",
+                    file_path="/memories/tenant-demo/rep-demo/preferences.md",
+                ),
+            ]
+        if turn == 1:
+            self.root_task_batches.append(("account-context", "external-research"))
+            return [
+                self._task("task-account", "account-context"),
+                self._task("task-external", "external-research"),
+            ]
+        if turn == 2:
+            return [self._task("task-lane", "lane-analyst")]
+        if turn == 3:
+            brief = files["/output/brief.md"]["content"]
+            return [
+                self._tool("write_file", "write-brief", file_path="/output/brief.md", content=brief)
+            ]
+        if turn == 4:
+            return [self._task("task-outreach", "outreach-drafter")]
+        calls = [
+            call
+            for message in messages
+            if isinstance(message, AIMessage)
+            for call in message.tool_calls
+        ]
+        last = calls[-1] if calls else None
+        reviews = sum(
+            call["name"] == "task" and call["args"].get("subagent_type") == "quality-reviewer"
+            for call in calls
+        )
+        if last is not None and last["name"] == "send_outreach":
+            return []
+        if last is not None and last["args"].get("subagent_type") == "quality-reviewer":
+            if self.review_verdicts[reviews - 1] == "pass":
+                return [self._tool("send_outreach", "send-review")]
+            if reviews >= 3:
+                return []
+            brief = files["/output/brief.md"]["content"]
+            return [
+                self._tool(
+                    "write_file",
+                    f"revise-brief-{reviews}",
+                    file_path="/output/brief.md",
+                    content=brief,
+                ),
+                self._task(f"task-redraft-{reviews}", "outreach-drafter"),
+            ]
+        return [self._task(f"task-review-{reviews + 1}", "quality-reviewer")]
+
+    def _reviewer(self) -> list[dict[str, object]]:
+        verdict = self.review_verdicts[self.reviews_written]
+        self.reviews_written += 1
+        findings = review_findings(
+            verdict=verdict,
+            round_number=self.reviews_written,
+            findings=_REVISE_FINDINGS if verdict == "revise" else [],
+            resolved_prior=["F1", "F2"] if verdict == "pass" and self.reviews_written > 1 else [],
+        )
+        return [
+            self._tool(
+                "write_file",
+                f"write-review-{self.reviews_written}",
+                file_path="/review/findings.json",
+                content=findings,
+            )
+        ]
 
     def _generate(
         self,
@@ -145,7 +283,8 @@ class TrajectoryModel(BaseChatModel):
     ) -> ChatResult:
         del stop, run_manager, kwargs
         role = self._role(messages)
-        turn = self.call_counts.get(role, 0)
+        # Each invocation starts from its own messages, so a re-delegated specialist writes again.
+        turn = sum(isinstance(message, AIMessage) for message in messages)
         if (
             role == "orchestrator"
             and turn == self.fail_orchestrator_turn
@@ -153,76 +292,14 @@ class TrajectoryModel(BaseChatModel):
         ):
             self.injected_failures += 1
             raise RuntimeError("synthetic late root failure")
-        self.call_counts[role] = turn + 1
+        self.call_counts[role] = self.call_counts.get(role, 0) + 1
         files = completed_files()
         tool_calls: list[dict[str, object]] = []
         if role == "orchestrator":
-            if turn == 0:
-                tool_calls = [
-                    self._tool("read_file", "read-task", file_path="/task/brief.md"),
-                    self._tool("read_file", "read-index", file_path="/INDEX.md"),
-                    self._tool(
-                        "read_file",
-                        "read-memory",
-                        file_path="/memories/tenant-demo/rep-demo/preferences.md",
-                    ),
-                ]
-            elif turn == 1:
-                tool_calls = [
-                    self._tool(
-                        "task",
-                        "task-account",
-                        description="Resolve account and network context into canonical files.",
-                        subagent_type="account-context",
-                    ),
-                    self._tool(
-                        "task",
-                        "task-external",
-                        description="Research all external sources into canonical files.",
-                        subagent_type="external-research",
-                    ),
-                ]
-                self.root_task_batches.append(("account-context", "external-research"))
-            elif turn == 2:
-                tool_calls = [
-                    self._tool(
-                        "task",
-                        "task-lane",
-                        description="Compute lane_fit_v1 and write both analysis files.",
-                        subagent_type="lane-analyst",
-                    )
-                ]
-            elif turn == 3:
-                tool_calls = [
-                    self._tool(
-                        "write_file",
-                        "write-brief",
-                        file_path="/output/brief.md",
-                        content=files["/output/brief.md"]["content"],
-                    )
-                ]
-            elif turn == 4:
-                tool_calls = [
-                    self._tool(
-                        "task",
-                        "task-outreach",
-                        description="Draft allowlisted outreach into the canonical file.",
-                        subagent_type="outreach-drafter",
-                    )
-                ]
-            elif turn == 5:
-                tool_calls = [self._tool("send_outreach", "send-review")]
+            tool_calls = self._orchestrator(turn, messages)
+        elif turn == 0 and role == "quality-reviewer":
+            tool_calls = self._reviewer()
         elif turn == 0:
-            owned_paths = {
-                "account-context": ("/context/account.json", "/context/our_network.json"),
-                "external-research": (
-                    "/research/freight_intel/lanes.json",
-                    "/research/company/company.json",
-                    "/research/market/volumes.json",
-                ),
-                "lane-analyst": ("/analysis/lane_fit.json", "/analysis/lane_fit.md"),
-                "outreach-drafter": ("/output/outreach_draft.md",),
-            }[role]
             tool_calls = [
                 self._tool(
                     "write_file",
@@ -230,7 +307,7 @@ class TrajectoryModel(BaseChatModel):
                     file_path=path,
                     content=files[path]["content"],
                 )
-                for index, path in enumerate(owned_paths)
+                for index, path in enumerate(_OWNED_PATHS[role])
             ]
         message = AIMessage(content="completed" if not tool_calls else "", tool_calls=tool_calls)
         return ChatResult(generations=[ChatGeneration(message=message)])

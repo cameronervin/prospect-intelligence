@@ -31,6 +31,7 @@ from langgraph.store.base import BaseStore
 from ..contracts.agent_runtime import ProspectRuntimeContext
 from .context import current_runtime_context
 from .middleware import middleware_for_agent
+from .prompts import render_system_prompt
 from .specs import (
     AgentSpec,
     ModelClass,
@@ -125,7 +126,7 @@ def create_agent_chain(
         create_deep_agent(
             model=model,
             tools=list(tools),
-            system_prompt=f"{spec.description}\n\n{spec.system_prompt}",
+            system_prompt=render_system_prompt(spec),
             middleware=middleware,
             subagents=list(subagents),
             permissions=filesystem_permissions(spec),

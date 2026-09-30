@@ -1,5 +1,6 @@
 """Deterministic chat model that traverses the production graph topology."""
 
+import json
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
@@ -12,6 +13,8 @@ from langchain_core.tools import BaseTool
 from pydantic import Field
 
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+
+_PASSING_REVIEW = json.dumps({"round": 1, "verdict": "pass", "findings": [], "resolved_prior": []})
 
 
 class ScenarioScriptedModel(BaseChatModel):
@@ -47,6 +50,7 @@ class ScenarioScriptedModel(BaseChatModel):
             "external-research": "Collect public freight",
             "lane-analyst": "Apply lane_fit_v1",
             "outreach-drafter": "Draft customer-safe outreach",
+            "quality-reviewer": "Review the brief and outreach drafts",
             "orchestrator": "Delegate research and analysis",
         }
         return next(role for role, marker in markers.items() if marker in system)
@@ -117,7 +121,25 @@ class ScenarioScriptedModel(BaseChatModel):
                     )
                 ]
             elif turn == 5:
+                tool_calls = [
+                    self._tool(
+                        "task",
+                        "task-review",
+                        description="Review round 1",
+                        subagent_type="quality-reviewer",
+                    )
+                ]
+            elif turn == 6:
                 tool_calls = [self._tool("send_outreach", "request-review")]
+        elif turn == 0 and role == "quality-reviewer":
+            tool_calls = [
+                self._tool(
+                    "write_file",
+                    "write-review",
+                    file_path=PROSPECT_FILES.review_findings,
+                    content=_PASSING_REVIEW,
+                )
+            ]
         elif turn == 0:
             owned_paths = {
                 "account-context": (

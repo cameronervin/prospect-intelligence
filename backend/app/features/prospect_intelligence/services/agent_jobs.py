@@ -1,6 +1,7 @@
 """Feature-owned worker adapter for compiled prospect agent runs."""
 
 import asyncio
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import cast
@@ -23,14 +24,13 @@ from app.features.prospect_intelligence.contracts.models import (
     RunStatus,
     ScoredLane,
     SourceCoverage,
-    SourceCoverageStatus,
 )
 from app.features.prospect_intelligence.contracts.sources import (
     ProspectSources,
     RunSourceCache,
     SourceCallContext,
 )
-from app.features.prospect_intelligence.domain.lane_fit import rank_lane_fits
+from app.features.prospect_intelligence.services.lane_analysis import analyze_lanes
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 
 
@@ -158,11 +158,10 @@ class ProspectAgentJobHandler:
             )
 
         def score(_: dict[str, object]) -> object:
+            # Return the exact canonical artifact so the analyst can write it verbatim.
             freight = self.sources.freight.get_activity(context, run.account)
             network = self.sources.network.get_network(context)
-            if freight.value is None or network.value is None:
-                return ()
-            return rank_lane_fits(freight.value.lanes, network.value.lanes)
+            return json.loads(analyze_lanes(freight, network).to_json())
 
         handlers: dict[str, Callable[[dict[str, object]], object]] = {
             "get_crm_account": lambda _: self.sources.crm.get_account(context, run.account.id),
@@ -188,14 +187,8 @@ class ProspectAgentJobHandler:
         freight = self.sources.freight.get_activity(context, run.account)
         network = self.sources.network.get_network(context)
         coverage: tuple[SourceCoverage, ...] = (freight.coverage, network.coverage)
-        usable = (
-            freight.value is not None
-            and freight.coverage.status is SourceCoverageStatus.COMPLETE
-            and network.value is not None
-            and network.coverage.status is SourceCoverageStatus.COMPLETE
-            and bool(freight.value.lanes)
-        )
-        if not usable:
+        analysis = analyze_lanes(freight, network)
+        if analysis.verdict is FitVerdict.NEEDS_MORE_DATA:
             return AnalysisOutput(
                 verdict=FitVerdict.NEEDS_MORE_DATA,
                 brief=ProspectBrief(
@@ -209,8 +202,8 @@ class ProspectAgentJobHandler:
                 source_coverage=coverage,
             )
         assert freight.value is not None and network.value is not None
-        ranked = rank_lane_fits(freight.value.lanes, network.value.lanes)
-        verdict = FitVerdict.FIT if ranked else FitVerdict.NO_FIT
+        ranked = analysis.top_lanes
+        verdict = analysis.verdict
         markdown = _text_file(files, PROSPECT_FILES.sales_brief)
         outreach = (
             _parse_outreach(_text_file(files, PROSPECT_FILES.outreach_draft))

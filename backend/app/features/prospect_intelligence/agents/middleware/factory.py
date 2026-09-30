@@ -1,8 +1,8 @@
 """Create the concrete middleware stack consumed by one agent spec."""
 
 from ..specs import AgentSpec
+from .artifacts import ArtifactValidationMiddleware
 from .policy import (
-    ArtifactValidationMiddleware,
     ContextProjectionMiddleware,
     DelegationPolicyMiddleware,
     ModelToolBudgetMiddleware,
