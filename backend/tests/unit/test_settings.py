@@ -32,6 +32,7 @@ def test_settings_have_safe_local_defaults(
     assert settings.online_quality_batch_size == 10
     assert settings.online_quality_poll_seconds == 1.0
     assert settings.online_quality_publish_timeout_seconds == 75.0
+    assert settings.langsmith_alert_webhook_url is None
 
 
 def test_online_quality_requires_both_provider_credentials_when_enabled(
@@ -143,6 +144,46 @@ def test_openai_base_url_rejects_unsafe_or_malformed_endpoints(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ValidationError) as error:
         Settings(openai_base_url=value)
+
+    assert "secret" not in str(error.value)
+
+
+def test_langsmith_alert_webhook_uses_prefixed_secret_environment_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(
+        "TAKEHOME_LANGSMITH_ALERT_WEBHOOK_URL",
+        "https://alerts.example.invalid/langsmith",
+    )
+
+    configured = Settings().langsmith_alert_webhook_url
+
+    assert configured is not None
+    assert configured.get_secret_value() == "https://alerts.example.invalid/langsmith"
+    assert "alerts.example.invalid" not in str(configured)
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "http://alerts.example.invalid/langsmith",
+        "https://user:secret@alerts.example.invalid/langsmith",
+        "https://alerts.example.invalid/langsmith?token=secret",
+        "https://alerts.example.invalid/langsmith#fragment",
+        "alerts.example.invalid/langsmith",
+    ),
+)
+def test_langsmith_alert_webhook_rejects_unsafe_or_malformed_endpoints(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    value: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValidationError) as error:
+        Settings(langsmith_alert_webhook_url=SecretStr(value))
 
     assert "secret" not in str(error.value)
 

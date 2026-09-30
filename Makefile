@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/sh
 
-.PHONY: help setup dev verify test-e2e audit docker-config docker-up docker-down feature smoke-online-quality secret-scan cleanup
+.PHONY: help setup dev verify test-e2e audit docker-config docker-up docker-down feature smoke-online-quality online-quality-plan online-quality-setup online-quality-simulate online-quality-teardown secret-scan cleanup
 
 help:
 	@echo "LangChain take-home development targets"
@@ -15,6 +15,10 @@ help:
 	@echo "  docker-down    Stop the container stack"
 	@echo "  feature        Create a feature with NAME=<snake_case> [DRY_RUN=1]"
 	@echo "  smoke-online-quality  Publish one credential-gated synthetic LangSmith event"
+	@echo "  online-quality-plan      Preview CAM-43 LangSmith resources without credentials"
+	@echo "  online-quality-setup     Reconcile CAM-43 resources with explicit execution"
+	@echo "  online-quality-simulate  Publish the deterministic 12-session demo corpus"
+	@echo "  online-quality-teardown  Delete owned resources while preserving project/traces"
 	@echo "  secret-scan    Scan project files for likely credentials"
 	@echo "  cleanup        Remove generated caches; CLEAN_VOLUMES=1 also removes local DB data"
 
@@ -48,6 +52,18 @@ feature:
 
 smoke-online-quality:
 	@cd backend && uv run python scripts/smoke_online_quality.py --execute
+
+online-quality-plan:
+	@cd backend && uv run python scripts/online_quality_ops.py plan
+
+online-quality-setup:
+	@cd backend && uv run python scripts/online_quality_ops.py setup --execute
+
+online-quality-simulate:
+	@cd backend && uv run python scripts/online_quality_ops.py simulate --execute
+
+online-quality-teardown:
+	@cd backend && uv run python scripts/online_quality_ops.py teardown --execute
 
 secret-scan:
 	@sh scripts/secret-scan.sh

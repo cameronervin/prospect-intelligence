@@ -1,10 +1,7 @@
 """Sanitized, idempotent LangSmith delivery for online quality events."""
 
-import hashlib
-import re
-from collections.abc import AsyncIterator, Mapping
-from datetime import datetime
-from typing import Any, Protocol
+from collections.abc import Mapping
+from typing import Any
 from uuid import UUID, uuid5
 
 from langsmith.client import ID_TYPE
@@ -12,82 +9,16 @@ from langsmith.utils import LangSmithConflictError, LangSmithNotFoundError
 
 from app.features.agent_quality.contracts.models import QualitySignal
 from app.features.agent_quality.contracts.online_config import OnlineQualityConfig
-
-
-class AsyncLangSmithClient(Protocol):
-    """The narrow async SDK surface used by the adapter."""
-
-    async def read_project(self, *, project_name: str) -> Any: ...
-
-    async def create_project(self, project_name: str, **kwargs: Any) -> Any: ...
-
-    def list_annotation_queues(
-        self, *, name: str | None = None, limit: int | None = None
-    ) -> AsyncIterator[Any]: ...
-
-    async def create_annotation_queue(
-        self,
-        *,
-        name: str,
-        description: str | None = None,
-        queue_id: ID_TYPE | None = None,
-    ) -> Any: ...
-
-    async def create_run(
-        self,
-        name: str,
-        inputs: dict[str, Any],
-        run_type: str,
-        *,
-        project_name: str | None = None,
-        **kwargs: Any,
-    ) -> None: ...
-
-    async def create_feedback(
-        self,
-        run_id: ID_TYPE | None = None,
-        key: str = "unnamed",
-        **kwargs: Any,
-    ) -> object: ...
-
-    async def add_runs_to_annotation_queue(
-        self, queue_id: ID_TYPE, *, run_ids: list[ID_TYPE] | None = None
-    ) -> None: ...
-
-    async def aclose(self) -> None: ...
-
-
-_EVENT_INPUT_KEYS = (
-    "account_id",
-    "tenant_id_hash",
-    "rep_id_hash",
-    "event_type",
-    "occurred_at",
-    "agent_version",
-    "prompt_version",
-    "verdict",
-    "review_decision",
-    "edit_distance",
-    "source_modes",
-    "error_code",
-    "evaluation_sampled",
-    "evaluation_sample_rate",
-    "evaluation_sampling_policy",
+from app.features.agent_quality.integrations.langsmith.event_sanitization import (
+    EVENT_INPUT_KEYS,
+    event_metadata,
+    event_tags,
+    external_account_id,
+    feedback_source_info,
+    required_datetime,
+    required_uuid,
 )
-_SAFE_FEEDBACK_METADATA_KEYS = (
-    "evaluator_version",
-    "graph_revision",
-    "rubric_version",
-    "agent_version",
-    "prompt_version",
-    "requested_model",
-    "resolved_model",
-    "state_hash",
-    "latency_seconds",
-    "estimated_cost_usd",
-    "status",
-    "instance_count",
-)
+from app.features.agent_quality.integrations.langsmith.protocols import AsyncLangSmithClient
 
 
 class LangSmithEventGateway:
@@ -120,18 +51,22 @@ class LangSmithEventGateway:
 
     async def record_event(self, payload: Mapping[str, object]) -> None:
         project_name, _ = self._configured_project()
-        event_id = _required_uuid(payload, "event_id")
-        occurred_at = _required_datetime(payload, "occurred_at")
-        inputs = {key: payload[key] for key in _EVENT_INPUT_KEYS if key in payload}
+        event_id = required_uuid(payload, "event_id")
+        occurred_at = required_datetime(payload, "occurred_at")
+        inputs = {key: payload[key] for key in EVENT_INPUT_KEYS if key in payload}
         account_id = inputs.get("account_id")
         if isinstance(account_id, str):
-            inputs["account_id"] = _external_account_id(account_id)
+            inputs["account_id"] = external_account_id(account_id)
+        metadata = event_metadata(payload)
+        tags = event_tags(metadata)
         try:
             await self._client.create_run(
                 "online_quality_event",
                 inputs,
                 "chain",
                 project_name=project_name,
+                metadata=metadata,
+                tags=tags,
                 id=event_id,
                 start_time=occurred_at,
                 end_time=occurred_at,
@@ -153,7 +88,7 @@ class LangSmithEventGateway:
             "feedback_id": feedback_id,
             "session_id": project_id,
         }
-        source_info = _feedback_source_info(signal)
+        source_info = feedback_source_info(signal)
         if source_info:
             kwargs["source_info"] = source_info
 
@@ -199,48 +134,3 @@ class LangSmithEventGateway:
         if self._project_name is None or self._project_id is None:
             raise RuntimeError("LangSmith quality gateway is not configured")
         return self._project_name, self._project_id
-
-
-def _required_uuid(payload: Mapping[str, object], key: str) -> UUID:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"quality event {key} must be a UUID string")
-    try:
-        return UUID(value)
-    except ValueError as error:
-        raise ValueError(f"quality event {key} must be a UUID string") from error
-
-
-def _external_account_id(account_id: str) -> str:
-    synthetic = re.fullmatch(r"syn_(?:core|edge|traffic|live)_\d{2}", account_id) is not None
-    return account_id if synthetic else hashlib.sha256(account_id.encode()).hexdigest()
-
-
-def _required_datetime(payload: Mapping[str, object], key: str) -> datetime:
-    value = payload.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"quality event {key} must be an ISO timestamp")
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError as error:
-        raise ValueError(f"quality event {key} must be an ISO timestamp") from error
-    if parsed.tzinfo is None:
-        raise ValueError(f"quality event {key} must include a timezone")
-    return parsed
-
-
-def _feedback_source_info(signal: QualitySignal) -> dict[str, object]:
-    """Allow only bounded evaluator scale metadata, never raw judge state."""
-
-    result: dict[str, object] = {}
-    scale_min = getattr(signal, "scale_min", None)
-    scale_max = getattr(signal, "scale_max", None)
-    if isinstance(scale_min, int | float):
-        result["scale_min"] = scale_min
-    if isinstance(scale_max, int | float):
-        result["scale_max"] = scale_max
-    for key in _SAFE_FEEDBACK_METADATA_KEYS:
-        value = signal.metadata.get(key)
-        if value is not None and isinstance(value, bool | str | int | float):
-            result[key] = value
-    return result

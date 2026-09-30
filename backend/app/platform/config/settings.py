@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     online_quality_batch_size: int = Field(default=10, ge=1, le=100)
     online_quality_poll_seconds: float = Field(default=1.0, gt=0, le=60)
     online_quality_publish_timeout_seconds: float = Field(default=75.0, ge=10, le=300)
+    langsmith_alert_webhook_url: SecretStr | None = None
     sec_app_name: str = Field(
         default="freight-prospect-takehome",
         min_length=1,
@@ -127,6 +128,25 @@ class Settings(BaseSettings):
         ):
             raise ValueError("openai_base_url must be a credential-free https URL")
         return parts.geturl().rstrip("/")
+
+    @field_validator("langsmith_alert_webhook_url")
+    @classmethod
+    def _validate_langsmith_alert_webhook_url(cls, value: SecretStr | None) -> SecretStr | None:
+        """Accept only a secret, credential-free HTTPS webhook endpoint."""
+
+        if value is None or not value.get_secret_value().strip():
+            return None
+        parts = urlsplit(value.get_secret_value().strip())
+        if (
+            parts.scheme != "https"
+            or not parts.hostname
+            or parts.username is not None
+            or parts.password is not None
+            or parts.query
+            or parts.fragment
+        ):
+            raise ValueError("langsmith alert webhook must be a credential-free https URL")
+        return SecretStr(parts.geturl())
 
     @field_validator("sec_app_name", "sec_contact_email")
     @classmethod

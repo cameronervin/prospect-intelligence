@@ -45,14 +45,55 @@ are accepted; other provider failures leave the outbox row pending. Failed deter
 rep rejections enter the annotation queue. Semantic scores do not route merely for being low while
 uncalibrated.
 
-The demo simulator runs three deterministic decision cycles across eight synthetic accounts that
-are disjoint from the offline dataset, producing 24 sessions. A failed evaluator or rejection is
-routed to the annotation queue. A reviewer must accept a sanitized candidate before it can be
-promoted to the versioned regression split.
+`freight-prospect-review` includes a privacy-bounded reviewer rubric. Reviewers must record the
+owned `freight-prospect-online-v1-human-review-decision` category as Reject (`0`), Edit (`1`), or
+Approve (`2`). This key is intentionally distinct from application and simulator
+`review_decision` feedback. Queue instructions define the decision boundaries, require a brief
+built-in Reviewer Note for Edit or Reject, and prohibit prompts, customer data, credentials, source
+payloads, and contact details. LangSmith does not support conditionally requiring Reviewer Notes,
+so that part of the workflow is instructional rather than schema-enforced.
 
-The dashboard fields and alert numbers are demo specifications owned by CAM-43, not production
-SLOs. Trace retention, alert destinations, and canary percentages remain deployment decisions.
+CAM-43 adds a separate, deterministic demo-operations path without changing the application's 10%
+evaluation cohort. LangSmith routing rules inspect 100% of the sanitized root quality-event runs;
+they do not execute hosted evaluators. Rules route deterministic failures, invalid Jev results, rep
+rejections, and source or tool errors to `freight-prospect-review`. Direct application routing
+remains enabled and idempotent, so either path can make an event reviewable without duplicating its
+deterministic run or feedback.
 
-Run `make smoke-online-quality` only with explicit credentials to publish one idempotent synthetic
-event. The command refuses to write without its internal `--execute` opt-in. Passing repository
-verification is not live LangSmith evidence.
+The demo simulator publishes exactly 12 root quality-event runs: eight approve, three edit, and one
+reject. The fixed plan covers each account from `syn_traffic_01` through `syn_traffic_08` and rejects
+any pool that is incomplete, duplicated, or overlaps an offline account. UUIDv5 run and feedback
+identifiers make retries no-ops. Simulator metadata is limited to agent, simulator and pool versions,
+session index, and the `simulated` marker. Demo latency and cost are feedback on these synthetic runs
+and are explicitly tagged as simulated baseline telemetry; no product database row, model request,
+prompt, output, contact, source payload, or credential is involved.
+
+Owned LangSmith resources use the `freight-prospect-online-v1` prefix. Reconciliation creates
+missing resources, updates drift, reports unchanged resources, and stops on ambiguous duplicates.
+It never mutates same-kind resources outside that prefix. The dashboard groups every chart by
+`metadata.agent_version` and keeps binary rates separate from the 1–5 Jev scales. It includes
+root quality-event volume, approve, edit, reject, grounding, individual Jev, latency, cost,
+tool-error, and source-error views. Volume and decision rates use legacy bar charts; the remaining
+metrics use line charts. The custom dashboard stays on the existing legacy resource model, remains
+separate from LangSmith's prebuilt project dashboard, and does not change the user's default.
+
+Four five-minute webhook alerts are MVP demonstration defaults, not production SLOs: average
+grounding below `1.0`, reject rate above `25%`, source-error rate above `10%`, and average simulated
+`cost_usd` feedback above `$0.30`. A credential-free HTTPS endpoint must be provided through
+`TAKEHOME_LANGSMITH_ALERT_WEBHOOK_URL`; URLs containing user information, query strings, or fragments
+are rejected. Production incident ownership, paging, retention, and threshold calibration remain
+deployment decisions.
+
+Use the credential-free `make online-quality-plan` first. `make online-quality-setup`,
+`make online-quality-simulate`, and `make online-quality-teardown` are external mutations and pass an
+explicit `--execute` confirmation. Setup needs `LANGSMITH_API_KEY` and the webhook setting;
+simulation needs only the LangSmith key. Teardown removes owned alerts, rules, charts, dashboard
+section, queue, and human-review feedback configuration in dependency order while preserving the
+project and its traces. It resolves every exact owned match and duplicate conflict before the first
+delete, and can clean up owned resources orphaned by an already-absent project. Project and trace
+deletion requires a separate explicit CLI flag. A second setup must report every resource unchanged,
+and a second simulation must create no runs or feedback.
+
+Sanitized console URLs and resource counts may be recorded as live evidence. Credentials, webhook
+URLs, notification payloads, traces, LangSmith result exports, and generated browser artifacts may
+not be committed. Passing repository verification remains distinct from live LangSmith evidence.

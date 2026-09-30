@@ -65,3 +65,25 @@ shell history, committed output, or screenshots.
 The smoke proves that the Jev, GPT-5.6 Sol comparison, and failure-explanation provider paths work at
 the time of execution. It does not prove a hosted LangSmith experiment, replace `make verify`, or
 establish semantic promotion thresholds; CAM-41 owns human calibration and threshold selection.
+
+## Online quality operations
+
+Preview the complete owned LangSmith resource plan without credentials or external writes:
+
+```sh
+make online-quality-plan
+```
+
+Live setup requires `LANGSMITH_API_KEY` and a credential-free HTTPS
+`TAKEHOME_LANGSMITH_ALERT_WEBHOOK_URL`. Simulation needs only the LangSmith key. Each mutation is
+separately gated by `--execute` in the Make target:
+
+```sh
+make online-quality-setup
+make online-quality-simulate
+make online-quality-teardown
+```
+
+Normal teardown preserves `freight-prospect-online` and its traces. Use the CLI directly with
+`--delete-project-and-traces` only when trace destruction is intentional. Never put the
+API key, webhook URL, alert payloads, traces, or browser artifacts into repository evidence.

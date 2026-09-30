@@ -17,6 +17,61 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ## Decisions
 
+### 2026-09-30 — Online quality operations: owned resources and deterministic demo traffic
+
+- **Decision:** CAM-42's app-side evaluator catalog and stable 10% evaluation cohort remain
+  authoritative. LangSmith routing rules observe 100% of sanitized root quality-event runs and route
+  deterministic failures, invalid Jev results, rep rejection, and source or tool errors; they do not
+  duplicate evaluation in hosted code or LLM evaluators. Direct application routing remains
+  idempotently compatible.
+- **Decision:** The former 24-session three-cycle proposal is superseded by exactly 12 synthetic
+  sessions: eight approvals, three edits, and one rejection. The fixed plan must cover all and only
+  `syn_traffic_01` through `syn_traffic_08`, with no offline account overlap. Run and feedback IDs
+  derive from stable UUIDv5 names, so replay creates no additional telemetry.
+- **Decision:** Simulator runs are sanitized root events rather than full product or model-backed
+  workflows. Their allowlisted metadata contains agent, simulator and traffic-pool versions, session
+  index, and an explicit simulated marker. Demo latency and cost are marked synthetic baseline
+  feedback and must not be interpreted as measured production latency, usage, or spend.
+- **Decision:** Resources owned by these operations use the `freight-prospect-online-v1` prefix and
+  are reconciled by stable name or ID. Missing resources are created, drift is patched, unchanged
+  resources are reported, ambiguous duplicates stop execution, and foreign resources are untouched.
+  Teardown preflights exact-name matches and duplicate conflicts before deleting only owned alerts,
+  rules, charts, dashboard section, queue, and feedback configuration in dependency order. It can
+  remove orphaned owned resources when the project is already absent. The canonical
+  `freight-prospect-online` project and traces are retained unless an additional explicit deletion
+  flag is supplied; the queue is fixed to canonical `freight-prospect-review`.
+- **Decision:** Four five-minute webhook alerts use demonstration thresholds: average grounding below
+  `1.0`, reject rate above `25%`, source-error rate above `10%`, and average synthetic `cost_usd`
+  feedback above `$0.30`. The webhook must be credential-free HTTPS and is configured as a secret.
+  These thresholds and the generic webhook destination are MVP defaults, not production SLOs or an
+  incident-routing commitment.
+- **Decision:** The review queue carries an explicit privacy-bounded rubric. Every reviewer records
+  one required `freight-prospect-online-v1-human-review-decision` value: Reject (`0`), Edit (`1`),
+  or Approve (`2`), with higher values representing better outcomes. This human label remains
+  separate from the application and simulator's `review_decision` feedback. Edit and Reject notes
+  are required by the queue instructions and captured through LangSmith's built-in Reviewer Notes;
+  they are not duplicated as another feedback key because the provider cannot conditionally require
+  that field.
+- **Decision:** The owned custom dashboard includes a root quality-event run-volume chart as the
+  denominator for its rates. Volume and approve/edit/reject views use legacy bar charts; grounding,
+  individual Jev scores, latency, cost, tool errors, and source errors remain line charts. Every
+  chart is grouped by `metadata.agent_version`. The project remains on LangSmith's existing legacy
+  dashboard resource model and the custom dashboard does not replace the user's prebuilt default.
+- **Alternatives considered:** Twenty-four full model-backed sessions; hosted evaluator duplication;
+  treating simulated cost as actual provider spend; deleting the whole project during normal
+  rollback; adopting production paging semantics for the demo; reusing automated review feedback
+  for human labels; a redundant notes feedback field; migrating to the newer dashboard API.
+- **Reasoning:** A small deterministic corpus demonstrates online operations, failure routing, and
+  retry safety without incurring model costs or crossing the established privacy and evaluation
+  boundaries. Prefix ownership and conservative teardown make repeated demos reviewable and safe.
+- **Consequences:** Dashboards contain clearly labeled synthetic baselines until genuine application
+  traffic arrives. The owned feedback configuration is created before the queue and removed after it
+  during teardown; unrelated workspace configurations remain untouched. Repository tests can prove
+  plans and reconciliation without credentials, while live setup, replay, webhook delivery, and
+  console inspection remain separate operational evidence.
+- **Evidence:** CAM-43 operations, simulator, privacy, reconciliation, teardown, and CLI tests;
+  repository verification and sanitized live LangSmith evidence recorded on the ticket.
+
 ### 2026-09-30 — Online quality: app-side evaluation with bounded provider delivery
 
 - **Decision:** Online evaluation runs in `agent_quality` after graph execution. The application
