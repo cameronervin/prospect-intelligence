@@ -22,7 +22,8 @@ work rather than a generic SaaS marketing page:
 The repository currently enforces the design workflow through `.agents/skills/frontend-design` and
 the path-scoped frontend rules. Those instructions require product grounding, admission tests for
 visual devices, subject-swap and deletion critiques, and Playwright MCP inspection at relevant
-desktop and mobile viewports.
+viewports. CAM-37 validates the current MVP at the desktop viewport only. Existing responsive code
+remains, but mobile support and mobile browser acceptance are deferred rather than claimed.
 
 ## Anti-template principles
 
@@ -50,7 +51,7 @@ interaction, state, or brand reason.
 | DTCG tokens and Style Dictionary   | Paused; Tailwind v4 built-in values are sufficient for the MVP.                                 | The product targets multiple platforms or needs generated token outputs beyond the web application.                                                         |
 | `@shadcn/lint` component contracts | Paused. The current page has no shared UI component contract for `no-restyle` rules to protect. | A reusable component layer with approved variants exists; adopt only rules that match that contract and disclose the linter's limits.                       |
 | Storybook                          | Paused. Component and Playwright tests are the smaller current workflow.                        | The frontend has a reusable component catalog with multiple meaningful visual states that is difficult to review through routes alone.                      |
-| Committed screenshot baselines     | Paused so an unapproved scaffold does not become the golden design.                             | The CAM-36 cleanup is accepted; add stable desktop, mobile, and key-state baselines through CAM-37 in a pinned browser environment.                         |
+| Committed screenshot baselines     | Deferred. CAM-37 uses behavioral and accessibility assertions and does not commit generated browser artifacts. | A post-MVP visual-regression scope defines supported viewports and key states, and a pinned browser environment is approved.                                |
 | Figma MCP and Code Connect         | Paused because no maintained Figma source of truth exists.                                      | A reviewed Figma library becomes authoritative and its components can be mapped to repository components.                                                   |
 | Headless primitive library         | No dependency now. Native HTML covers the present controls.                                     | A concrete accessible widget cannot be implemented clearly with native controls or an existing repository pattern; choose the narrowest suitable primitive. |
 | Icon library                       | No dependency now. The current workflow does not need an icon vocabulary.                       | Repeated, familiar control or navigation symbols are approved; select one family and expose only the semantic project subset.                               |
@@ -65,8 +66,9 @@ not current dependencies. Re-evaluate them only when their activation conditions
 
 CAM-36 owns the integrated visual cleanup for the brief, evidence, lane-fit, and outreach-review
 experience. It should preserve CAM-35 behavior while replacing the current marketing and repeated-
-card scaffold with the dispatch-console direction above. CAM-37 owns committed visual baselines and
-expanded full-stack browser coverage after that direction is accepted.
+card scaffold with the dispatch-console direction above. CAM-37 owns expanded desktop behavioral
+coverage and a credential-free full-stack browser journey after that direction is accepted. Mobile
+acceptance and committed screenshot baselines are outside the MVP ticket.
 
 ### CAM-36 outcome
 

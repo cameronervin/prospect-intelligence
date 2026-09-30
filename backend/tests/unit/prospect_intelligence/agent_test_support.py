@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 from uuid import UUID
@@ -164,6 +165,9 @@ class TrajectoryModel(BaseChatModel):
     message_texts: dict[str, list[str]] = Field(default_factory=dict)
     observations: dict[str, list[tuple[str, str]]] = Field(default_factory=dict)
     bound_tool_sets: list[tuple[str, ...]] = Field(default_factory=lambda: [])
+    memory_path: str = "/memories/tenant-demo/rep-demo/preferences.md"
+    first_call_delay_seconds: float = 0.0
+    delay_applied: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -223,7 +227,7 @@ class TrajectoryModel(BaseChatModel):
                 self._tool(
                     "read_file",
                     "read-memory",
-                    file_path="/memories/tenant-demo/rep-demo/preferences.md",
+                    file_path=self.memory_path,
                 ),
             ]
         if turn == 1:
@@ -297,6 +301,9 @@ class TrajectoryModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         del stop, run_manager, kwargs
+        if self.first_call_delay_seconds > 0 and not self.delay_applied:
+            self.delay_applied = True
+            time.sleep(self.first_call_delay_seconds)
         role = self._role(messages)
         system = "\n".join(
             message.text for message in messages if isinstance(message, SystemMessage)

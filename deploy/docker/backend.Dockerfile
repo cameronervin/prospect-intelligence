@@ -23,3 +23,11 @@ USER 10001:10001
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM runtime AS e2e
+
+COPY --chown=0:0 backend/tests ./tests
+
+CMD ["uvicorn", "tests.e2e_app:create_e2e_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM runtime AS production

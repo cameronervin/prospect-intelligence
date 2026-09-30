@@ -16,7 +16,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "npm run build && npm run prepare:standalone && playwright test",
+    "test:e2e": "npm run test:e2e:mocked",
+    "test:e2e:mocked": "npm run build && npm run prepare:standalone && playwright test",
+    "test:e2e:full-stack": "playwright test --config=playwright.full-stack.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run styles:check && npm run lint && npm run typecheck && npm test && npm run build"

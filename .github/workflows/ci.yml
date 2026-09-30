@@ -42,8 +42,8 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Browser smoke tests
-        run: sh scripts/test-e2e.sh
+      - name: Browser tests
+        run: make test-e2e
 
       - name: Validate Compose
         run: sh scripts/docker.sh config

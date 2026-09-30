@@ -862,3 +862,30 @@ include credentials, private customer data, raw traces, or generated result expo
   - Backend: progress domain, service, middleware, source-hook, worker, router and PostgreSQL tests.
   - Frontend: tracker and workspace Vitest tests.
   - Playwright tracker scenario on desktop and Pixel 7.
+
+### 2026-09-30 — Browser validation: desktop-only MVP support boundary
+
+- **Decision:** CAM-37 validates the MVP in desktop Chromium. Browser acceptance covers keyboard
+  account selection, truthful queued and running progress, sourced outcomes, durable human-review
+  resume, safe edit recovery, reject confirmation, simulated-send receipts, accessible primary
+  controls, and the absence of horizontal overflow. Mobile behavior is outside the MVP support and
+  validation boundary; existing responsive implementation remains but is not claimed as verified.
+- **Decision:** Browser validation uses repeatable DOM, state, accessibility, and API-boundary
+  assertions rather than committed screenshot baselines. Playwright traces, screenshots, reports,
+  and other generated browser artifacts remain uncommitted.
+- **Decision:** One browser suite uses mocked application APIs for complete state and failure
+  coverage. A separate credential-free suite exercises the deployed Next.js, FastAPI, PostgreSQL,
+  LangGraph checkpoint, and worker path with deterministic synthetic inputs. External model,
+  LangSmith, and public API access remain disabled in both CI paths.
+- **Alternatives considered:** Retain Pixel 7 acceptance; commit viewport screenshots as visual
+  baselines; exercise live model and provider integrations in browser CI.
+- **Reasoning:** Desktop behavior is the agreed one-week MVP and demo boundary. Behavioral checks
+  give reviewable coverage of the safety-critical workflow without treating generated pixels as a
+  stable design contract, while deterministic full-stack coverage proves durable integration without
+  credentials, network variability, or provider cost.
+- **Consequences:** Responsive code may continue to work, but mobile compatibility requires a later
+  explicit design and test pass before it can be promised. Visual regressions not represented by
+  layout, accessibility, or behavioral assertions can escape this suite. The boundary can be rolled
+  back by adding approved viewport projects and pinned visual baselines without changing product APIs.
+- **Evidence:** Mocked desktop Playwright scenarios, the isolated Compose full-stack journey, and
+  `make test-e2e`; repository verification and Compose validation remain separate required checks.
