@@ -3,7 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from .models import Account, ProspectRun, RepPreference, ReviewAction, SendReceipt
+from .models import Account, ProspectRun, QualityEvent, RepPreference, ReviewAction, SendReceipt
 
 
 class AccountRepository(Protocol):
@@ -17,9 +17,14 @@ class RunRepository(Protocol):
 
     def get(self, run_id: UUID) -> ProspectRun | None: ...
 
-    def save(self, run: ProspectRun) -> None: ...
+    def save(self, run: ProspectRun, quality_event: QualityEvent | None = None) -> None: ...
 
-    def save_claimed(self, run: ProspectRun, claim_token: UUID) -> bool: ...
+    def save_claimed(
+        self,
+        run: ProspectRun,
+        claim_token: UUID,
+        quality_event: QualityEvent | None = None,
+    ) -> bool: ...
 
 
 class SendReceiptRepository(Protocol):
@@ -37,7 +42,7 @@ class PreferenceRepository(Protocol):
 class WorkflowRepository(Protocol):
     """Atomic boundaries that span multiple persistence records."""
 
-    def create_run(self, run: ProspectRun) -> None: ...
+    def create_run(self, run: ProspectRun, quality_event: QualityEvent) -> None: ...
 
     def replay_review(
         self,
@@ -55,4 +60,5 @@ class WorkflowRepository(Protocol):
         idempotency_key: str,
         receipt: SendReceipt | None,
         preference: RepPreference | None,
+        quality_event: QualityEvent,
     ) -> ProspectRun: ...

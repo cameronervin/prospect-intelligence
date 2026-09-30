@@ -5,17 +5,25 @@ from uuid import UUID
 from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
 
-from ...contracts.models import ProspectRun, RepPreference, ReviewAction, RunStatus, SendReceipt
+from ...contracts.models import (
+    ProspectRun,
+    QualityEvent,
+    RepPreference,
+    ReviewAction,
+    RunStatus,
+    SendReceipt,
+)
 from ...domain.errors import InvalidRunTransitionError
 from ...models.records import (
     AccountRecord,
     ApprovalRecord,
     ProspectRunRecord,
-    RepPreferenceRecord,
     SendReceiptRecord,
     WorkerJobRecord,
 )
 from .accounts import account_from_record
+from .preferences import preference_upsert
+from .quality_events import quality_event_insert
 from .run_codec import run_from_record, run_record_values, serialize_outreach
 from .store import PostgresProspectStore
 
@@ -24,7 +32,7 @@ class PostgresWorkflowRepository:
     def __init__(self, store: PostgresProspectStore) -> None:
         self._engine = store.engine
 
-    def create_run(self, run: ProspectRun) -> None:
+    def create_run(self, run: ProspectRun, quality_event: QualityEvent) -> None:
         with Session(self._engine) as session, session.begin():
             session.execute(insert(ProspectRunRecord).values(**run_record_values(run)))
             session.execute(
@@ -35,6 +43,7 @@ class PostgresWorkflowRepository:
                     available_at=run.created_at,
                 )
             )
+            session.execute(quality_event_insert(quality_event))
 
     def replay_review(
         self,
@@ -66,6 +75,7 @@ class PostgresWorkflowRepository:
         idempotency_key: str,
         receipt: SendReceipt | None,
         preference: RepPreference | None,
+        quality_event: QualityEvent,
     ) -> ProspectRun:
         replay_canonical = False
         with Session(self._engine) as session, session.begin():
@@ -110,19 +120,13 @@ class PostgresWorkflowRepository:
                         )
                     )
                 if preference is not None:
-                    session.execute(
-                        insert(RepPreferenceRecord).values(
-                            tenant_id=preference.tenant_id,
-                            rep_id=preference.rep_id,
-                            summary=preference.summary,
-                            learned_at=preference.learned_at,
-                        )
-                    )
+                    session.execute(preference_upsert(preference))
                 session.execute(
                     update(ProspectRunRecord)
                     .where(ProspectRunRecord.id == updated.id)
                     .values(**run_record_values(updated))
                 )
+                session.execute(quality_event_insert(quality_event))
         if replay_canonical:
             replayed = self.replay_review(original.id, action, idempotency_key)
             if replayed is None:

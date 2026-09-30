@@ -1,6 +1,7 @@
 """PostgreSQL rep-preference repository."""
 
-from sqlalchemy import insert, select
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.orm import Session
 
 from ...contracts.models import RepPreference
@@ -34,11 +35,23 @@ class PostgresPreferenceRepository:
 
     def add(self, preference: RepPreference) -> None:
         with Session(self._engine) as session, session.begin():
-            session.execute(
-                insert(RepPreferenceRecord).values(
-                    tenant_id=preference.tenant_id,
-                    rep_id=preference.rep_id,
-                    summary=preference.summary,
-                    learned_at=preference.learned_at,
-                )
-            )
+            session.execute(preference_upsert(preference))
+
+
+def preference_upsert(preference: RepPreference) -> Insert:
+    """Keep the newest learned profile when reviews commit out of order."""
+
+    statement = insert(RepPreferenceRecord).values(
+        tenant_id=preference.tenant_id,
+        rep_id=preference.rep_id,
+        summary=preference.summary,
+        learned_at=preference.learned_at,
+    )
+    return statement.on_conflict_do_update(
+        constraint="uq_rep_preferences_scope",
+        set_={
+            "summary": statement.excluded.summary,
+            "learned_at": statement.excluded.learned_at,
+        },
+        where=statement.excluded.learned_at >= RepPreferenceRecord.learned_at,
+    )

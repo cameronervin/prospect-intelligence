@@ -6,6 +6,7 @@ from ..contracts.models import (
     Account,
     AccountRelationship,
     ProspectRun,
+    QualityEvent,
     RepPreference,
     SendReceipt,
 )
@@ -64,13 +65,19 @@ class InMemoryRunRepository:
     def get(self, run_id: UUID) -> ProspectRun | None:
         return self._runs.get(run_id)
 
-    def save(self, run: ProspectRun) -> None:
+    def save(self, run: ProspectRun, quality_event: QualityEvent | None = None) -> None:
+        del quality_event
         if run.id not in self._runs:
             raise LookupError(f"unknown run: {run.id}")
         self._runs[run.id] = run
 
-    def save_claimed(self, run: ProspectRun, claim_token: UUID) -> bool:
-        del claim_token
+    def save_claimed(
+        self,
+        run: ProspectRun,
+        claim_token: UUID,
+        quality_event: QualityEvent | None = None,
+    ) -> bool:
+        del claim_token, quality_event
         self.save(run)
         return True
 
@@ -94,6 +101,4 @@ class InMemoryPreferenceRepository:
         return tuple(self._preferences.get((tenant_id, rep_id), ()))
 
     def add(self, preference: RepPreference) -> None:
-        self._preferences.setdefault((preference.tenant_id, preference.rep_id), []).append(
-            preference
-        )
+        self._preferences[(preference.tenant_id, preference.rep_id)] = [preference]

@@ -32,6 +32,8 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
 )
 from app.features.prospect_intelligence.contracts.models import (
     OutreachDraft,
+    QualityEventType,
+    RepPreference,
     ReviewAction,
     RunStatus,
 )
@@ -40,9 +42,12 @@ from app.features.prospect_intelligence.contracts.workflow import (
     review_tool_call_id,
 )
 from app.features.prospect_intelligence.domain.errors import InvalidRunTransitionError
+from app.features.prospect_intelligence.domain.quality_events import build_quality_event
 from app.features.prospect_intelligence.models.records import (
     ApprovalRecord,
     ProspectRunRecord,
+    QualityEventOutboxRecord,
+    RepPreferenceRecord,
     SendReceiptRecord,
     WorkerJobRecord,
 )
@@ -187,6 +192,14 @@ def test_api_creation_atomically_enqueues_a_pollable_run_across_restart(
         job = session.scalars(select(WorkerJobRecord).where(WorkerJobRecord.run_id == run_id)).one()
         assert job.status == "queued"
         assert job.attempts == 0
+        event_row = session.scalars(
+            select(QualityEventOutboxRecord).where(
+                QualityEventOutboxRecord.run_id == run_id,
+                QualityEventOutboxRecord.event_type == QualityEventType.RUN_CREATED.value,
+            )
+        ).one()
+        assert event_row.payload["tenant_id_hash"] != "tenant-demo"
+        assert "tenant_id" not in event_row.payload
     first_store.close()
 
     restarted_store = PostgresProspectStore.from_settings(settings)
@@ -231,11 +244,14 @@ def test_run_and_job_creation_roll_back_together_when_job_insert_fails(
     with Session(store.engine) as session:
         assert session.scalar(select(func.count()).select_from(ProspectRunRecord)) == 0
         assert session.scalar(select(func.count()).select_from(WorkerJobRecord)) == 0
+        assert session.scalar(select(func.count()).select_from(QualityEventOutboxRecord)) == 0
     store.close()
 
 
 @pytest.mark.postgresql
-def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: str) -> None:
+def test_run_enqueue_restart_and_concurrent_edit_are_atomic_and_idempotent(
+    postgres_url: str,
+) -> None:
     settings = Settings(database_url=SecretStr(postgres_url))
     first_store = PostgresProspectStore.from_settings(settings)
     service = build_service(first_store)
@@ -261,8 +277,12 @@ def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: 
     def review(_: int):
         return restarted.review_run(
             run.id,
-            ReviewAction.APPROVE,
+            ReviewAction.EDIT,
             tool_call_id=tool_call_id,
+            edited_outreach=OutreachDraft(
+                subject="Freight conversation",
+                body="Could we discuss your freight needs?",
+            ),
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -273,12 +293,30 @@ def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: 
     with Session(restarted_store.engine) as session:
         assert session.scalar(select(func.count()).select_from(ApprovalRecord)) == 1
         assert session.scalar(select(func.count()).select_from(SendReceiptRecord)) == 1
+        assert session.scalar(select(func.count()).select_from(RepPreferenceRecord)) == 1
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(QualityEventOutboxRecord)
+                .where(
+                    QualityEventOutboxRecord.run_id == run.id,
+                    QualityEventOutboxRecord.event_type == QualityEventType.REVIEW_COMPLETED.value,
+                )
+            )
+            == 1
+        )
     with pytest.raises(InvalidRunTransitionError, match="review token"):
         restarted.review_run(run.id, ReviewAction.APPROVE, tool_call_id="review-wrong-run")
     with pytest.raises(InvalidRunTransitionError, match="different review decision"):
         restarted.review_run(run.id, ReviewAction.REJECT, tool_call_id=tool_call_id)
 
     persisted = restarted.get_run(run.id)
+    conflicting = replace(
+        persisted,
+        status=RunStatus.REJECTED,
+        review_action=ReviewAction.REJECT,
+        send_receipt_id=None,
+    )
     with pytest.raises(InvalidRunTransitionError, match="different review decision"):
         PostgresWorkflowRepository(restarted_store).commit_review(
             original=replace(
@@ -287,16 +325,15 @@ def test_run_enqueue_restart_and_review_are_atomic_and_idempotent(postgres_url: 
                 review_action=None,
                 send_receipt_id=None,
             ),
-            updated=replace(
-                persisted,
-                status=RunStatus.REJECTED,
-                review_action=ReviewAction.REJECT,
-                send_receipt_id=None,
-            ),
+            updated=conflicting,
             action=ReviewAction.REJECT,
             idempotency_key=tool_call_id,
             receipt=None,
             preference=None,
+            quality_event=build_quality_event(
+                conflicting,
+                QualityEventType.REVIEW_COMPLETED,
+            ),
         )
     restarted_store.close()
 
@@ -425,6 +462,23 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
     assert rejected.status is RunStatus.REJECTED
     assert replayed == rejected
 
+    approved_run = service.create_run("tenant-demo", "rep-b", "northstar-retail")
+    pipeline.run(approved_run.id)
+    approved_token = review_tool_call_id(approved_run.id)
+    approved = service.review_run(
+        approved_run.id,
+        ReviewAction.APPROVE,
+        tool_call_id=approved_token,
+    )
+    assert (
+        service.review_run(
+            approved_run.id,
+            ReviewAction.APPROVE,
+            tool_call_id=approved_token,
+        )
+        == approved
+    )
+
     edited_run = service.create_run("tenant-demo", "rep-a", "acme-foods")
     pipeline.run(edited_run.id)
     edited = service.review_run(
@@ -439,9 +493,102 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
     assert edited.status is RunStatus.COMPLETED
     assert len(service.get_preferences("tenant-demo", "rep-a")) == 1
     assert service.get_preferences("tenant-demo", "rep-b") == ()
+
+    replacement_run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    pipeline.run(replacement_run.id)
+    service.review_run(
+        replacement_run.id,
+        ReviewAction.EDIT,
+        tool_call_id=review_tool_call_id(replacement_run.id),
+        edited_outreach=OutreachDraft(
+            subject="Freight conversation",
+            body="Could we discuss your freight needs?",
+        ),
+    )
+    preferences = service.get_preferences("tenant-demo", "rep-a")
+    assert [preference.summary for preference in preferences] == [
+        "Tone: direct. Length: about 6 words. Format: generic invitation."
+    ]
+
+    PostgresPreferenceRepository(store).add(
+        RepPreference(
+            tenant_id="tenant-other",
+            rep_id="rep-a",
+            summary="Tone: comparative. Length: about 5 words. Format: generic invitation.",
+            learned_at=NOW,
+        )
+    )
+    assert service.get_preferences("tenant-demo", "rep-a") == preferences
+    assert len(service.get_preferences("tenant-other", "rep-a")) == 1
     with Session(store.engine) as session:
-        assert session.scalar(select(func.count()).select_from(ApprovalRecord)) == 2
-        assert session.scalar(select(func.count()).select_from(SendReceiptRecord)) == 1
+        assert session.scalar(select(func.count()).select_from(ApprovalRecord)) == 4
+        assert session.scalar(select(func.count()).select_from(SendReceiptRecord)) == 3
+        assert session.scalar(select(func.count()).select_from(RepPreferenceRecord)) == 2
+        event_rows = session.scalars(select(QualityEventOutboxRecord)).all()
+        assert len(event_rows) == 12
+        review_events = [
+            row for row in event_rows if row.event_type == QualityEventType.REVIEW_COMPLETED.value
+        ]
+        assert len(review_events) == 4
+        approve_event = next(
+            row for row in review_events if row.payload["review_decision"] == "approve"
+        )
+        assert approve_event.payload["edit_distance"] == 0
+        reject_event = next(
+            row for row in review_events if row.payload["review_decision"] == "reject"
+        )
+        assert reject_event.payload["edit_distance"] is None
+        edit_events = [row for row in review_events if row.payload["review_decision"] == "edit"]
+        assert all(float(row.payload["edit_distance"]) > 0 for row in edit_events)
+    store.close()
+
+
+@pytest.mark.postgresql
+def test_delayed_older_edit_cannot_replace_the_current_preference(postgres_url: str) -> None:
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
+    older_service = ProspectRunService(
+        accounts=PostgresAccountRepository(store),
+        runs=PostgresRunRepository(store),
+        receipts=PostgresSendReceiptRepository(store),
+        preferences=PostgresPreferenceRepository(store),
+        workflows=PostgresWorkflowRepository(store),
+        clock=lambda: NOW,
+    )
+    newer_service = ProspectRunService(
+        accounts=PostgresAccountRepository(store),
+        runs=PostgresRunRepository(store),
+        receipts=PostgresSendReceiptRepository(store),
+        preferences=PostgresPreferenceRepository(store),
+        workflows=PostgresWorkflowRepository(store),
+        clock=lambda: NOW + timedelta(seconds=1),
+    )
+    older_run = older_service.create_run("tenant-demo", "rep-a", "acme-foods")
+    newer_run = newer_service.create_run("tenant-demo", "rep-a", "acme-foods")
+    DeterministicProspectPipeline(older_service, synthetic_prospect_sources()).run(older_run.id)
+    DeterministicProspectPipeline(newer_service, synthetic_prospect_sources()).run(newer_run.id)
+
+    newer_service.review_run(
+        newer_run.id,
+        ReviewAction.EDIT,
+        tool_call_id=review_tool_call_id(newer_run.id),
+        edited_outreach=OutreachDraft(
+            subject="Freight conversation",
+            body="Could we compare freight needs?",
+        ),
+    )
+    older_service.review_run(
+        older_run.id,
+        ReviewAction.EDIT,
+        tool_call_id=review_tool_call_id(older_run.id),
+        edited_outreach=OutreachDraft(
+            subject="Freight conversation",
+            body="Could we discuss your freight needs?",
+        ),
+    )
+
+    assert [
+        preference.summary for preference in newer_service.get_preferences("tenant-demo", "rep-a")
+    ] == ["Tone: comparative. Length: about 5 words. Format: generic invitation."]
     store.close()
 
 
@@ -474,6 +621,13 @@ def test_retry_exhaustion_marks_job_and_run_failed_without_private_error(
         job = session.scalars(select(WorkerJobRecord).where(WorkerJobRecord.run_id == run.id)).one()
         assert job.status == "failed"
         assert job.attempts == 3
+        failure_event = session.scalars(
+            select(QualityEventOutboxRecord).where(
+                QualityEventOutboxRecord.run_id == run.id,
+                QualityEventOutboxRecord.event_type == QualityEventType.RUN_FAILED.value,
+            )
+        ).one()
+        assert failure_event.payload["error_code"] == "execution_failed"
     store.close()
 
 

@@ -5,9 +5,10 @@ from uuid import UUID
 from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
 
-from ...contracts.models import ProspectRun
+from ...contracts.models import ProspectRun, QualityEvent
 from ...models.records import AccountRecord, ProspectRunRecord, WorkerJobRecord
 from .accounts import account_from_record
+from .quality_events import quality_event_insert
 from .run_codec import run_from_record, run_record_values
 from .store import PostgresProspectStore
 
@@ -35,15 +36,22 @@ class PostgresRunRepository:
             ).one()
             return run_from_record(run_row, account_from_record(account_row))
 
-    def save(self, run: ProspectRun) -> None:
+    def save(self, run: ProspectRun, quality_event: QualityEvent | None = None) -> None:
         with Session(self._engine) as session, session.begin():
             session.execute(
                 update(ProspectRunRecord)
                 .where(ProspectRunRecord.id == run.id)
                 .values(**run_record_values(run))
             )
+            if quality_event is not None:
+                session.execute(quality_event_insert(quality_event))
 
-    def save_claimed(self, run: ProspectRun, claim_token: UUID) -> bool:
+    def save_claimed(
+        self,
+        run: ProspectRun,
+        claim_token: UUID,
+        quality_event: QualityEvent | None = None,
+    ) -> bool:
         """Persist only while this worker still owns an unexpired fenced claim."""
 
         with Session(self._engine) as session, session.begin():
@@ -64,4 +72,6 @@ class PostgresRunRepository:
                 .where(ProspectRunRecord.id == run.id)
                 .values(**run_record_values(run))
             )
+            if quality_event is not None:
+                session.execute(quality_event_insert(quality_event))
             return True

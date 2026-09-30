@@ -30,6 +30,7 @@ from .models import (
     SourceCoverageStatus,
     SourceMode,
 )
+from .quality_events import QualityEventOutbox, QualityEventSink
 from .sources import (
     CarrierNetwork,
     CarrierNetworkSource,
@@ -82,6 +83,8 @@ __all__ = [
     "ProspectSources",
     "Provenance",
     "QualityEvent",
+    "QualityEventOutbox",
+    "QualityEventSink",
     "QualityEventType",
     "RecommendedNextStep",
     "ReviewAction",

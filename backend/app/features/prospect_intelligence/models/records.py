@@ -71,13 +71,35 @@ class SendReceiptRecord(Base):
 
 class RepPreferenceRecord(Base):
     __tablename__ = "prospect_rep_preferences"
-    __table_args__ = (Index("ix_rep_preferences_scope", "tenant_id", "rep_id"),)
+    __table_args__ = (
+        Index("ix_rep_preferences_scope", "tenant_id", "rep_id"),
+        UniqueConstraint("tenant_id", "rep_id", name="uq_rep_preferences_scope"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(100))
     rep_id: Mapped[str] = mapped_column(String(100))
     summary: Mapped[str] = mapped_column(Text)
     learned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class QualityEventOutboxRecord(Base):
+    """Sanitized events awaiting at-least-once downstream delivery."""
+
+    __tablename__ = "prospect_quality_event_outbox"
+    __table_args__ = (
+        UniqueConstraint("run_id", "event_type", name="uq_quality_event_run_type"),
+        Index("ix_quality_event_outbox_pending", "delivered_at", "occurred_at"),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("prospect_runs.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(40))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    delivery_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class WorkerJobRecord(Base):

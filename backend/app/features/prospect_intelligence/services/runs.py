@@ -12,14 +12,17 @@ from ..contracts.models import (
     FitVerdict,
     OutreachDraft,
     ProspectRun,
+    QualityEvent,
+    QualityEventType,
     RepPreference,
     ReviewAction,
     RunStatus,
-    SendReceipt,
 )
 from ..contracts.workflow import checkpoint_thread_id, review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
 from ..domain.outreach import validate_customer_outreach
+from ..domain.quality_events import build_quality_event
+from .review_outcomes import prepare_review_outcome
 
 
 class ProspectRunService:
@@ -71,7 +74,10 @@ class ProspectRunService:
             thread_id=checkpoint_thread_id(tenant_id, rep_id, run_id),
         )
         if self._workflows is not None:
-            self._workflows.create_run(run)
+            self._workflows.create_run(
+                run,
+                build_quality_event(run, QualityEventType.RUN_CREATED),
+            )
         else:
             self._runs.add(run)
         return run
@@ -132,7 +138,11 @@ class ProspectRunService:
             output=output,
             updated_at=self._clock(),
         )
-        self._save_execution_state(updated, claim_token)
+        self._save_execution_state(
+            updated,
+            claim_token,
+            build_quality_event(updated, QualityEventType.ANALYSIS_COMPLETED),
+        )
         return updated
 
     def review_run(
@@ -146,6 +156,10 @@ class ProspectRunService:
         if tool_call_id != review_tool_call_id(run_id):
             raise InvalidRunTransitionError("review token does not match this run")
         run = self.get_run(run_id)
+        if self._workflows is None and run.review_action is not None:
+            if run.review_action is not action:
+                raise InvalidRunTransitionError("review token has a different review decision")
+            return run
         if self._workflows is not None:
             if (
                 replayed := self._workflows.replay_review(run_id, action, tool_call_id)
@@ -158,85 +172,48 @@ class ProspectRunService:
                     raise InvalidRunTransitionError("review token has a different review decision")
                 return replace(run, send_receipt_id=existing.id)
         self._require(run, RunStatus.AWAITING_REVIEW)
-        if action is ReviewAction.REJECT:
-            updated = replace(
-                run,
-                status=RunStatus.REJECTED,
-                stage="Outreach rejected",
-                progress_percent=100,
-                review_action=action,
-                updated_at=self._clock(),
-            )
-            if self._workflows is not None:
-                return self._workflows.commit_review(
-                    original=run,
-                    updated=updated,
-                    action=action,
-                    idempotency_key=tool_call_id,
-                    receipt=None,
-                    preference=None,
-                )
-            self._runs.save(updated)
-            return updated
-        if run.output is None or run.output.outreach is None:
-            raise InvalidRunTransitionError("run has no outreach draft to review")
-        if action is ReviewAction.EDIT:
-            if edited_outreach is None:
-                raise InvalidRunTransitionError("edited outreach is required for an edit decision")
-            outreach = edited_outreach
-        else:
-            outreach = run.output.outreach
-        validate_customer_outreach(outreach)
-        now = self._clock()
-        receipt = SendReceipt(
-            id=self._id_factory(),
-            run_id=run.id,
-            tool_call_id=tool_call_id,
-            simulated=True,
-            sent_at=now,
-            outreach=outreach,
-        )
-        preference = None
-        if action is ReviewAction.EDIT:
-            preference = RepPreference(
-                tenant_id=run.tenant_id,
-                rep_id=run.rep_id,
-                summary="Rep prefers the reviewed outreach wording and structure.",
-                learned_at=now,
-            )
-        updated = replace(
+        outcome = prepare_review_outcome(
             run,
-            status=RunStatus.COMPLETED,
-            stage="Simulated send complete",
-            progress_percent=100,
-            reviewed_outreach=outreach,
-            review_action=action,
-            send_receipt_id=receipt.id,
-            updated_at=now,
+            action,
+            tool_call_id=tool_call_id,
+            edited_outreach=edited_outreach,
+            now=self._clock(),
+            id_factory=self._id_factory,
         )
         if self._workflows is not None:
             return self._workflows.commit_review(
                 original=run,
-                updated=updated,
+                updated=outcome.run,
                 action=action,
                 idempotency_key=tool_call_id,
-                receipt=receipt,
-                preference=preference,
+                receipt=outcome.receipt,
+                preference=outcome.preference,
+                quality_event=build_quality_event(
+                    outcome.run,
+                    QualityEventType.REVIEW_COMPLETED,
+                    edit_distance=outcome.edit_distance,
+                ),
             )
-        self._receipts.add(receipt)
-        if preference is not None:
-            self._preferences.add(preference)
-        self._runs.save(updated)
-        return updated
+        if outcome.receipt is not None:
+            self._receipts.add(outcome.receipt)
+        if outcome.preference is not None:
+            self._preferences.add(outcome.preference)
+        self._runs.save(outcome.run)
+        return outcome.run
 
     def get_preferences(self, tenant_id: str, rep_id: str) -> tuple[RepPreference, ...]:
         return self._preferences.list(tenant_id, rep_id)
 
-    def _save_execution_state(self, run: ProspectRun, claim_token: UUID | None) -> None:
+    def _save_execution_state(
+        self,
+        run: ProspectRun,
+        claim_token: UUID | None,
+        quality_event: QualityEvent | None = None,
+    ) -> None:
         if claim_token is None:
-            self._runs.save(run)
+            self._runs.save(run, quality_event)
             return
-        if not self._runs.save_claimed(run, claim_token):
+        if not self._runs.save_claimed(run, claim_token, quality_event):
             raise InvalidRunTransitionError("worker claim is no longer active")
 
     @staticmethod

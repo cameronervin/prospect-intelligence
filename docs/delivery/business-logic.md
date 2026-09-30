@@ -132,24 +132,70 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ### 2026-09-29 — Human review: outreach-only approval boundary
 
-- **Decision:** The system pauses before simulated outreach. A rep can approve, replace the complete
-  draft with another exact approved v1 invitation pair, or reject it; arbitrary custom copy is rejected.
-  CRM writeback and real email are excluded. Sends are idempotent by run and tool call. Preference
-  memory may record approved template selection but not customer facts.
+- **Decision:** The system pauses before any send-like action and waits for a rep. A rep can approve
+  the draft, replace the complete subject and body with another exact approved v1 invitation pair,
+  or reject it. Arbitrary custom copy is rejected. The MVP records a simulated send receipt only;
+  it does not send email or update a CRM.
 - **Decision:** Review must resume the durable `send_outreach` graph interrupt. The API has no direct
   service mutation fallback; if the graph review handler is unavailable it returns retryable
   `503 service_unavailable` without accepting the decision.
+- **Decision:** A valid decision and its product records commit together. Repeating the same action
+  with the same run-specific review token returns the original result without another receipt,
+  preference update, or quality event. Reusing that token for a different action is rejected.
+
+| Rep decision | Final run state | Simulated receipt | Preference learning | Quality feedback |
+| --- | --- | --- | --- | --- |
+| Approve | `completed` | Original reviewed draft | No change | Approval with edit distance `0` |
+| Edit | `completed` | Validated revised draft | Replace the current tenant/rep profile | Edit with normalized distance |
+| Reject | `rejected` | None | No change | Rejection with no edit distance |
+
+- **Decision:** Edited outreach is checked against the public-safe template allowlist before the graph
+  resumes and again before any receipt, preference, or quality event is persisted. An invalid
+  first-time edit or token leaves an awaiting run unchanged. Preferences remain isolated to the
+  current tenant and rep.
 - **Alternatives considered:** Sequential send and CRM approvals; direct service fallback when the
   graph is unavailable; relying on review without a runtime interrupt; storing customer facts as
   memory.
 - **Reasoning:** This is the smallest meaningful side-effect boundary and demonstrates durable human
   control without pretending to integrate a real customer system.
 - **Consequences:** Rejection is terminal and sends nothing. Temporary runtime unavailability is
-  visible and retryable rather than allowing review state to diverge from the graph checkpoint. V1
-  preference learning is deliberately limited to safe template selection; customer-specific facts
-  never enter preference memory. Production CRM integration remains documented future work.
+  visible and retryable rather than allowing review state to diverge from the graph checkpoint. A
+  database failure rolls back the decision and its related records together. A later quality-event
+  delivery failure leaves the event pending but does not change the rep's result. V1 preference
+  learning is limited to safe style traits; customer-specific facts never enter preference memory.
+  Production email and CRM integration remain future work.
 - **Evidence:** Approve/edit/reject, graph-resume, handler-unavailable, idempotency, and
   namespace-isolation tests.
+
+### 2026-09-29 — Human feedback: bounded preference profile and durable quality events
+
+- **Decision:** Only an approved edit changes rep memory. The current tenant/rep profile replaces the
+  previous profile and contains exactly three customer-neutral traits: direct, comparative, or
+  consultative tone; approximate body word count; and generic or route-specific invitation format.
+  Draft text, account names, route codes, and customer facts are never copied into preference memory.
+  If different runs commit out of order, the profile with the greatest `learned_at` timestamp remains
+  current.
+- **Decision:** Review edit distance is character-level Levenshtein distance over the canonical
+  `Subject: …\n\n<body>` text divided by the longer canonical length. Approval records `0`, edit
+  records the normalized value, and rejection records no distance.
+- **Decision:** Run creation, analysis completion, human review, and terminal execution failure each
+  enqueue one sanitized event atomically with the corresponding PostgreSQL transition. Event IDs are
+  deterministic by run and event type. The dispatcher delivers at least once, acknowledges only
+  after sink success, bounds each sink attempt to 10 seconds by default, and retains a sanitized
+  pending failure for retry; delivery failure or timeout never changes the product result. Concrete
+  LangSmith delivery remains CAM-42 work.
+- **Alternatives considered:** Append unbounded free-text memories; retain the selected draft or route;
+  use word-level or heuristic similarity; publish events only after commit without an outbox; call
+  LangSmith directly from the prospect feature.
+- **Reasoning:** A bounded current profile gives later drafts useful style direction without creating
+  contradictory memory or customer-specific retention. Transactional events preserve feedback across
+  crashes while keeping online-quality integrations outside the freight feature.
+- **Consequences:** The MVP retains product and outbox rows indefinitely. Outbox delivery is
+  at-least-once, so downstream consumers must deduplicate by event ID. Migration `20260929_0002`
+  keeps the newest pre-existing preference per tenant/rep and cannot restore deleted duplicates on
+  downgrade.
+- **Evidence:** Preference taxonomy and distance unit tests; approve/edit/reject replay tests;
+  disposable-PostgreSQL migration, lifecycle-event, restart, isolation, and delivery-failure tests.
 
 ### 2026-09-29 — Lane analysis: runtime-loaded, role-scoped skill
 

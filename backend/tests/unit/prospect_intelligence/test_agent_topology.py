@@ -1,6 +1,7 @@
 """Feature-owned Deep Agent topology, middleware, and runtime contracts."""
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
 import pytest
@@ -41,6 +42,17 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectAgentInput,
     ProspectRuntimeContext,
 )
+from app.features.prospect_intelligence.contracts.models import OutreachDraft, ReviewAction
+from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
+from app.features.prospect_intelligence.repositories.memory import (
+    InMemoryAccountRepository,
+    InMemoryPreferenceRepository,
+    InMemoryRunRepository,
+    InMemorySendReceiptRepository,
+)
+from app.features.prospect_intelligence.services.runs import ProspectRunService
+from tests.deterministic_pipeline import DeterministicProspectPipeline
+from tests.fakes import synthetic_prospect_sources
 from tests.unit.prospect_intelligence.agent_test_support import (
     TrajectoryModel,
     completed_files,
@@ -251,6 +263,35 @@ def test_compiled_agents_have_no_hidden_general_purpose_subagent() -> None:
 
 @pytest.mark.asyncio
 async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    learned_run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(learned_run.id)
+    service.review_run(
+        learned_run.id,
+        ReviewAction.EDIT,
+        tool_call_id=review_tool_call_id(learned_run.id),
+        edited_outreach=OutreachDraft(
+            subject="Freight conversation",
+            body="Could we compare freight needs?",
+        ),
+    )
+    later_run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    learned_preferences = tuple(
+        preference.summary
+        for preference in service.get_preferences(later_run.tenant_id, later_run.rep_id)
+    )
+    context = ProspectRuntimeContext(
+        run_id=later_run.id,
+        tenant_id=later_run.tenant_id,
+        rep_id=later_run.rep_id,
+        rep_preferences=learned_preferences,
+    )
     model = TrajectoryModel()
     store = InMemoryStore()
     chains = build_chains(
@@ -266,8 +307,11 @@ async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
     runtime = CompiledProspectAgentRuntime(cast(Any, compiled))
 
     result = await runtime.execute(
-        ProspectAgentInput(task_brief="Research Acme freight fit.", account_id="account-acme"),
-        context=runtime_context(rep_preferences=("Prefer concise outreach.",)),
+        ProspectAgentInput(
+            task_brief="Research Acme freight fit.",
+            account_id=later_run.account.id,
+        ),
+        context=context,
     )
 
     assert result.pending_interrupt == "send_outreach"
@@ -280,6 +324,32 @@ async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
         "outreach-drafter": 2,
     }
     assert set(completed_files()).issubset(result.files)
+    backend = create_agent_backend(
+        next(item for item in specialist_specs() if item.name == "account-context"),
+        store,
+    )
+    memory_graph = StateGraph(_ReadState, context_schema=ProspectRuntimeContext)
+
+    async def read_learned_memory(
+        state: _ReadState,
+        runtime: Runtime[ProspectRuntimeContext],
+    ) -> _ReadState:
+        del state, runtime
+        materialized = await backend.aread(
+            f"/memories/{context.tenant_id}/{context.rep_id}/preferences.md"
+        )
+        assert materialized.file_data is not None
+        return {"content": materialized.file_data["content"]}
+
+    memory_graph.add_node("read", read_learned_memory)  # pyright: ignore[reportUnknownMemberType]
+    memory_graph.add_edge(START, "read")
+    memory_graph.add_edge("read", END)
+    compiled_memory = memory_graph.compile()  # pyright: ignore[reportUnknownMemberType]
+    memory_result = await cast(Any, compiled_memory).ainvoke({}, context=context)
+    assert memory_result["content"] == (
+        "# Rep preferences\n\n"
+        "- Tone: comparative. Length: about 5 words. Format: generic invitation.\n"
+    )
 
 
 @pytest.mark.asyncio

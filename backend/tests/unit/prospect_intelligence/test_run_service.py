@@ -182,8 +182,14 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
         ReviewAction.REJECT,
         tool_call_id=review_tool_call_id(rejected.id),
     )
+    replayed_rejection = service.review_run(
+        rejected.id,
+        ReviewAction.REJECT,
+        tool_call_id=review_tool_call_id(rejected.id),
+    )
 
     assert result.status is RunStatus.REJECTED
+    assert replayed_rejection == result
     assert result.send_receipt_id is None
     assert service.get_preferences("tenant-demo", "rep-a") == ()
 
@@ -207,8 +213,46 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
         subject="Freight conversation",
         body="Could we discuss your freight needs?",
     )
-    assert service.get_preferences("tenant-demo", "rep-a")
+    preferences = service.get_preferences("tenant-demo", "rep-a")
+    assert len(preferences) == 1
+    assert preferences[0].summary == (
+        "Tone: direct. Length: about 6 words. Format: generic invitation."
+    )
     assert service.get_preferences("tenant-demo", "rep-b") == ()
+
+    altered_replay = service.review_run(
+        edited.id,
+        ReviewAction.EDIT,
+        tool_call_id=review_tool_call_id(edited.id),
+        edited_outreach=OutreachDraft(
+            subject="Freight conversation",
+            body="Could we compare freight needs?",
+        ),
+    )
+    assert altered_replay == reviewed
+    assert service.get_preferences("tenant-demo", "rep-a") == preferences
+
+    replacement = service.create_run("tenant-demo", "rep-a", account.id)
+    service.start_run(replacement.id)
+    service.submit_analysis(
+        replacement.id,
+        analysis("Could we discuss your freight needs?"),
+    )
+    service.review_run(
+        replacement.id,
+        ReviewAction.EDIT,
+        tool_call_id=review_tool_call_id(replacement.id),
+        edited_outreach=OutreachDraft(
+            subject="Freight conversation",
+            body="Could we compare freight needs?",
+        ),
+    )
+
+    current = service.get_preferences("tenant-demo", "rep-a")
+    assert len(current) == 1
+    assert current[0].summary == (
+        "Tone: comparative. Length: about 5 words. Format: generic invitation."
+    )
 
 
 def test_internal_business_data_is_blocked_from_customer_outreach() -> None:

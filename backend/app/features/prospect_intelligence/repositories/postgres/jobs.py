@@ -7,9 +7,12 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from ...contracts.jobs import ClaimedJob
-from ...contracts.models import RunError, RunStatus
-from ...models.records import ProspectRunRecord, WorkerJobRecord
-from .run_codec import serialize_run_error
+from ...contracts.models import QualityEventType, RunError, RunStatus
+from ...domain.quality_events import build_quality_event
+from ...models.records import AccountRecord, ProspectRunRecord, WorkerJobRecord
+from .accounts import account_from_record
+from .quality_events import quality_event_insert
+from .run_codec import run_from_record, serialize_run_error
 from .store import PostgresProspectStore
 
 
@@ -162,4 +165,14 @@ def _mark_terminal_failure(
                 message="The prospect analysis could not be completed.",
                 retryable=False,
             )
+        )
+        account = session.scalars(
+            select(AccountRecord).where(
+                AccountRecord.tenant_id == run.tenant_id,
+                AccountRecord.account_id == run.account_id,
+            )
+        ).one()
+        failed_run = run_from_record(run, account_from_record(account))
+        session.execute(
+            quality_event_insert(build_quality_event(failed_run, QualityEventType.RUN_FAILED))
         )

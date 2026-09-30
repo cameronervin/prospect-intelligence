@@ -3,6 +3,9 @@
 Offline evaluation decides whether a graph revision is ready to ship. Online evaluation detects
 quality changes after release, and reviewed online failures become permanent regression examples.
 
+See [human-in-the-loop-flow.md](human-in-the-loop-flow.md) for the outreach review checkpoint,
+decision outcomes, durable commit flow, preference learning, and quality feedback signals.
+
 The credential-free harness provides:
 
 - `freight-prospect-v1`: 16 core and 8 edge examples with deterministic reference outputs.
