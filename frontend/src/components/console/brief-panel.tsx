@@ -2,7 +2,9 @@
 
 import { useId, useState } from "react";
 
+import { linkButton, typeStyles } from "@/components/ui/styles";
 import type { Brief, ProspectRun } from "@/lib/prospect-api";
+import { cn } from "@/lib/utils";
 
 import {
   formatCompactCurrency,
@@ -24,11 +26,11 @@ function Figure({
 }: Readonly<{ value: string; exact: string; label: string }>) {
   return (
     <div>
-      <data value={exact} title={exact} className="type-figure block">
+      <data value={exact} title={exact} className={`${typeStyles.figure} block`}>
         <span aria-hidden="true">{value}</span>
         <span className="sr-only">{exact}</span>
       </data>
-      <span className="type-utility">{label}</span>
+      <span className={typeStyles.utility}>{label}</span>
     </div>
   );
 }
@@ -56,7 +58,7 @@ function VerdictLine({ brief, verdict }: Readonly<{ brief: Brief; verdict: Verdi
       <StatusPill tone={verdict === "fit" ? "ready" : "neutral"}>
         {verdictLabel[verdict]}
       </StatusPill>
-      <p className="type-lead">{recommendedActionLabel[brief.recommended_next_step_code]}</p>
+      <p className={typeStyles.lead}>{recommendedActionLabel[brief.recommended_next_step_code]}</p>
     </div>
   );
 }
@@ -71,20 +73,20 @@ export function WhySummary({
   const lead = brief.lanes[0];
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3.5">
-      <h3 id={headingId} className="type-section text-accent-strong">
+      <h3 id={headingId} className={cn(typeStyles.section, "text-orange-800")}>
         Why this account
       </h3>
       <VerdictLine brief={brief} verdict={verdict} />
-      <p className="text-foreground-soft text-sm leading-[1.35rem]">{brief.summary}</p>
-      <p className="text-sm leading-[1.35rem]">{brief.recommended_next_step}</p>
+      <p className="text-sm leading-6 text-slate-700">{brief.summary}</p>
+      <p className="text-sm leading-6">{brief.recommended_next_step}</p>
       {brief.lanes.length > 0 ? <Figures brief={brief} /> : null}
       {lead ? (
-        <p className="border-accent-line flex items-baseline justify-between gap-3 border-t pt-2.5 text-sm font-semibold">
+        <p className="flex items-baseline justify-between gap-3 border-t border-orange-200 pt-2 text-sm font-semibold">
           <span>{`${lead.origin} → ${lead.destination}`}</span>
           <span className="tabular-nums">{`${formatScore(lead.fit_score)} fit`}</span>
         </p>
       ) : null}
-      <a href={`#${evidenceId}`} className="btn-link self-start">
+      <a href={`#${evidenceId}`} className={`${linkButton} self-start`}>
         Check lanes and evidence ↓
       </a>
     </section>
@@ -100,8 +102,8 @@ export function BriefPanel({ brief, verdict }: Readonly<{ brief: Brief; verdict:
         Verdict
       </h3>
       <VerdictLine brief={brief} verdict={verdict} />
-      <p className="type-body text-foreground-soft max-w-[68ch]">{brief.summary}</p>
-      <p className="type-body max-w-[68ch]">{brief.recommended_next_step}</p>
+      <p className={cn(typeStyles.body, "max-w-prose text-slate-700")}>{brief.summary}</p>
+      <p className={`${typeStyles.body} max-w-prose`}>{brief.recommended_next_step}</p>
       {brief.lanes.length > 0 ? <Figures brief={brief} /> : null}
     </section>
   );
@@ -114,7 +116,7 @@ export function ModelAssumptions() {
     <div>
       <button
         type="button"
-        className="btn-link type-utility"
+        className={linkButton}
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((value) => !value)}
@@ -122,7 +124,7 @@ export function ModelAssumptions() {
         Model assumptions
       </button>
       {open ? (
-        <div id={panelId} className="type-utility flex max-w-[68ch] flex-col gap-1 pb-2">
+        <div id={panelId} className={`${typeStyles.utility} flex max-w-prose flex-col gap-1 pb-2`}>
           <p>Internal model: estimates, not booked revenue or margin.</p>
           <p>
             Modeled gross revenue = matched loads per week × estimated rate per load × 52 weeks.

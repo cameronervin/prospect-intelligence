@@ -15,6 +15,7 @@ import { ReviewCheckpoint } from "@/components/console/review-checkpoint";
 import { ReviewOutcome } from "@/components/console/review-pane";
 import { SourceCoverage } from "@/components/console/source-coverage";
 import { StatusPill, type StatusTone } from "@/components/console/status-pill";
+import { alertStyle, buttonStyles, typeStyles } from "@/components/ui/styles";
 import type { RunReview } from "../api/client";
 import type { ProspectRun } from "../api/schemas";
 import { MAX_POLL_RETRIES } from "../run/constants";
@@ -64,7 +65,7 @@ export function RunView({
     <div className="flex flex-col gap-7">
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 className="type-display">{run.account.name}</h2>
+          <h2 className={typeStyles.display}>{run.account.name}</h2>
           <StatusPill
             tone={
               run.status === "completed" && run.verdict !== "fit"
@@ -75,7 +76,7 @@ export function RunView({
             {deciding ? "Awaiting your review" : runStatusLabel[run.status]}
           </StatusPill>
         </div>
-        <p className="type-utility">
+        <p className={typeStyles.utility}>
           <span role="status" aria-label="Run progress" aria-live="polite">
             {run.stage}
           </span>
@@ -96,14 +97,14 @@ export function RunView({
       {active && steps.length > 0 ? <AgentTracker steps={steps} /> : null}
 
       {pollPaused ? (
-        <div role="alert" className="alert">
+        <div role="alert" className={alertStyle}>
           <p className="font-semibold">Progress updates paused</p>
-          <p className="type-utility text-foreground-soft">
+          <p className={typeStyles.utility}>
             We couldn&apos;t reach the service after {MAX_POLL_RETRIES} retries. Research continues
             on the server.
           </p>
           <div className="mt-1.5">
-            <button type="button" className="btn-secondary" onClick={onResume}>
+            <button type="button" className={buttonStyles.secondary} onClick={onResume}>
               Resume updates
             </button>
           </div>
@@ -111,9 +112,9 @@ export function RunView({
       ) : null}
 
       {run.status === "failed" ? (
-        <div role="alert" className="alert">
+        <div role="alert" className={alertStyle}>
           <p className="font-semibold">Research could not be completed</p>
-          <p className="type-utility text-foreground-soft">
+          <p className={typeStyles.utility}>
             No customer-facing output was produced. Run the prospect agent again to retry.
           </p>
         </div>
@@ -144,7 +145,7 @@ export function RunView({
       >
         {hasLanes ? (
           <div className="flex flex-wrap items-center gap-x-4">
-            <h2 id={evidenceHeadingId} className="type-title">
+            <h2 id={evidenceHeadingId} className={typeStyles.title}>
               Supporting evidence
             </h2>
             <ModelAssumptions />

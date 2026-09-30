@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 
+import { linkButton, typeStyles } from "@/components/ui/styles";
 import type { RunStep } from "@/lib/prospect-api";
 import { cn } from "@/lib/utils";
 
@@ -80,32 +81,30 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
   return (
     <li
       aria-label={`Step ${index + 1}: ${step.label}, ${label}`}
-      className="border-line border-b py-3 last:border-b-0"
+      className="border-b border-slate-200 py-3 last:border-b-0"
     >
-      <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto_3rem] items-center gap-x-3">
+      <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
           className={cn(
             "grid size-6 place-items-center rounded-full text-xs font-semibold tabular-nums",
             step.status === "running"
-              ? "bg-background text-foreground ring-foreground ring-2 ring-inset"
+              ? "bg-white text-slate-950 ring-2 ring-slate-950 ring-inset"
               : step.status === "complete"
-                ? "bg-ready-soft text-ready"
-                : "bg-surface text-foreground-faint ring-line-strong ring-1 ring-inset",
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-slate-100 text-slate-500 ring-1 ring-slate-300 ring-inset",
           )}
         >
           {index + 1}
         </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2">
-          <span
-            className={cn("text-[0.9375rem]", idle ? "text-foreground-faint" : "font-semibold")}
-          >
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2">
+          <span className={cn("text-sm", idle ? "text-slate-500" : "font-semibold")}>
             {step.label}
           </span>
           {step.activity.length > 0 ? (
             <button
               type="button"
-              className="btn-link type-utility"
+              className={linkButton}
               aria-label={`${step.activity.length} source ${step.activity.length === 1 ? "call" : "calls"} for ${step.label}`}
               aria-expanded={open}
               aria-controls={open ? activityId : undefined}
@@ -125,22 +124,22 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
         <span
           data-elapsed
           aria-hidden={step.status === "running" || undefined}
-          className="type-utility text-right tabular-nums"
+          className={`${typeStyles.utility} w-12 text-right tabular-nums`}
         >
           {stepElapsed(step, now)}
         </span>
       </div>
       {open ? (
-        <ol id={activityId} className="border-line-strong mt-2 ml-9 border-l pl-3">
+        <ol id={activityId} className="mt-2 ml-9 border-l border-slate-300 pl-3">
           {step.activity.map((item, position) => (
             <li
               key={`${item.at}-${item.source}-${position}`}
-              className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-x-3 py-1 text-sm"
+              className="flex items-center gap-3 py-1 text-sm"
             >
-              <span className="type-utility tabular-nums">
+              <span className={`${typeStyles.utility} w-24 shrink-0 tabular-nums`}>
                 {activityTime.format(new Date(item.at))}
               </span>
-              <span>{item.source}</span>
+              <span className="min-w-0 flex-1">{item.source}</span>
               <StatusPill tone={item.outcome === "ok" ? "ready" : "degraded"}>
                 {item.outcome === "ok" ? "OK" : "Unavailable"}
               </StatusPill>
@@ -159,13 +158,13 @@ export function AgentTracker({ steps }: Readonly<{ steps: RunStep[] }>) {
   return (
     <section
       aria-labelledby={headingId}
-      className="border-line-strong rounded-md border px-4 pt-3 pb-1 sm:px-6"
+      className="rounded border border-slate-300 px-4 pt-3 pb-1 sm:px-6"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1">
-        <h2 id={headingId} className="type-heading">
+        <h2 id={headingId} className={typeStyles.heading}>
           Agent progress
         </h2>
-        <p className="type-utility">
+        <p className={typeStyles.utility}>
           The orchestrator records each agent attempt, then pauses for your review.
         </p>
       </div>
@@ -201,10 +200,12 @@ export function AgentRunSummary({ steps }: Readonly<{ steps: RunStep[] }>) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-x-3">
-        <span className="type-utility tabular-nums">{`Agent run · ${counted}${failed > 0 ? ` · ${failed} failed` : ""} · ${duration}`}</span>
+        <span
+          className={`${typeStyles.utility} tabular-nums`}
+        >{`Agent run · ${counted}${failed > 0 ? ` · ${failed} failed` : ""} · ${duration}`}</span>
         <button
           type="button"
-          className="btn-link type-utility"
+          className={linkButton}
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
           onClick={() => setOpen((value) => !value)}

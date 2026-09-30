@@ -11,8 +11,8 @@ for repeated scanning and review. The visual grammar should draw from route mani
 work rather than a generic SaaS marketing page:
 
 - compact, left-aligned hierarchy that exposes the working experience in the first viewport;
-- warm manifest-paper and freight-green surfaces, thin dividers, and a restrained rust safety
-  accent, with subtle route-grid texture rather than decorative application chrome;
+- white workspace and cool slate rail surfaces, thin slate dividers, and a restrained orange safety
+  accent reserved for the review checkpoint and its primary action;
 - small semantic radii, with pill geometry reserved for genuine status values;
 - dense account, lane, evidence, and coverage rows instead of nested or repeated cards;
 - explicit display, body, utility, and tabular-number typography roles;
@@ -47,7 +47,7 @@ interaction, state, or brand reason.
 | Item                               | Current decision                                                                                | Activation condition                                                                                                                                        |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Root `DESIGN.md`                   | Paused. Do not create a speculative token contract.                                             | CAM-36 establishes an approved and stable palette, typography, spacing, radius, component, and motion grammar worth preserving across agents and sessions.  |
-| DTCG tokens and Style Dictionary   | Paused; CSS custom properties and Tailwind v4 theme variables are sufficient for the MVP.       | The product targets multiple platforms or needs generated token outputs beyond the web application.                                                         |
+| DTCG tokens and Style Dictionary   | Paused; Tailwind v4 built-in values are sufficient for the MVP.                                 | The product targets multiple platforms or needs generated token outputs beyond the web application.                                                         |
 | `@shadcn/lint` component contracts | Paused. The current page has no shared UI component contract for `no-restyle` rules to protect. | A reusable component layer with approved variants exists; adopt only rules that match that contract and disclose the linter's limits.                       |
 | Storybook                          | Paused. Component and Playwright tests are the smaller current workflow.                        | The frontend has a reusable component catalog with multiple meaningful visual states that is difficult to review through routes alone.                      |
 | Committed screenshot baselines     | Paused so an unapproved scaffold does not become the golden design.                             | The CAM-36 cleanup is accepted; add stable desktop, mobile, and key-state baselines through CAM-37 in a pinned browser environment.                         |
@@ -78,17 +78,18 @@ expanded full-stack browser coverage after that direction is accepted.
   account" rationale. Lanes, assumptions and sources follow as supporting evidence. The outcome
   receipt, neutral outcomes and progress take the same top slot. The first design had a third,
   narrow review column; user review found the call to action unclear, so it was replaced.
-- **System:** tokens live in `frontend/src/app/globals.css`:
-  - warm `#f2f0e9` and `#e8e4da` surfaces, freight-green text, thin neutral dividers;
-  - separate ready, degraded and danger colors;
-  - one rust safety accent (`#b34725`), strongest on the review frame and its primary action.
-- **Type roles:** self-hosted Archivo provides the `type-display`, `type-title`, `type-lead`,
-  `type-section`, `type-body`, `type-utility` and `type-figure` roles. Tabular numerals are used for
-  every figure.
+- **System:** application source uses Tailwind's built-in palette and scales: white and slate for
+  the console, orange for human review, emerald for success, amber for degraded sources, and red
+  for failures. It is intentionally light-only, flat, and free of gradients and custom raw values.
+- **Type roles:** reusable class recipes compose Tailwind's system sans-serif, standard type scale,
+  weights, line heights and tabular numerals. No custom type dimensions are maintained.
 - **Signature:** the lane manifest row (route, fit, matched loads, modeled revenue). Score
   components, volumes, deadhead and evidence open beneath the row instead of in a separate card.
 - **Hierarchy:** verdict and recommended action lead, followed by two modeled totals. Assumptions,
   complete sources and non-lead lane details stay behind disclosures. Degraded and unavailable
   sources are always visible.
-- **Reference:** the design canvas used for review (system, desktop, states and mobile boards) is a
-  private claude.ai artifact. It is not a committed baseline; CAM-37 owns visual baselines.
+- **Reference:** `docs/design/` contains the reviewed system, desktop, state and mobile boards. The
+  files are qualitative inspiration only: the application never imports their HTML or copies their
+  raw values, and the PNGs are not screenshot baselines.
+- **Enforcement:** `npm run styles:check` rejects raw colors, CSS dimensions, gradients, inline
+  styles and arbitrary-value Tailwind utilities from `frontend/src`.

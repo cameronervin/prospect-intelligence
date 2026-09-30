@@ -20,8 +20,8 @@ BACKEND_BASE_URL=http://127.0.0.1:8000 npm run dev
   identity headers, and rejects dot segments that would leave `/api/v1`.
 
 `BACKEND_BASE_URL` is server-only. No browser bundle receives backend credentials or LangSmith
-configuration. Archivo is self-hosted through `@fontsource-variable/archivo`, so the CSP stays
-`font-src 'self'`.
+configuration. The interface uses Tailwind's built-in system font stack and token scales.
 
-`npm run check` runs lint, typecheck, Vitest, and the production build; `npm run test:e2e` runs the
-Playwright scenarios on desktop Chrome and Pixel 7.
+`npm run styles:check` rejects raw UI values and arbitrary Tailwind utilities in application source.
+`npm run check` runs that policy, lint, typecheck, Vitest, and the production build;
+`npm run test:e2e` runs the Playwright scenarios on desktop Chrome and Pixel 7.

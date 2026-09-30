@@ -2,6 +2,7 @@
 
 import { Fragment, useId, useState } from "react";
 
+import { iconButton, tableHeader, typeStyles } from "@/components/ui/styles";
 import type { Evidence, Lane } from "@/lib/prospect-api";
 
 import {
@@ -16,12 +17,12 @@ import {
 
 function EvidenceItem({ item }: Readonly<{ item: Evidence }>) {
   return (
-    <li className="border-line flex flex-col gap-0.5 border-b py-2 last:border-b-0">
+    <li className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0">
       <span className="text-sm">{item.claim}</span>
-      <span className="type-utility" title={formatRetrievedTimestamp(item.retrieved_at)}>
+      <span className={typeStyles.utility} title={formatRetrievedTimestamp(item.retrieved_at)}>
         {`${item.source} · ${sourceModeLabel[item.mode]} · Retrieved ${formatRetrievedDate(item.retrieved_at)}`}
       </span>
-      <span className="type-utility text-foreground-faint break-all">
+      <span className={`${typeStyles.utility} break-all text-slate-500`}>
         {`${item.source_version} · ${item.evidence_location} · ${item.endpoint_or_artifact}`}
       </span>
     </li>
@@ -43,13 +44,13 @@ function LaneDetails({ lane }: Readonly<{ lane: Lane }>) {
       <dl className="flex flex-wrap gap-x-6 gap-y-1">
         {facts.map(([label, value, className]) => (
           <div key={label} className={`flex gap-1.5 ${className ?? ""}`}>
-            <dt className="type-utility">{label}</dt>
+            <dt className={typeStyles.utility}>{label}</dt>
             <dd className="text-xs font-semibold tabular-nums">{value}</dd>
           </div>
         ))}
       </dl>
       {lane.evidence.length > 0 ? (
-        <ul aria-label="Evidence" className="border-line border-t">
+        <ul aria-label="Evidence" className="border-t border-slate-200">
           {lane.evidence.map((item) => (
             <EvidenceItem
               key={`${item.source}-${item.evidence_location}-${item.claim}`}
@@ -58,7 +59,7 @@ function LaneDetails({ lane }: Readonly<{ lane: Lane }>) {
           ))}
         </ul>
       ) : (
-        <p className="type-utility">No evidence items were returned for this lane.</p>
+        <p className={typeStyles.utility}>No evidence items were returned for this lane.</p>
       )}
     </div>
   );
@@ -80,28 +81,25 @@ export function LaneTable({ lanes }: Readonly<{ lanes: Lane[] }>) {
 
   return (
     <section className="flex flex-col gap-1">
-      <h3 id={`${baseId}-heading`} className="type-section">
+      <h3 id={`${baseId}-heading`} className={typeStyles.section}>
         Top lanes
       </h3>
-      <table
-        aria-labelledby={`${baseId}-heading`}
-        className="w-full border-collapse text-sm [&>tbody>tr:last-child]:border-b-0"
-      >
+      <table aria-labelledby={`${baseId}-heading`} className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-line-strong border-b">
-            <th scope="col" className="th text-left">
+          <tr className="border-b border-slate-300">
+            <th scope="col" className={`${tableHeader} text-left`}>
               Lane
             </th>
-            <th scope="col" className="th text-right">
+            <th scope="col" className={`${tableHeader} text-right`}>
               Fit
             </th>
-            <th scope="col" className="th hidden text-right sm:table-cell">
+            <th scope="col" className={`${tableHeader} hidden text-right sm:table-cell`}>
               Matched loads
             </th>
-            <th scope="col" className="th hidden text-right sm:table-cell">
+            <th scope="col" className={`${tableHeader} hidden text-right sm:table-cell`}>
               Modeled revenue
             </th>
-            <th scope="col" className="th w-10">
+            <th scope="col" className={`${tableHeader} w-10`}>
               <span className="sr-only">Details</span>
             </th>
           </tr>
@@ -113,7 +111,7 @@ export function LaneTable({ lanes }: Readonly<{ lanes: Lane[] }>) {
             const detailsId = `${baseId}-lane-${index}`;
             return (
               <Fragment key={name}>
-                <tr className={open ? "" : "border-line border-b"}>
+                <tr className={open ? "" : "border-b border-slate-200"}>
                   <th scope="row" className="py-3 pr-3 text-left font-semibold">
                     {name}
                   </th>
@@ -129,7 +127,7 @@ export function LaneTable({ lanes }: Readonly<{ lanes: Lane[] }>) {
                   <td className="py-1 text-right">
                     <button
                       type="button"
-                      className="btn-icon"
+                      className={iconButton}
                       aria-expanded={open}
                       aria-controls={open ? detailsId : undefined}
                       aria-label={`Details for ${name}`}
@@ -142,7 +140,7 @@ export function LaneTable({ lanes }: Readonly<{ lanes: Lane[] }>) {
                   </td>
                 </tr>
                 {open ? (
-                  <tr id={detailsId} className="border-line border-b">
+                  <tr id={detailsId} className="border-b border-slate-200">
                     <td colSpan={5}>
                       <LaneDetails lane={lane} />
                     </td>

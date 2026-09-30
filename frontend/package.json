@@ -11,6 +11,7 @@
     "build": "next build",
     "prepare:standalone": "node scripts/prepare-standalone.mjs",
     "start": "node .next/standalone/server.js",
+    "styles:check": "node --test scripts/check-tailwind-policy.test.mjs && node scripts/check-tailwind-policy.mjs",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -18,10 +19,9 @@
     "test:e2e": "npm run build && npm run prepare:standalone && playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run styles:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "@fontsource-variable/archivo": "5.3.0",
     "clsx": "2.1.1",
     "next": "16.3.6",
     "react": "19.3.0",

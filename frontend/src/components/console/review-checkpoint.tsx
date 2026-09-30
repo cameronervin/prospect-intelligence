@@ -3,12 +3,21 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import {
+  alertStyle,
+  buttonStyles,
+  fieldLabel,
+  fieldStyle,
+  largeButton,
+  typeStyles,
+} from "@/components/ui/styles";
+import {
   describeReviewFailure,
   refreshFailure,
   type ReviewFailure,
   type ReviewFocusTarget,
 } from "@/features/prospect-intelligence/review/failure-policy";
 import type { RunReview } from "@/lib/prospect-api";
+import { cn } from "@/lib/utils";
 
 type Draft = { subject: string; body: string };
 export { describeReviewFailure };
@@ -124,22 +133,22 @@ export function ReviewCheckpoint({
   }
 
   return (
-    <div className="border-accent bg-background grid rounded-md border lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-      <section aria-labelledby={headingId} className="flex flex-col gap-4 p-4 sm:p-6">
+    <div className="grid rounded border border-orange-600 bg-white lg:grid-cols-5">
+      <section aria-labelledby={headingId} className="flex flex-col gap-4 p-4 sm:p-6 lg:col-span-3">
         <div>
-          <h2 id={headingId} className="type-heading">
+          <h2 id={headingId} className={typeStyles.heading}>
             {confirmingReject ? "Reject this draft?" : `Review the outreach to ${accountName}`}
           </h2>
-          <p className="text-foreground-soft mt-1 text-sm">
+          <p className="mt-1 text-sm text-slate-700">
             Approve it as written or correct it. Sending is simulated: no email or CRM write.
           </p>
         </div>
 
         <form className="flex flex-col gap-4" onSubmit={onSubmit} noValidate>
           {failure ? (
-            <div role="alert" ref={alertRef} tabIndex={-1} className="alert">
+            <div role="alert" ref={alertRef} tabIndex={-1} className={alertStyle}>
               <p className="font-semibold">{failure.title}</p>
-              <p id={failureId} className="type-utility text-foreground-soft">
+              <p id={failureId} className={typeStyles.utility}>
                 {failure.message}
               </p>
               {failure.retry || failure.refresh || (failure.restore && edited) ? (
@@ -148,7 +157,7 @@ export function ReviewCheckpoint({
                     <button
                       ref={retryRef}
                       type="button"
-                      className="btn-secondary"
+                      className={buttonStyles.secondary}
                       aria-disabled={pending}
                       onClick={() => {
                         if (!pending && failure.retry) void submit(failure.retry, true);
@@ -158,7 +167,7 @@ export function ReviewCheckpoint({
                     </button>
                   ) : null}
                   {failure.restore && edited ? (
-                    <button type="button" className="btn-secondary" onClick={restore}>
+                    <button type="button" className={buttonStyles.secondary} onClick={restore}>
                       Restore original draft
                     </button>
                   ) : null}
@@ -166,7 +175,7 @@ export function ReviewCheckpoint({
                     <button
                       ref={refreshRef}
                       type="button"
-                      className="btn-secondary"
+                      className={buttonStyles.secondary}
                       aria-disabled={pending}
                       onClick={() => {
                         if (!pending) void run(onRefresh, () => refreshFailure, true);
@@ -181,13 +190,13 @@ export function ReviewCheckpoint({
           ) : null}
 
           <div>
-            <label htmlFor={`${ids}-subject`} className="field-label">
+            <label htmlFor={`${ids}-subject`} className={fieldLabel}>
               Subject
             </label>
             <input
               id={`${ids}-subject`}
               ref={subjectRef}
-              className="field"
+              className={fieldStyle}
               value={draft.subject}
               maxLength={200}
               readOnly={Boolean(failure?.final)}
@@ -197,12 +206,12 @@ export function ReviewCheckpoint({
             />
           </div>
           <div>
-            <label htmlFor={`${ids}-body`} className="field-label">
+            <label htmlFor={`${ids}-body`} className={fieldLabel}>
               Message
             </label>
             <textarea
               id={`${ids}-body`}
-              className="field resize-y"
+              className={`${fieldStyle} resize-y`}
               rows={4}
               value={draft.body}
               maxLength={10000}
@@ -222,7 +231,7 @@ export function ReviewCheckpoint({
                 <button
                   ref={confirmRef}
                   type="button"
-                  className="btn-danger"
+                  className={buttonStyles.danger}
                   aria-describedby={rejectNoteId}
                   disabled={locked}
                   onClick={() => void submit({ decision: "reject", tool_call_id: toolCallId })}
@@ -231,7 +240,7 @@ export function ReviewCheckpoint({
                 </button>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className={buttonStyles.secondary}
                   disabled={pending}
                   onClick={() => {
                     setConfirmingReject(false);
@@ -244,7 +253,11 @@ export function ReviewCheckpoint({
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-3">
-              <button type="submit" className="btn-accent btn-lg" disabled={locked}>
+              <button
+                type="submit"
+                className={cn(buttonStyles.review, largeButton)}
+                disabled={locked}
+              >
                 {pending
                   ? "Recording decision…"
                   : edited
@@ -254,7 +267,7 @@ export function ReviewCheckpoint({
               <button
                 ref={rejectRef}
                 type="button"
-                className="btn-secondary btn-lg"
+                className={cn(buttonStyles.secondary, largeButton)}
                 disabled={locked}
                 onClick={() => {
                   setFailure(undefined);
@@ -264,7 +277,7 @@ export function ReviewCheckpoint({
               >
                 Reject…
               </button>
-              <span className="type-utility">
+              <span className={typeStyles.utility}>
                 {edited
                   ? "Your correction replaces the draft."
                   : "Edit either field to correct it."}
@@ -274,7 +287,7 @@ export function ReviewCheckpoint({
         </form>
       </section>
       {rationale ? (
-        <div className="bg-accent-soft border-accent-line rounded-b-md border-t p-4 sm:p-6 lg:rounded-r-md lg:rounded-bl-none lg:border-t-0 lg:border-l">
+        <div className="rounded-b border-t border-orange-200 bg-orange-50 p-4 sm:p-6 lg:col-span-2 lg:rounded-r lg:rounded-bl-none lg:border-t-0 lg:border-l">
           {rationale}
         </div>
       ) : null}

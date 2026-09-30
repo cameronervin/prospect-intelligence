@@ -2,7 +2,9 @@
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
+import { typeStyles } from "@/components/ui/styles";
 import type { ProspectRun } from "@/lib/prospect-api";
+import { cn } from "@/lib/utils";
 
 function Outcome({
   title,
@@ -24,9 +26,12 @@ function Outcome({
   return (
     <section
       aria-labelledby={headingId}
-      className={`rounded-md border p-4 sm:px-6 ${tone === "ready" ? "border-ready bg-ready-soft" : "border-line-strong bg-surface"}`}
+      className={cn(
+        "rounded border p-4 sm:px-6",
+        tone === "ready" ? "border-emerald-300 bg-emerald-50" : "border-slate-300 bg-slate-50",
+      )}
     >
-      <h2 id={headingId} ref={headingRef} tabIndex={-1} className="type-heading">
+      <h2 id={headingId} ref={headingRef} tabIndex={-1} className={typeStyles.heading}>
         {title}
       </h2>
       <div className="mt-1 flex flex-col gap-0.5">{children}</div>
@@ -42,7 +47,7 @@ export function ReviewOutcome({ run, decided }: Readonly<{ run: ProspectRun; dec
         {run.outreach ? (
           <p className="text-sm">{`“${run.outreach.subject}” was approved.`}</p>
         ) : null}
-        <p className="type-utility">No real email or CRM write occurred.</p>
+        <p className={typeStyles.utility}>No real email or CRM write occurred.</p>
       </Outcome>
     );
   }
@@ -54,7 +59,7 @@ export function ReviewOutcome({ run, decided }: Readonly<{ run: ProspectRun; dec
     );
   }
   if (run.status === "completed") {
-    return <p className="type-utility">No outreach was drafted for this outcome.</p>;
+    return <p className={typeStyles.utility}>No outreach was drafted for this outcome.</p>;
   }
   return null;
 }

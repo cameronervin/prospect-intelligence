@@ -1,5 +1,6 @@
 import { useId } from "react";
 
+import { alertStyle, buttonStyles, linkButton, typeStyles } from "@/components/ui/styles";
 import type { Account } from "@/lib/prospect-api";
 import { cn } from "@/lib/utils";
 
@@ -37,15 +38,15 @@ export function AccountRail({
   return (
     <section
       aria-labelledby={headingId}
-      className="border-line bg-surface flex flex-col border-b lg:border-r lg:border-b-0"
+      className="flex flex-col border-b border-slate-200 bg-slate-50 lg:w-60 lg:shrink-0 lg:border-r lg:border-b-0"
     >
       <div className="flex items-center justify-between gap-2 px-4 pt-2">
-        <h2 id={headingId} className="type-section">
+        <h2 id={headingId} className={typeStyles.section}>
           Accounts
         </h2>
         <button
           type="button"
-          className="btn-link type-utility"
+          className={linkButton}
           aria-label="Reload accounts"
           disabled={state.kind === "loading" || locked}
           onClick={onReload}
@@ -54,29 +55,29 @@ export function AccountRail({
         </button>
       </div>
       {state.kind === "ready" ? (
-        <p className="type-utility px-4 pb-2">{`${state.accounts.length} assigned`}</p>
+        <p className={`${typeStyles.utility} px-4 pb-2`}>{`${state.accounts.length} assigned`}</p>
       ) : null}
 
       {state.kind === "loading" ? (
-        <p role="status" className="type-utility px-4 py-2">
+        <p role="status" className={`${typeStyles.utility} px-4 py-2`}>
           Loading accounts…
         </p>
       ) : null}
 
       {state.kind === "error" ? (
         <div className="px-4 pb-2">
-          <div role="alert" className="alert">
+          <div role="alert" className={alertStyle}>
             <p className="font-semibold">We couldn&apos;t load your accounts</p>
-            <p className="type-utility text-foreground-soft">It&apos;s safe to try again.</p>
+            <p className={typeStyles.utility}>It&apos;s safe to try again.</p>
           </div>
-          <button type="button" className="btn-secondary mt-3" onClick={onRetry}>
+          <button type="button" className={`${buttonStyles.secondary} mt-3`} onClick={onRetry}>
             Try again
           </button>
         </div>
       ) : null}
 
       {state.kind === "ready" && state.accounts.length === 0 ? (
-        <p className="type-utility px-4 py-2">No accounts are assigned to you.</p>
+        <p className={`${typeStyles.utility} px-4 py-2`}>No accounts are assigned to you.</p>
       ) : null}
 
       {state.kind === "ready" && state.accounts.length > 0 ? (
@@ -92,15 +93,13 @@ export function AccountRail({
                   onClick={() => onSelect(account)}
                   className={cn(
                     "flex min-h-11 w-full flex-col gap-0.5 rounded border px-2.5 py-2 text-left transition-colors motion-reduce:transition-none disabled:cursor-not-allowed",
-                    selected
-                      ? "border-line-strong bg-background"
-                      : "hover:bg-background/70 border-transparent",
+                    selected ? "border-slate-300 bg-white" : "border-transparent hover:bg-white",
                   )}
                 >
                   <span className={cn("text-sm", selected ? "font-semibold" : "font-medium")}>
                     {account.name}
                   </span>
-                  <span className="type-utility">
+                  <span className={typeStyles.utility}>
                     {account.relationship}
                     {account.location ? ` · ${account.location}` : ""}
                   </span>
@@ -114,18 +113,16 @@ export function AccountRail({
       <div className="p-4">
         <button
           type="button"
-          className={cn(quiet ? "btn-secondary" : "btn-primary", "w-full")}
+          className={cn(quiet ? buttonStyles.secondary : buttonStyles.primary, "w-full")}
           disabled={!selectedId || locked || starting}
           onClick={onStart}
         >
           {starting ? "Starting…" : running ? "Agent running…" : "Run prospect agent"}
         </button>
         {startError ? (
-          <div role="alert" className="alert mt-3">
+          <div role="alert" className={`${alertStyle} mt-3`}>
             <p className="font-semibold">The agent run couldn&apos;t be started</p>
-            <p className="type-utility text-foreground-soft">
-              Your account selection is kept. Try again.
-            </p>
+            <p className={typeStyles.utility}>Your account selection is kept. Try again.</p>
           </div>
         ) : null}
       </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AccountRail, type AccountsState } from "@/components/console/account-rail";
 import { isActive } from "@/components/console/format";
+import { alertStyle, buttonStyles, typeStyles } from "@/components/ui/styles";
 import { RunView } from "@/features/prospect-intelligence/components/run-view";
 import { useRunRestoration } from "@/features/prospect-intelligence/hooks/use-run-restoration";
 import { rememberRun } from "@/features/prospect-intelligence/run/active-run-storage";
@@ -154,7 +155,7 @@ export function ProspectWorkspace({
     Boolean(run && (isActive(run.status) || run.status === "awaiting_review"));
 
   return (
-    <div className="grid min-h-[calc(100dvh-3rem)] grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)]">
+    <div className="flex w-full flex-1 flex-col lg:flex-row">
       <AccountRail
         state={accounts}
         selectedId={selected?.id}
@@ -176,8 +177,8 @@ export function ProspectWorkspace({
         onReload={reloadAccounts}
       />
 
-      <section aria-label="Workspace" className="min-w-0 px-4 py-6 sm:px-6 lg:px-10">
-        <div className="mx-auto max-w-[72rem]">
+      <section aria-label="Workspace" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-6xl">
           {run ? (
             <RunView
               run={run}
@@ -191,15 +192,15 @@ export function ProspectWorkspace({
               onRefresh={refresh}
             />
           ) : restoreFailed ? (
-            <div role="alert" className="alert max-w-xl">
+            <div role="alert" className={`${alertStyle} max-w-xl`}>
               <p className="font-semibold">Your active run could not be restored</p>
-              <p className="type-utility text-foreground-soft">
+              <p className={typeStyles.utility}>
                 Account switching and new runs remain locked so a pending review is not orphaned.
               </p>
               <div className="mt-1.5">
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className={buttonStyles.secondary}
                   onClick={() => {
                     retryRestore();
                     if (accounts.kind === "error") reloadAccounts();
@@ -210,9 +211,9 @@ export function ProspectWorkspace({
               </div>
             </div>
           ) : (
-            <div className="border-line-strong max-w-xl rounded border border-dashed px-4 py-5">
+            <div className="max-w-xl rounded border border-dashed border-slate-300 px-4 py-5">
               <p className="text-sm font-semibold">Select an account to run the prospect agent</p>
-              <p className="type-utility mt-1">
+              <p className={`${typeStyles.utility} mt-1`}>
                 Agents research the account, score lanes against your network, draft outreach, and
                 check its quality. You watch each attempt here and review the message before
                 anything is sent.
