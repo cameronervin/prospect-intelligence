@@ -10,14 +10,14 @@ clients belong to `platform`; job/review handlers and workers belong to the feat
   brief template, and the artifact contract generated from each spec.
 - `state.py` contains only checkpointed LangGraph state and its small reducers. Invocation-scoped
   dependencies are `ProspectRuntimeContext` in the feature contracts package.
-- `context.py` provides scoped access to that invocation context for compiled Deep Agent subgraphs.
+- `context.py` provides scoped access to invocation context for isolated declarative subagents.
 - `middleware/` performs context projection, dynamic prompting, budgets, redaction, delegation
   prerequisites, tool policy, and specialist artifact validation.
 - `tools.py` defines explicit decorated tools and resolves the exact tool set exposed to each agent.
 - `guardrails.py` contains pure validation for artifacts, provenance, numeric grounding, outreach,
   and path ownership.
-- `chains.py` creates one model-facing Deep Agent at a time. Specialist factories do not import or
-  create other specialists; the root factory accepts already-compiled specialists.
+- `chains.py` creates one shared composite backend, five declarative specialist definitions, and
+  the single root Deep Agent harness.
 - `graphs.py` creates the application LangGraph: prepare inputs, invoke the root agent, and finalize
   the durable human-review interrupt. It never invokes specialists directly.
 - `runtime.py` executes the compiled graph, inspects its checkpoint, and resumes review.
@@ -33,7 +33,7 @@ Add behavior to the layer that owns it.
 bootstrap
   -> platform models + graph persistence
   -> compiler
-       -> specs -> tools -> middleware -> specialist chains -> root chain
+       -> specs -> tools -> middleware -> declarative specialists -> root agent
        -> application graph -> compiled runtime
 services
   -> contracts.ProspectAgentRuntime
@@ -47,9 +47,10 @@ depend on the provider-neutral runtime protocol, not on this package's concrete 
 The root Deep Agent is the only component allowed to delegate. It exposes exactly
 `account-context`, `external-research`, `lane-analyst`, `outreach-drafter`, and
 `quality-reviewer`; specialists do not
-receive `task`, and Deep Agents' implicit general-purpose subagent is disabled. Specialists run in
-isolated mode so parent messages cannot bypass their context policy; shared files still merge back
-through the task result. Account and external research are eligible in the same tool-call turn.
+receive `task` or `send_outreach`, and Deep Agents' implicit general-purpose subagent is disabled.
+Deep Agents compiles them internally with `create_agent()`. Specialists run in isolated mode so
+parent messages cannot bypass their context policy; shared files still merge back through the task
+result. Account and external research are eligible in the same tool-call turn.
 Delegation middleware blocks lane analysis until
 both research contracts exist, blocks outreach drafting until the brief exists, allows an outreach
 redraft only for outreach findings from a later review, caps reviews at three, and blocks
@@ -60,13 +61,15 @@ Each model request first receives an allowlisted context projection and dynamic 
 delegation middleware constrain model/tool calls. Tool errors are sanitized, platform policy hides
 trace payloads and metadata, and artifact middleware validates specialist output before it returns
 to the root. The lane analyst alone receives QuickJS, limited to read/glob and read-only
-lane-analysis tools, plus the packaged `lane_fit_v1` skill through `/skills/`.
+lane-analysis tools, plus the packaged `lane-fit-v1` skill through `/skills/`.
 
-Run files use `StateBackend`. Rep preferences are materialized into a tenant/rep-namespaced
-`StoreBackend` only for agents whose spec permits `/memories/`; external research and lane analysis
-cannot read it. Artifact writes remain role- and path-scoped.
+One `CompositeBackend` routes run files to `StateBackend`, rep preferences to a
+tenant/rep-namespaced `StoreBackend`, and skills to a traversal-confined project
+`FilesystemBackend`. Every specialist supplies explicit tools and ordered allow-then-deny
+filesystem permissions; external research and lane analysis cannot read memory, and artifact writes
+remain role- and path-scoped.
 
-Deep Agents compiled subgraphs currently omit the parent's typed runtime context. The outer
+Deep Agents 0.7.19 isolated declarative subagents omit the parent's typed runtime context. The outer
 root invocation therefore binds that already-created context through a scoped `ContextVar`; nested
 tools may read it, but it is never copied into checkpointed state.
 

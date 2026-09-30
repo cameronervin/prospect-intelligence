@@ -17,6 +17,32 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ## Decisions
 
+### 2026-09-30 — Agent architecture: one Deep Agent harness with declarative specialists
+
+- **Decision:** Build only the orchestrator with `create_deep_agent()` and pass the five specialists
+  as isolated declarative `SubAgent` definitions. Deep Agents compiles them internally with
+  `create_agent()`. All six agents use one composite virtual backend: state-backed run files,
+  tenant/rep-namespaced store memory, and a traversal-confined project skill mount.
+- **Decision:** Every specialist declares its model, prompt, tools (including explicit empty lists),
+  middleware, ordered allow-then-deny filesystem permissions, and optional skills. Specialists do
+  not inherit the orchestrator's `send_outreach` tool or permissions; only lane analysis receives
+  the Agent Skills-compliant `lane-fit-v1` bundle implementing method `lane_fit_v1`. The implicit
+  general-purpose subagent remains disabled.
+- **Alternatives considered:** Continue precompiling every specialist as a separate Deep Agent;
+  transfer artifacts through prompts; mount separate backends and copy files between them; rely on
+  inherited tools or permissions.
+- **Reasoning:** Declarative specialists are the SDK's native bounded-worker abstraction. Its shared
+  backend preserves the virtual artifact contract across isolated conversations without six Deep
+  Agent harnesses, while explicit capabilities keep filesystem and tool trust boundaries auditable.
+- **Consequences:** Backend mounts are shared infrastructure rather than physical role isolation, so
+  middleware permissions remain mandatory and direct backend access must not be exposed as a tool.
+  Deep Agents 0.7.19 still drops typed context at the isolated child boundary; the scoped runtime
+  bridge remains until the SDK forwards it natively. Public APIs, artifact paths, budgets, review
+  freshness, and HITL behavior are unchanged.
+- **Evidence:** Installed Deep Agents 0.7.19 source and Context7 documentation; one-construction
+  topology tests; shared-file/conversation-isolation trajectories; root-tool, skill, traversal,
+  per-role permission, concurrent memory-namespace, runtime-handler, retry, and review tests.
+
 ### 2026-09-29 — Architecture: separate prospect intelligence and agent quality
 
 - **Decision:** `prospect_intelligence` owns the freight workflow and exports sanitized contracts;

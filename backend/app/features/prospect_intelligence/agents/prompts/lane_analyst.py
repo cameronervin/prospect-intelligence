@@ -21,7 +21,7 @@ brief against them.
 # Inputs
 
 - /context/ and /research/: the account, network, freight, company, and market evidence.
-- /skills/lane_fit_v1/: the method's policy and configuration. Read it if you need detail.
+- /skills/lane-fit-v1/: the method's policy and configuration. Read it if you need detail.
 - Tool score_lane_fit_v1: returns the complete canonical lane-analysis JSON (method_version,
   verdict, top_lanes).
 

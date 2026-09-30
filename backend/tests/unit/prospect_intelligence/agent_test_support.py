@@ -1,6 +1,7 @@
 """Feature-owned Deep Agent topology, middleware, and runtime contracts."""
 
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 from uuid import UUID
@@ -157,6 +158,12 @@ class TrajectoryModel(BaseChatModel):
     reviews_written: int = 0
     fail_orchestrator_turn: int | None = None
     injected_failures: int = 0
+    probe_account_context: bool = False
+    attempt_forbidden_specialist_tools: bool = False
+    system_prompts: dict[str, list[str]] = Field(default_factory=dict)
+    message_texts: dict[str, list[str]] = Field(default_factory=dict)
+    observations: dict[str, list[tuple[str, str]]] = Field(default_factory=dict)
+    bound_tool_sets: list[tuple[str, ...]] = Field(default_factory=lambda: [])
 
     @property
     def _llm_type(self) -> str:
@@ -169,7 +176,15 @@ class TrajectoryModel(BaseChatModel):
         tool_choice: str | None = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
-        del tools, tool_choice, kwargs
+        tool_names: list[str] = []
+        for item in tools:
+            if isinstance(item, Mapping):
+                name = cast("Mapping[str, object]", item).get("name")
+            else:
+                name = getattr(item, "name", type(item).__name__)
+            tool_names.append(str(name))
+        self.bound_tool_sets.append(tuple(sorted(tool_names)))
+        del tool_choice, kwargs
         return cast(Runnable[LanguageModelInput, AIMessage], self)
 
     @staticmethod
@@ -283,6 +298,13 @@ class TrajectoryModel(BaseChatModel):
     ) -> ChatResult:
         del stop, run_manager, kwargs
         role = self._role(messages)
+        system = "\n".join(
+            message.text for message in messages if isinstance(message, SystemMessage)
+        )
+        message_text = "\n".join(message.text for message in messages)
+        self.system_prompts.setdefault(role, []).append(system)
+        self.message_texts.setdefault(role, []).extend(message.text for message in messages)
+        self.observations.setdefault(role, []).append((system, message_text))
         # Each invocation starts from its own messages, so a re-delegated specialist writes again.
         turn = sum(isinstance(message, AIMessage) for message in messages)
         if (
@@ -299,7 +321,27 @@ class TrajectoryModel(BaseChatModel):
             tool_calls = self._orchestrator(turn, messages)
         elif turn == 0 and role == "quality-reviewer":
             tool_calls = self._reviewer()
-        elif turn == 0:
+        elif self.attempt_forbidden_specialist_tools and role == "account-context" and turn == 0:
+            tool_calls = [
+                self._task("forbidden-task", "external-research"),
+                self._tool("send_outreach", "forbidden-send"),
+            ]
+        elif self.probe_account_context and role == "account-context" and turn == 0:
+            tool_calls = [self._tool("get_crm_account", "probe-account-context")]
+        elif self.probe_account_context and role == "account-context" and turn == 1:
+            memory_path = re.search(r"\[(/memories/[^\]]+)\]", system)
+            if memory_path is None:
+                raise AssertionError("account-context projection omitted its memory path")
+            tool_calls = [
+                self._tool("read_file", "probe-account-memory", file_path=memory_path.group(1))
+            ]
+        elif turn == (
+            2
+            if self.probe_account_context and role == "account-context"
+            else 1
+            if self.attempt_forbidden_specialist_tools and role == "account-context"
+            else 0
+        ):
             tool_calls = [
                 self._tool(
                     "write_file",

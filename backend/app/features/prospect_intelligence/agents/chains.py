@@ -1,7 +1,5 @@
-"""Create five specialist chains and the root orchestrator Deep Agent."""
+"""Create declarative specialists and the root orchestrator Deep Agent."""
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,19 +10,12 @@ from deepagents import (
     register_harness_profile,
 )
 from deepagents._models import get_model_provider  # pyright: ignore[reportPrivateUsage]
-from deepagents.backends import (
-    BackendProtocol,
-    CompositeBackend,
-    FilesystemBackend,
-    StateBackend,
-    StoreBackend,
-)
+from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend, StoreBackend
 from deepagents.middleware.filesystem import FilesystemPermission
-from deepagents.middleware.subagents import CompiledSubAgent
+from deepagents.middleware.subagents import SubAgent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
-from langchain_core.tools import BaseTool
 from langchain_quickjs import CodeInterpreterMiddleware
 from langgraph.store.base import BaseStore
 
@@ -32,12 +23,7 @@ from ..contracts.agent_runtime import ProspectRuntimeContext
 from .context import current_runtime_context
 from .middleware import middleware_for_agent
 from .prompts import render_system_prompt
-from .specs import (
-    AgentSpec,
-    ModelClass,
-    orchestrator_spec,
-    specialist_specs,
-)
+from .specs import AgentSpec, ModelClass, orchestrator_spec, specialist_specs
 from .state import ProspectDeepAgentState
 from .tools import ToolRegistry
 
@@ -58,22 +44,23 @@ def _disable_implicit_subagent(model: BaseChatModel) -> None:
 
 
 def _memory_namespace(runtime: object) -> tuple[str, ...]:
-    explicit = cast(ProspectRuntimeContext | None, cast(Any, runtime).context)
+    explicit = cast(ProspectRuntimeContext | None, getattr(runtime, "context", None))
     context = current_runtime_context(explicit)
     return (*context.preference_namespace, "agent_files")
 
 
-def create_agent_backend(spec: AgentSpec, store: BaseStore) -> StateBackend | CompositeBackend:
-    routes: dict[str, BackendProtocol] = {}
-    if "/memories/" in spec.readable_paths:
-        routes["/memories/"] = StoreBackend(namespace=_memory_namespace, store=store)
-    if spec.skill_sources:
-        routes["/skills/"] = FilesystemBackend(Path(__file__).with_name("skills"))
-    if not routes:
-        return StateBackend()
+def create_shared_backend(store: BaseStore) -> CompositeBackend:
+    """Create the one virtual filesystem shared by the orchestrator and specialists."""
+
     return CompositeBackend(
         default=StateBackend(),
-        routes=routes,
+        routes={
+            "/memories/": StoreBackend(namespace=_memory_namespace, store=store),
+            "/skills/": FilesystemBackend(
+                Path(__file__).with_name("skills"),
+                virtual_mode=True,
+            ),
+        },
     )
 
 
@@ -99,17 +86,7 @@ def filesystem_permissions(spec: AgentSpec) -> list[FilesystemPermission]:
     return permissions
 
 
-def create_agent_chain(
-    *,
-    spec: AgentSpec,
-    model: BaseChatModel,
-    tools: Sequence[BaseTool],
-    store: BaseStore,
-    subagents: Sequence[CompiledSubAgent] = (),
-) -> Runnable[dict[str, object], dict[str, object]]:
-    """Build one model-facing chain; it never constructs another chain."""
-
-    _disable_implicit_subagent(model)
+def _middleware_for_spec(spec: AgentSpec) -> list[AgentMiddleware[Any, Any, Any]]:
     middleware: list[AgentMiddleware[Any, Any, Any]] = list(middleware_for_agent(spec))
     if spec.ptc_tool_names:
         middleware.append(
@@ -121,22 +98,7 @@ def create_agent_chain(
                 max_ptc_calls=spec.max_tool_calls,
             )
         )
-    return cast(
-        Runnable[dict[str, object], dict[str, object]],
-        create_deep_agent(
-            model=model,
-            tools=list(tools),
-            system_prompt=render_system_prompt(spec),
-            middleware=middleware,
-            subagents=list(subagents),
-            permissions=filesystem_permissions(spec),
-            backend=create_agent_backend(spec, store),
-            state_schema=ProspectDeepAgentState,
-            context_schema=ProspectRuntimeContext,
-            skills=list(spec.skill_sources) or None,
-            name=spec.name,
-        ),
-    )
+    return middleware
 
 
 def _model_for_spec(
@@ -150,87 +112,68 @@ def _model_for_spec(
     return specialist_model
 
 
-def build_specialist_chains(
+def build_specialist_subagents(
     *,
     orchestrator_model: BaseChatModel,
     specialist_model: BaseChatModel,
     tools: ToolRegistry,
-    store: BaseStore,
-) -> dict[str, Runnable[dict[str, object], dict[str, object]]]:
-    return {
-        spec.name: create_agent_chain(
-            spec=spec,
-            model=_model_for_spec(
+) -> tuple[SubAgent, ...]:
+    """Build raw specs that Deep Agents compiles with ``create_agent``."""
+
+    subagents: list[SubAgent] = []
+    for spec in specialist_specs():
+        subagent: SubAgent = {
+            "name": spec.name,
+            "description": spec.description,
+            "system_prompt": render_system_prompt(spec),
+            "mode": "isolated",
+            "model": _model_for_spec(
                 spec,
                 orchestrator_model=orchestrator_model,
                 specialist_model=specialist_model,
             ),
-            tools=tools.resolve(spec.tool_names),
-            store=store,
-        )
-        for spec in specialist_specs()
-    }
+            # Explicit, including empty lists, so root-only tools are never inherited.
+            "tools": list(tools.resolve(spec.tool_names)),
+            "middleware": _middleware_for_spec(spec),
+            # Explicit so the broader orchestrator policy is never inherited.
+            "permissions": filesystem_permissions(spec),
+        }
+        if spec.skill_sources:
+            subagent["skills"] = list(spec.skill_sources)
+        subagents.append(subagent)
+    return tuple(subagents)
 
 
-def build_orchestrator_chain(
+def build_orchestrator_agent(
     *,
     orchestrator_model: BaseChatModel,
     specialist_model: BaseChatModel,
     tools: ToolRegistry,
-    specialists: Mapping[str, Runnable[dict[str, object], dict[str, object]]],
     store: BaseStore,
 ) -> Runnable[dict[str, object], dict[str, object]]:
+    """Build the single Deep Agent harness for the prospect workflow."""
+
     spec = orchestrator_spec()
-    if tuple(specialists) != spec.subagent_names:
-        raise ValueError("orchestrator specialists must match the declared topology")
-    subagents: list[CompiledSubAgent] = [
-        {
-            "name": specialist.name,
-            "description": specialist.description,
-            "runnable": specialists[specialist.name],
-            "mode": "isolated",
-        }
-        for specialist in specialist_specs()
-    ]
-    return create_agent_chain(
-        spec=spec,
-        model=_model_for_spec(
-            spec,
-            orchestrator_model=orchestrator_model,
-            specialist_model=specialist_model,
-        ),
-        tools=tools.resolve(spec.tool_names),
-        store=store,
-        subagents=subagents,
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class ProspectChains:
-    specialists: Mapping[str, Runnable[dict[str, object], dict[str, object]]]
-    orchestrator: Runnable[dict[str, object], dict[str, object]]
-
-
-def build_chains(
-    *,
-    orchestrator_model: BaseChatModel,
-    specialist_model: BaseChatModel,
-    tools: ToolRegistry,
-    store: BaseStore,
-) -> ProspectChains:
-    specialists = build_specialist_chains(
+    _disable_implicit_subagent(orchestrator_model)
+    subagents = build_specialist_subagents(
         orchestrator_model=orchestrator_model,
         specialist_model=specialist_model,
         tools=tools,
-        store=store,
     )
-    return ProspectChains(
-        specialists=specialists,
-        orchestrator=build_orchestrator_chain(
-            orchestrator_model=orchestrator_model,
-            specialist_model=specialist_model,
-            tools=tools,
-            specialists=specialists,
-            store=store,
+    if tuple(subagent["name"] for subagent in subagents) != spec.subagent_names:
+        raise ValueError("orchestrator specialists must match the declared topology")
+    return cast(
+        Runnable[dict[str, object], dict[str, object]],
+        create_deep_agent(
+            model=orchestrator_model,
+            tools=list(tools.resolve(spec.tool_names)),
+            system_prompt=render_system_prompt(spec),
+            middleware=_middleware_for_spec(spec),
+            subagents=list(subagents),
+            permissions=filesystem_permissions(spec),
+            backend=create_shared_backend(store),
+            state_schema=ProspectDeepAgentState,
+            context_schema=ProspectRuntimeContext,
+            name=spec.name,
         ),
     )

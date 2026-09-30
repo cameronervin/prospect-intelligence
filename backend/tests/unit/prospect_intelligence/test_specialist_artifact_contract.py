@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import pytest
+from langchain.tools import ToolRuntime
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import (
@@ -19,9 +20,10 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langgraph.store.memory import InMemoryStore
+from langgraph.types import Command
 from pydantic import Field
 
-from app.features.prospect_intelligence.agents.chains import create_agent_chain
+from app.features.prospect_intelligence.agents.chains import build_orchestrator_agent
 from app.features.prospect_intelligence.agents.context import bind_runtime_context
 from app.features.prospect_intelligence.agents.guardrails import validate_agent_artifacts
 from app.features.prospect_intelligence.agents.prompts import (
@@ -35,6 +37,7 @@ from app.features.prospect_intelligence.agents.specs import (
     specialist_specs,
 )
 from app.features.prospect_intelligence.agents.tools import build_tool_registry
+from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from tests.unit.prospect_intelligence.agent_test_support import file_data, runtime_context
 
@@ -63,6 +66,7 @@ class ContractReadingModel(BaseChatModel):
 
     answer_without_writing_first: bool = False
     never_write: bool = False
+    call_source_first: bool = False
     calls: int = 0
     system_prompts: list[str] = Field(default_factory=lambda: [])
     reminders: list[str] = Field(default_factory=lambda: [])
@@ -97,9 +101,24 @@ class ContractReadingModel(BaseChatModel):
         ]
         prior_answers = sum(isinstance(m, AIMessage) for m in messages)
         wrote = any(isinstance(m, ToolMessage) and m.name == "write_file" for m in messages)
+        called_source = any(
+            isinstance(m, ToolMessage) and m.tool_call_id == "read-account" for m in messages
+        )
         paths = _CONTRACT_LINE.findall(system)
         skip = self.never_write or (self.answer_without_writing_first and prior_answers == 0)
-        if wrote or skip or not paths:
+        if self.call_source_first and not called_source:
+            message = AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "get_crm_account",
+                        "args": {},
+                        "id": "read-account",
+                        "type": "tool_call",
+                    }
+                ],
+            )
+        elif wrote or skip or not paths:
             message = AIMessage(content="Account and network context resolved.")
         else:
             message = AIMessage(
@@ -121,17 +140,22 @@ def _account_spec() -> AgentSpec:
     return next(spec for spec in specialist_specs() if spec.name == "account-context")
 
 
-async def _run_account_context(model: ContractReadingModel) -> Mapping[str, object]:
-    spec = _account_spec()
-    chain = create_agent_chain(
-        spec=spec,
-        model=model,
-        tools=build_tool_registry().resolve(spec.tool_names),
+async def _run_account_context(
+    model: ContractReadingModel,
+    *,
+    context: ProspectRuntimeContext | None = None,
+) -> Mapping[str, object]:
+    orchestrator = build_orchestrator_agent(
+        orchestrator_model=model,
+        specialist_model=model,
+        tools=build_tool_registry(),
         store=InMemoryStore(),
     )
-    context = runtime_context()
-    with bind_runtime_context(context):
-        return await cast(Any, chain).ainvoke(
+    task = cast(Any, orchestrator).nodes["tools"].bound._tools_by_name["task"]
+    context = context or runtime_context()
+    runtime: Any = ToolRuntime(
+        state=cast(
+            Any,
             {
                 # The orchestrator's delegation text is model-authored and may omit paths.
                 "messages": [HumanMessage(content="Resolve account and network context.")],
@@ -140,8 +164,21 @@ async def _run_account_context(model: ContractReadingModel) -> Mapping[str, obje
                     "/INDEX.md": file_data("# Prospect artifact manifest\n"),
                 },
             },
-            context=context,
+        ),
+        context=context,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="task-account",
+        store=None,
+    )
+    with bind_runtime_context(context):
+        result = await task.coroutine(
+            description="Resolve account and network context.",
+            subagent_type="account-context",
+            runtime=runtime,
         )
+    assert isinstance(result, Command)
+    return cast("Mapping[str, object]", result.update)
 
 
 @pytest.mark.parametrize(
@@ -233,6 +270,7 @@ def test_lane_analyst_prompt_writes_the_deterministic_score_verbatim() -> None:
     prompt = render_system_prompt(analyst)
 
     assert "score_lane_fit_v1" in prompt
+    assert "/skills/lane-fit-v1/" in prompt
     assert "verbatim to /analysis/lane_fit.json" in prompt
 
 
@@ -246,6 +284,31 @@ async def test_account_context_writes_its_artifacts_from_the_prompt_alone() -> N
     validate_agent_artifacts(_account_spec(), files)
     assert model.calls == 2
     assert model.reminders == []
+
+
+@pytest.mark.asyncio
+async def test_declarative_specialist_receives_scoped_runtime_context() -> None:
+    calls: list[dict[str, object]] = []
+
+    def get_account(payload: dict[str, object]) -> object:
+        calls.append(payload)
+        return {"account": "Acme"}
+
+    base = runtime_context()
+    context = ProspectRuntimeContext(
+        run_id=base.run_id,
+        tenant_id=base.tenant_id,
+        rep_id=base.rep_id,
+        tool_handlers={"get_crm_account": get_account},
+    )
+
+    result = await _run_account_context(
+        ContractReadingModel(call_source_first=True),
+        context=context,
+    )
+
+    assert calls == [{}]
+    validate_agent_artifacts(_account_spec(), cast("Mapping[str, Any]", result["files"]))
 
 
 @pytest.mark.asyncio

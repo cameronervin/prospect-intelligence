@@ -6,7 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
-from .chains import build_chains
+from .chains import build_orchestrator_agent
 from .graphs import build_prospect_workflow
 from .runtime import CompiledProspectAgentRuntime, CompiledWorkflow
 from .tools import build_tool_registry
@@ -22,13 +22,13 @@ def build_prospect_agent_runtime(
     """Compile the feature runtime once after persistence has started."""
 
     tools = build_tool_registry()
-    chains = build_chains(
+    orchestrator = build_orchestrator_agent(
         orchestrator_model=orchestrator_model,
         specialist_model=specialist_model,
         tools=tools,
         store=store,
     )
-    graph = build_prospect_workflow(chains.orchestrator)
+    graph = build_prospect_workflow(orchestrator)
     compiled = graph.compile(  # pyright: ignore[reportUnknownMemberType]
         checkpointer=checkpointer,
         store=store,

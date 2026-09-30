@@ -1,5 +1,5 @@
 ---
-name: lane_fit_v1
+name: lane-fit-v1
 description: Apply the deterministic lane_fit_v1 policy to normalized shipper and carrier-network evidence.
 ---
 

@@ -200,7 +200,7 @@ def test_reference_matches_reviewed_golden_without_runtime_fixture_generation() 
 
 def test_skill_config_is_machine_readable_and_matches_reference_policy() -> None:
     skill_root = (
-        Path(str(files("app.features.prospect_intelligence.agents"))) / "skills" / "lane_fit_v1"
+        Path(str(files("app.features.prospect_intelligence.agents"))) / "skills" / "lane-fit-v1"
     )
     config = json.loads((skill_root / "references" / "config.json").read_text())
 

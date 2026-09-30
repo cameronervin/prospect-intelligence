@@ -7,8 +7,8 @@ Linear is the source of truth for ticket scope, status, and dependencies. This f
 3. [COMPLETE] **After CAM-28:** CAM-30 — source adapters; CAM-31 — lane-fit verification.
 4. [COMPLETE] **After CAM-29, CAM-30, and CAM-31:** CAM-32 — working agent topology.
 5. [COMPLETE] **After CAM-32:**  CAM-33 — durable APIs; CAM-38 — offline evaluators.
-6. [CURRENT] **After CAM-33:** CAM-34 — HITL and preference learning; CAM-35 — first UI slice.
-7. **After CAM-34 and CAM-35:** CAM-36 — review UI. **After CAM-38:** [COMPLETE] CAM-39 — Jev evaluators.
+6. [COMPLETE] **After CAM-33:** CAM-34 — HITL and preference learning; CAM-35 — first UI slice.
+7. [COMPLETE] **After CAM-34 and CAM-35:** CAM-36 — review UI. **After CAM-38:** CAM-39 — Jev evaluators.
 8. **After CAM-36:** CAM-37 — browser tests. **After CAM-34 and CAM-39:** CAM-42 — online-quality feature.
 9. **After CAM-42:** CAM-43 — online rules and simulator. **After CAM-37, CAM-38, and CAM-39:** CAM-40 — LangSmith experiments.
 10. **After CAM-40:** CAM-41 — human calibration, owned by Cameron.

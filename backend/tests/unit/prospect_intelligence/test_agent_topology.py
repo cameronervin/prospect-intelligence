@@ -1,15 +1,15 @@
 """Feature-owned Deep Agent topology, middleware, and runtime contracts."""
 
+import asyncio
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 
 import pytest
-from deepagents.backends import StateBackend
 from deepagents.backends.protocol import FileData
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.skills import SkillsMiddleware
-from deepagents.middleware.subagents import CompiledSubAgent, SubAgentMiddleware
 from langchain.tools import ToolRuntime
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import HumanMessage
@@ -22,17 +22,17 @@ from langgraph.types import Command
 
 from app.features.prospect_intelligence.agents import chains as chain_factory
 from app.features.prospect_intelligence.agents.chains import (
-    build_chains,
-    create_agent_backend,
+    build_orchestrator_agent,
+    create_shared_backend,
     filesystem_permissions,
 )
 from app.features.prospect_intelligence.agents.context import (
     bind_runtime_context,
-    current_runtime_context,
 )
 from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
 from app.features.prospect_intelligence.agents.runtime import CompiledProspectAgentRuntime
 from app.features.prospect_intelligence.agents.specs import (
+    AgentSpec,
     ModelClass,
     orchestrator_spec,
     specialist_specs,
@@ -88,6 +88,30 @@ def test_specs_define_exact_root_and_specialist_capabilities() -> None:
     assert root.subagent_names == tuple(spec.name for spec in specialists)
     assert root.tool_names == ("send_outreach",)
     assert not any(name.startswith(("get_", "search_", "score_")) for name in root.tool_names)
+
+
+@pytest.mark.parametrize(
+    "spec",
+    (*specialist_specs(), orchestrator_spec()),
+    ids=lambda spec: spec.name,
+)
+def test_filesystem_permission_matrix_matches_every_agent_spec(spec: AgentSpec) -> None:
+    permissions = filesystem_permissions(spec)
+    expected = [
+        (["read"], [f"{path}**" if path.endswith("/") else path], "allow")
+        for path in spec.readable_paths
+    ]
+    expected.extend((["write"], [path], "allow") for path in spec.writable_paths)
+    expected.extend(
+        [
+            (["read"], ["/**"], "deny"),
+            (["write"], ["/**"], "deny"),
+        ]
+    )
+
+    assert [
+        (permission.operations, permission.paths, permission.mode) for permission in permissions
+    ] == expected
 
 
 def test_model_facing_tools_have_explicit_input_schemas_and_descriptions() -> None:
@@ -161,7 +185,7 @@ async def test_fmcsa_lookup_omits_unset_optional_arguments() -> None:
 
 def test_lane_skill_is_discovered_from_the_virtual_backend() -> None:
     analyst = next(spec for spec in specialist_specs() if spec.name == "lane-analyst")
-    backend = create_agent_backend(analyst, InMemoryStore())
+    backend = create_shared_backend(InMemoryStore())
     middleware = SkillsMiddleware(backend=backend, sources=analyst.skill_sources)
 
     update = middleware.before_agent(
@@ -174,12 +198,12 @@ def test_lane_skill_is_discovered_from_the_virtual_backend() -> None:
     assert update.get("skills_load_errors") == []
     assert update.get("skills_metadata") == [
         {
-            "name": "lane_fit_v1",
+            "name": "lane-fit-v1",
             "description": (
                 "Apply the deterministic lane_fit_v1 policy to normalized shipper and "
                 "carrier-network evidence."
             ),
-            "path": "/skills/lane_fit_v1/SKILL.md",
+            "path": "/skills/lane-fit-v1/SKILL.md",
             "metadata": {},
             "license": None,
             "compatibility": None,
@@ -188,7 +212,7 @@ def test_lane_skill_is_discovered_from_the_virtual_backend() -> None:
     ]
 
 
-def test_chain_builder_registers_exactly_five_explicit_subagents(
+def test_factory_builds_one_deep_agent_with_five_declarative_subagents(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, object]] = []
@@ -204,28 +228,40 @@ def test_chain_builder_registers_exactly_five_explicit_subagents(
 
     monkeypatch.setattr(chain_factory, "create_deep_agent", fake_create_deep_agent)
     model = FakeListChatModel(responses=["unused"])
-    build_chains(
+    build_orchestrator_agent(
         orchestrator_model=model,
         specialist_model=model,
         tools=build_tool_registry(),
         store=InMemoryStore(),
     )
 
-    assert [call["name"] for call in calls] == [
+    assert [call["name"] for call in calls] == ["orchestrator"]
+    root = calls[0]
+    root_subagents = cast("list[Mapping[str, object]]", root["subagents"])
+    assert tuple(item["name"] for item in root_subagents) == (
         "account-context",
         "external-research",
         "lane-analyst",
         "outreach-drafter",
         "quality-reviewer",
-        "orchestrator",
+    )
+    assert all(item["mode"] == "isolated" for item in root_subagents)
+    assert all("runnable" not in item for item in root_subagents)
+    assert [
+        [tool.name for tool in cast("list[Any]", item["tools"])] for item in root_subagents
+    ] == [
+        ["get_crm_account", "get_network_lanes"],
+        ["search_genlogs", "search_sec", "search_tavily", "get_fmcsa", "get_faf_market_volume"],
+        ["score_lane_fit_v1"],
+        [],
+        [],
     ]
-    assert all(call["subagents"] == [] for call in calls[:5])
-    assert [call["skills"] for call in calls] == [None, None, ["/skills/"], None, None, None]
-    analyst_backend = cast(Any, calls[2]["backend"])
-    skill = analyst_backend.read("/skills/lane_fit_v1/SKILL.md")
+    assert [item.get("skills") for item in root_subagents] == [None, None, ["/skills/"], None, None]
+    analyst_backend = cast(Any, root["backend"])
+    skill = analyst_backend.read("/skills/lane-fit-v1/SKILL.md")
     assert skill.file_data is not None
-    assert "name: lane_fit_v1" in skill.file_data["content"]
-    analyst_permissions = cast("list[Any]", calls[2]["permissions"])
+    assert "name: lane-fit-v1" in skill.file_data["content"]
+    analyst_permissions = cast("list[Any]", root_subagents[2]["permissions"])
     assert any(
         permission.operations == ["read"]
         and permission.paths == ["/skills/**"]
@@ -236,40 +272,72 @@ def test_chain_builder_registers_exactly_five_explicit_subagents(
         permission.operations == ["write"] and permission.paths == ["/skills/"]
         for permission in analyst_permissions
     )
-    root_subagents = cast("list[Mapping[str, object]]", calls[5]["subagents"])
-    assert tuple(item["name"] for item in root_subagents) == (
-        "account-context",
-        "external-research",
-        "lane-analyst",
-        "outreach-drafter",
-        "quality-reviewer",
-    )
-    assert all(item["mode"] == "isolated" for item in root_subagents)
-    root_tools = cast("list[Any]", calls[5]["tools"])
+    root_tools = cast("list[Any]", root["tools"])
     assert [item.name for item in root_tools] == ["send_outreach"]
 
 
-def test_compiled_agents_have_no_hidden_general_purpose_subagent() -> None:
+def test_orchestrator_exposes_only_declared_subagents() -> None:
     model = FakeListChatModel(responses=["unused"])
-    chains = build_chains(
+    orchestrator = build_orchestrator_agent(
         orchestrator_model=model,
         specialist_model=model,
         tools=build_tool_registry(),
         store=InMemoryStore(),
     )
 
-    for specialist in chains.specialists.values():
-        tool_node = cast(Any, specialist).nodes["tools"].bound
-        assert "task" not in tool_node._tools_by_name
-
-    root_tools = cast(Any, chains.orchestrator).nodes["tools"].bound._tools_by_name
+    root_tools = cast(Any, orchestrator).nodes["tools"].bound._tools_by_name
     task_description = root_tools["task"].description
     assert "- general-purpose:" not in task_description
     assert all(name in task_description for name in orchestrator_spec().subagent_names)
 
 
 @pytest.mark.asyncio
-async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
+async def test_specialist_cannot_execute_root_tools_even_when_model_attempts_them() -> None:
+    model = TrajectoryModel(attempt_forbidden_specialist_tools=True)
+    orchestrator = build_orchestrator_agent(
+        orchestrator_model=model,
+        specialist_model=model,
+        tools=build_tool_registry(),
+        store=InMemoryStore(),
+    )
+    task = cast(Any, orchestrator).nodes["tools"].bound._tools_by_name["task"]
+    context = runtime_context()
+    runtime: Any = ToolRuntime(
+        state=cast(
+            Any,
+            {
+                "messages": [HumanMessage(content="Resolve account context.")],
+                "files": {
+                    "/task/brief.md": file_data("brief"),
+                    "/INDEX.md": file_data("# manifest\n"),
+                },
+            },
+        ),
+        context=context,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="task-forbidden-tools",
+        store=None,
+    )
+
+    with bind_runtime_context(context):
+        result = await task.coroutine(
+            description="resolve account context",
+            subagent_type="account-context",
+            runtime=runtime,
+        )
+
+    assert isinstance(result, Command)
+    assert result.update is not None
+    assert "/context/account.json" in result.update["files"]
+    child_messages = "\n".join(model.message_texts["account-context"])
+    assert "task is not a valid tool" in child_messages
+    assert "send_outreach is not a valid tool" in child_messages
+    assert "review_requested" not in result.update
+
+
+@pytest.mark.asyncio
+async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
     service = ProspectRunService(
         accounts=InMemoryAccountRepository.seeded(),
         runs=InMemoryRunRepository(),
@@ -301,13 +369,13 @@ async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
     )
     model = TrajectoryModel()
     store = InMemoryStore()
-    chains = build_chains(
+    orchestrator = build_orchestrator_agent(
         orchestrator_model=model,
         specialist_model=model,
         tools=build_tool_registry(),
         store=store,
     )
-    compiled = build_prospect_workflow(cast(Any, chains.orchestrator)).compile(  # pyright: ignore[reportUnknownMemberType]
+    compiled = build_prospect_workflow(cast(Any, orchestrator)).compile(  # pyright: ignore[reportUnknownMemberType]
         checkpointer=InMemorySaver(),
         store=store,
     )
@@ -332,10 +400,18 @@ async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
         "quality-reviewer": 2,
     }
     assert set(completed_files()).issubset(result.files)
-    backend = create_agent_backend(
-        next(item for item in specialist_specs() if item.name == "account-context"),
-        store,
-    )
+    assert "/context/account.json" in model.system_prompts["lane-analyst"][0]
+    assert "/research/freight_intel/lanes.json" in model.system_prompts["lane-analyst"][0]
+    assert "/output/brief.md" in model.system_prompts["outreach-drafter"][0]
+    assert "/analysis/lane_fit.json" in model.system_prompts["quality-reviewer"][0]
+    assert "/output/outreach_draft.md" in model.system_prompts["quality-reviewer"][0]
+    specialist_tool_sets = [
+        names for names in model.bound_tool_sets if "send_outreach" not in names
+    ]
+    assert specialist_tool_sets
+    assert all("task" not in names for names in specialist_tool_sets)
+    assert all("send_outreach" not in names for names in specialist_tool_sets)
+    backend = create_shared_backend(store)
     memory_graph = StateGraph(_ReadState, context_schema=ProspectRuntimeContext)
 
     async def read_learned_memory(
@@ -364,13 +440,13 @@ async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
 async def test_retry_resumes_root_subgraph_without_replaying_completed_specialists() -> None:
     model = TrajectoryModel(fail_orchestrator_turn=4)
     store = InMemoryStore()
-    chains = build_chains(
+    orchestrator = build_orchestrator_agent(
         orchestrator_model=model,
         specialist_model=model,
         tools=build_tool_registry(),
         store=store,
     )
-    compiled = build_prospect_workflow(cast(Any, chains.orchestrator)).compile(  # pyright: ignore[reportUnknownMemberType]
+    compiled = build_prospect_workflow(cast(Any, orchestrator)).compile(  # pyright: ignore[reportUnknownMemberType]
         checkpointer=InMemorySaver(),
         store=store,
     )
@@ -397,81 +473,154 @@ async def test_retry_resumes_root_subgraph_without_replaying_completed_specialis
 
 
 @pytest.mark.asyncio
-async def test_compiled_isolated_subagent_propagates_files_without_parent_messages() -> None:
-    async def write_artifact(state: Mapping[str, object]) -> Mapping[str, object]:
-        assert current_runtime_context().tenant_id == "tenant-demo"
-        assert all(
-            "REP_MEMORY_CANARY" not in message.text
-            for message in cast("list[HumanMessage]", state["messages"])
-        )
-        files = dict(cast("Mapping[str, object]", state["files"]))
-        files["/context/account.json"] = file_data("{}")
-        return {"messages": state["messages"], "files": files}
-
-    specialist: CompiledSubAgent = {
-        "name": "account-context",
-        "description": "write account context",
-        "runnable": RunnableLambda(write_artifact),
-        "mode": "isolated",
-    }
-    middleware = SubAgentMiddleware(backend=StateBackend(), subagents=[specialist])
-    task = middleware.tools[0]
-    runtime: Any = ToolRuntime(
+async def test_declarative_subagents_share_files_without_parent_messages() -> None:
+    model = TrajectoryModel()
+    orchestrator = build_orchestrator_agent(
+        orchestrator_model=model,
+        specialist_model=model,
+        tools=build_tool_registry(),
+        store=InMemoryStore(),
+    )
+    task = cast(Any, orchestrator).nodes["tools"].bound._tools_by_name["task"]
+    context = runtime_context()
+    account_runtime: Any = ToolRuntime(
         state=cast(
             Any,
             {
                 "messages": [HumanMessage(content="REP_MEMORY_CANARY")],
-                "files": {"/task/brief.md": file_data("brief")},
+                "files": {
+                    "/task/brief.md": file_data("brief"),
+                    "/INDEX.md": file_data("# manifest\n"),
+                },
             },
         ),
-        context=runtime_context(),
+        context=context,
         config={},
         stream_writer=lambda _: None,
         tool_call_id="task-1",
         store=None,
     )
 
-    with bind_runtime_context(runtime_context()):
-        result = await cast(Any, task).coroutine(
+    with bind_runtime_context(context):
+        account_result = await task.coroutine(
             description="resolve account context",
             subagent_type="account-context",
-            runtime=runtime,
+            runtime=account_runtime,
         )
 
-    assert isinstance(result, Command)
-    updated = cast("Mapping[str, object]", result.update)
-    files = cast("Mapping[str, FileData]", updated["files"])
-    assert files["/context/account.json"]["content"] == "{}"
+    assert isinstance(account_result, Command)
+    account_update = cast("Mapping[str, object]", account_result.update)
+    files = cast("Mapping[str, FileData]", account_update["files"])
+    assert "/context/account.json" in files
+
+    analyst_runtime: Any = ToolRuntime(
+        state=cast(
+            Any,
+            {
+                "messages": [HumanMessage(content="REP_MEMORY_CANARY")],
+                "files": dict(files),
+            },
+        ),
+        context=context,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="task-2",
+        store=None,
+    )
+    with bind_runtime_context(context):
+        analyst_result = await task.coroutine(
+            description="analyze the shared files",
+            subagent_type="lane-analyst",
+            runtime=analyst_runtime,
+        )
+
+    assert isinstance(analyst_result, Command)
+    assert analyst_result.update is not None
+    analyst_files = cast("Mapping[str, FileData]", analyst_result.update["files"])
+    assert "/context/account.json" in analyst_files
+    assert "/context/account.json" in model.system_prompts["lane-analyst"][0]
+    assert all(
+        "REP_MEMORY_CANARY" not in text
+        for role in ("account-context", "lane-analyst")
+        for text in model.message_texts[role]
+    )
 
 
 @pytest.mark.asyncio
-async def test_filesystem_permissions_deny_non_allowlisted_reads_and_writes() -> None:
-    spec = next(item for item in specialist_specs() if item.name == "external-research")
-    middleware = FilesystemMiddleware(
-        backend=StateBackend(),
-        _permissions=filesystem_permissions(spec),
+async def test_shared_filesystem_enforces_each_specialist_permission_boundary() -> None:
+    context = runtime_context()
+    store = InMemoryStore()
+    memory_path = f"/memories/{context.tenant_id}/{context.rep_id}/preferences.md"
+    await store.aput(
+        (*context.preference_namespace, "agent_files"),
+        f"/{context.tenant_id}/{context.rep_id}/preferences.md",
+        dict(file_data("PRIVATE_MEMORY_CANARY")),
     )
-    read_file = next(tool for tool in middleware.tools if tool.name == "read_file")
-    write_file = next(tool for tool in middleware.tools if tool.name == "write_file")
+    backend = create_shared_backend(store)
     runtime: Any = ToolRuntime(
         state=cast(
             Any,
-            {"messages": [], "files": {"/memories/secret.md": file_data("private")}},
+            {
+                "messages": [],
+                "files": {
+                    "/context/account.json": file_data("ACCOUNT_CANARY"),
+                    memory_path: file_data("PRIVATE_MEMORY_CANARY"),
+                },
+            },
         ),
-        context=None,
+        context=context,
         config={},
         stream_writer=lambda _: None,
         tool_call_id="read-1",
         store=None,
     )
 
-    result = await cast(Any, read_file).coroutine(file_path="/memories/secret.md", runtime=runtime)
-    write_result = await cast(Any, write_file).coroutine(
-        file_path="/output/brief.md", content="forbidden", runtime=runtime
-    )
+    def filesystem_tools(role: str) -> tuple[Any, Any]:
+        spec = next(item for item in specialist_specs() if item.name == role)
+        middleware = FilesystemMiddleware(
+            backend=backend,
+            _permissions=filesystem_permissions(spec),
+        )
+        read_file = next(tool for tool in middleware.tools if tool.name == "read_file")
+        write_file = next(tool for tool in middleware.tools if tool.name == "write_file")
+        return read_file, write_file
 
-    assert "permission denied" in result.content
-    assert "permission denied" in write_result.content
+    account_read, _ = filesystem_tools("account-context")
+    external_read, external_write = filesystem_tools("external-research")
+    analyst_read, analyst_write = filesystem_tools("lane-analyst")
+    drafter_read, _ = filesystem_tools("outreach-drafter")
+    _, reviewer_write = filesystem_tools("quality-reviewer")
+
+    with bind_runtime_context(context):
+        account_memory = await account_read.coroutine(file_path=memory_path, runtime=runtime)
+        denied_memory = await external_read.coroutine(file_path=memory_path, runtime=runtime)
+        denied_output = await external_write.coroutine(
+            file_path="/output/brief.md", content="forbidden", runtime=runtime
+        )
+        skill = await analyst_read.coroutine(
+            file_path="/skills/lane-fit-v1/SKILL.md", runtime=runtime
+        )
+        denied_skill_write = await analyst_write.coroutine(
+            file_path="/skills/lane-fit-v1/SKILL.md", content="forbidden", runtime=runtime
+        )
+        denied_drafter_skill = await drafter_read.coroutine(
+            file_path="/skills/lane-fit-v1/SKILL.md", runtime=runtime
+        )
+        traversal = await analyst_read.coroutine(
+            file_path="/skills/../context/account.json", runtime=runtime
+        )
+        denied_review_edit = await reviewer_write.coroutine(
+            file_path="/output/brief.md", content="forbidden", runtime=runtime
+        )
+
+    assert "PRIVATE_MEMORY_CANARY" in account_memory.content
+    assert "permission denied" in denied_memory.content
+    assert "permission denied" in denied_output.content
+    assert "name: lane-fit-v1" in skill.content
+    assert "permission denied" in denied_skill_write.content
+    assert "permission denied" in denied_drafter_skill.content
+    assert "not allowed" in traversal.content.casefold()
+    assert "permission denied" in denied_review_edit.content
 
 
 class _ReadState(TypedDict, total=False):
@@ -488,8 +637,7 @@ async def test_memory_backend_reads_materialized_namespaced_preferences() -> Non
         key,
         dict(file_data("# Rep preferences\n\n- concise\n")),
     )
-    spec = next(item for item in specialist_specs() if item.name == "account-context")
-    backend = create_agent_backend(spec, store)
+    backend = create_shared_backend(store)
     graph = StateGraph(_ReadState, context_schema=ProspectRuntimeContext)
 
     async def read_memory(
@@ -510,3 +658,89 @@ async def test_memory_backend_reads_materialized_namespaced_preferences() -> Non
     result = await cast(Any, compiled).ainvoke({}, context=context)
 
     assert result["content"] == "# Rep preferences\n\n- concise\n"
+
+
+@pytest.mark.asyncio
+async def test_shared_memory_backend_keeps_concurrent_runtime_namespaces_isolated() -> None:
+    first_handler_calls: list[dict[str, object]] = []
+    second_handler_calls: list[dict[str, object]] = []
+
+    def first_handler(payload: dict[str, object]) -> object:
+        first_handler_calls.append(payload)
+        return {"context": "FIRST_HANDLER_CANARY"}
+
+    def second_handler(payload: dict[str, object]) -> object:
+        second_handler_calls.append(payload)
+        return {"context": "SECOND_HANDLER_CANARY"}
+
+    first = replace(runtime_context(), tool_handlers={"get_crm_account": first_handler})
+    second = replace(
+        first,
+        tenant_id="tenant-other",
+        rep_id="rep-other",
+        tool_handlers={"get_crm_account": second_handler},
+    )
+    store = InMemoryStore()
+    for context, canary in ((first, "FIRST_CANARY"), (second, "SECOND_CANARY")):
+        await store.aput(
+            (*context.preference_namespace, "agent_files"),
+            f"/{context.tenant_id}/{context.rep_id}/preferences.md",
+            dict(file_data(canary)),
+        )
+    model = TrajectoryModel(probe_account_context=True)
+    orchestrator = build_orchestrator_agent(
+        orchestrator_model=model,
+        specialist_model=model,
+        tools=build_tool_registry(),
+        store=store,
+    )
+    task = cast(Any, orchestrator).nodes["tools"].bound._tools_by_name["task"]
+
+    async def invoke_account(context: ProspectRuntimeContext, canary: str) -> Command[Any]:
+        memory_path = f"/memories/{context.tenant_id}/{context.rep_id}/preferences.md"
+        runtime: Any = ToolRuntime(
+            state=cast(
+                Any,
+                {
+                    "messages": [HumanMessage(content="PARENT_CONVERSATION_CANARY")],
+                    "files": {
+                        "/task/brief.md": file_data("brief"),
+                        "/INDEX.md": file_data("# manifest\n"),
+                        memory_path: file_data(canary),
+                    },
+                },
+            ),
+            context=context,
+            config={},
+            stream_writer=lambda _: None,
+            tool_call_id=f"task-{context.tenant_id}",
+            store=None,
+        )
+        with bind_runtime_context(context):
+            result = await task.coroutine(
+                description="resolve account context",
+                subagent_type="account-context",
+                runtime=runtime,
+            )
+        assert isinstance(result, Command)
+        return cast("Command[Any]", result)
+
+    first_result, second_result = await asyncio.gather(
+        invoke_account(first, "FIRST_CANARY"),
+        invoke_account(second, "SECOND_CANARY"),
+    )
+
+    assert first_handler_calls == [{}]
+    assert second_handler_calls == [{}]
+    assert first_result.update is not None
+    assert second_result.update is not None
+    observations = model.observations["account-context"]
+    for own, foreign in (
+        ("FIRST_CANARY", "SECOND_CANARY"),
+        ("SECOND_CANARY", "FIRST_CANARY"),
+    ):
+        scoped = [(system, messages) for system, messages in observations if own in system]
+        assert scoped
+        assert any(own in messages for _, messages in scoped)
+        assert all(foreign not in system and foreign not in messages for system, messages in scoped)
+        assert all("PARENT_CONVERSATION_CANARY" not in messages for _, messages in scoped)

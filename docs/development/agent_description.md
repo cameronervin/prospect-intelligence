@@ -36,7 +36,7 @@ instead of unsupported commercial claims.
 - Filesystem: `CompositeBackend`
   - default: `StateBackend` (per-run, ephemeral)
   - `/memories/`: `StoreBackend` namespaced by tenant and rep ID (persistent)
-  - `/skills/`: packaged read-only skill source, mounted only for the lane analyst
+  - `/skills/`: traversal-confined packaged skill source, readable only by the lane analyst
 - LangSmith: tracing, datasets, experiments, online evaluators, annotation queues,
   dashboards, alerts
 - Judges: code for anything computable; Jev (TypeSafe decision model, pinned `jev-1.13`) as the
@@ -117,19 +117,21 @@ complete provenance. The orchestrator and evaluators rely on this contract.
 2. **external-research**: GenLogs-shaped freight activity, FMCSA, web search, SEC EDGAR, and FAF5
    through separate injected source tools → `/research/`
 3. **lane-analyst**: uses the code interpreter with PTC. Reads `/context` and `/research`,
-   loads `/skills/lane_fit_v1/SKILL.md`, fans out lane lookups, and computes scores → `/analysis/`
+   loads `/skills/lane-fit-v1/SKILL.md`, fans out lane lookups, and computes scores → `/analysis/`
 4. **outreach-drafter**: reads `/output/brief.md`, tenant/rep-scoped preferences, and review
    findings on a revision; writes `/output/outreach_draft.md` using an approved v1 template.
 5. **quality-reviewer**: read-only judgment over the brief and outreach against all evidence, the
    lane analysis, rep preferences, and the brief template. No checking tools; writes only
    `/review/findings.json` (round, pass/revise verdict, blocking/advisory findings).
 
-The Deep Agents default general-purpose subagent is disabled. Specialists expose no `task` tool;
-only the orchestrator receives the five compiled specialists.
+The Deep Agents default general-purpose subagent is disabled. One orchestrator is built with
+`create_deep_agent()`; its five declarative, isolated specialists are compiled internally with
+`create_agent()` and expose no `task` or root-only `send_outreach` tool.
 
 ### Context engineering
 
-Every chain receives a concrete middleware stack. Middleware projects the allowlisted task,
+The orchestrator and specialists share one composite virtual backend while each receives an explicit
+tool list, filesystem policy, and concrete middleware stack. Middleware projects the allowlisted task,
 manifest, artifacts, and rep preferences before model calls; applies model/tool budgets; redacts
 tool errors; treats source results as untrusted data; gates delegation and
 `send_outreach` on review order and freshness; and validates each specialist's owned artifact
@@ -142,8 +144,9 @@ Platform trace privacy hides all run inputs, outputs, and metadata by default.
 The code layout keeps those concepts visible as `chains.py`, `prompts/`, `specs.py`, `graphs.py`,
 `compiler.py`, `state.py`, `tools.py`, `guardrails.py`, `runtime.py`, and `context.py`.
 `middleware/` and SDK-formatted `skills/` remain directories. `ProspectRuntimeContext` stays in the
-feature contracts, while `agents/context.py` exposes it to the main graph and compiled subagents
-without copying invocation dependencies into checkpoint state.
+feature contracts, while `agents/context.py` bridges it into isolated declarative subagents because
+Deep Agents 0.7.19 does not forward the parent's typed context. Invocation dependencies are never
+copied into checkpoint state.
 
 ### Lane-fit scoring (`lane_fit_v1`)
 

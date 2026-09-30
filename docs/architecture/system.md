@@ -5,8 +5,8 @@
 The repository includes a working freight prospect-intelligence agent slice. The Next.js client
 creates and polls runs through FastAPI; PostgreSQL stores run, worker, review, receipt, preference,
 checkpoint, and cross-run memory state. Two durable worker slots share one process-wide runtime: an
-outer LangGraph invokes a root Deep Agent that delegates to five explicit specialist Deep Agents and
-pauses at a named outreach interrupt.
+outer LangGraph invokes one root Deep Agent harness that delegates to five declarative specialists
+compiled internally with LangChain `create_agent()`, then pauses at a named outreach interrupt.
 
 ```text
 Browser -> Next.js -> FastAPI API -> prospect services -> PostgreSQL job/run state
@@ -43,10 +43,12 @@ agents/
   context.py      middleware/     skills/
 ```
 
-`chains.py` creates the Deep Agents, `graphs.py` defines the outer workflow, and `compiler.py` is the
+`chains.py` creates the shared backend, declarative specialists, and root Deep Agent;
+`graphs.py` defines the outer workflow, and `compiler.py` is the
 only module that assembles and compiles the complete runtime. `state.py` contains checkpointed graph
 data; `context.py` provides access to the non-checkpointed LangGraph runtime context, including the
-scoped bridge required by compiled isolated subagents. Middleware and SDK-formatted skills remain
+scoped bridge required because isolated declarative subagents do not receive the parent's typed
+context in Deep Agents 0.7.19. Middleware and SDK-formatted skills remain
 nested because each is a meaningful multi-file boundary.
 
 The feature owns the five-specialist topology, tools, prompts, filesystem permissions, review
@@ -68,7 +70,11 @@ travel through non-checkpointed runtime context. See
 [`ADR 0003`](decisions/0003-deep-agent-runtime-composition.md) for the construction and ownership
 decision.
 
-The lane analyst alone receives the packaged `lane_fit_v1` skill through a read-only `/skills/`
+All agents use one `CompositeBackend`: run files are state-backed, `/memories/` is store-backed,
+and `/skills/` is a traversal-confined project mount. Explicit per-agent filesystem permissions
+remain the access boundary because backend access itself is not role-scoped.
+
+The lane analyst alone receives the packaged `lane-fit-v1` skill through a read-only `/skills/`
 mount. Other specialists cannot discover or read it. Review requests resume the durable
 `send_outreach` interrupt; there is no service-layer review fallback. If that graph handler is not
 available, the API returns retryable `503 service_unavailable` rather than recording a decision

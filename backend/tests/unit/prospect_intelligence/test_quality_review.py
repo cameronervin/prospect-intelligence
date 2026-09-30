@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 
-from app.features.prospect_intelligence.agents.chains import build_chains
+from app.features.prospect_intelligence.agents.chains import build_orchestrator_agent
 from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
 from app.features.prospect_intelligence.agents.guardrails import validate_workflow_artifacts
 from app.features.prospect_intelligence.agents.middleware import validate_delegation
@@ -276,13 +276,13 @@ def test_workflow_gate_still_requires_a_valid_review_artifact() -> None:
 
 async def _run(model: TrajectoryModel) -> ProspectAgentResult:
     store = InMemoryStore()
-    chains = build_chains(
+    orchestrator = build_orchestrator_agent(
         orchestrator_model=model,
         specialist_model=model,
         tools=build_tool_registry(),
         store=store,
     )
-    compiled = build_prospect_workflow(cast(Any, chains.orchestrator)).compile(  # pyright: ignore[reportUnknownMemberType]
+    compiled = build_prospect_workflow(cast(Any, orchestrator)).compile(  # pyright: ignore[reportUnknownMemberType]
         checkpointer=InMemorySaver(),
         store=store,
     )
