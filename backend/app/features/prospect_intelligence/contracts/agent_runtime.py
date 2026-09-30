@@ -1,8 +1,8 @@
 """Provider-neutral contract for the compiled prospect agent runtime."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from .models import OutreachDraft, ReviewAction
@@ -20,6 +20,16 @@ class ProspectAgentInput:
 
 
 @dataclass(frozen=True, slots=True)
+class ProgressSignal:
+    """Sanitized specialist progress: fixed names and outcomes only, never payloads."""
+
+    kind: Literal["started", "finished", "source"]
+    step_key: str
+    failed: bool = False
+    tool_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ProspectRuntimeContext:
     """Request-scoped dependencies that must not enter checkpointed graph state."""
 
@@ -30,6 +40,7 @@ class ProspectRuntimeContext:
         default_factory=lambda: dict[str, ToolHandler]()
     )
     rep_preferences: tuple[str, ...] = ()
+    progress: Callable[[ProgressSignal], Awaitable[None]] | None = None
 
     @property
     def thread_id(self) -> str:

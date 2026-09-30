@@ -37,11 +37,13 @@ from app.features.prospect_intelligence.contracts.models import (
     ReviewAction,
     RunStatus,
 )
+from app.features.prospect_intelligence.contracts.progress import RunStepStatus
 from app.features.prospect_intelligence.contracts.workflow import (
     preference_namespace,
     review_tool_call_id,
 )
 from app.features.prospect_intelligence.domain.errors import InvalidRunTransitionError
+from app.features.prospect_intelligence.domain.progress import SourceCalled, StepStarted
 from app.features.prospect_intelligence.domain.quality_events import build_quality_event
 from app.features.prospect_intelligence.models.records import (
     ApprovalRecord,
@@ -804,3 +806,54 @@ class _CounterState(TypedDict):
 
 def _increment(state: _CounterState) -> _CounterState:
     return {"count": state["count"] + 1}
+
+
+@pytest.mark.postgresql
+def test_specialist_progress_persists_under_claim_and_fails_open_steps(
+    postgres_url: str,
+) -> None:
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
+    service = build_service(store)
+    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    jobs = PostgresJobRepository(store)
+    claim = jobs.claim_next("worker-1", NOW, timedelta(minutes=5))
+    assert claim is not None
+    service.start_run(run.id, claim_token=claim.claim_token)
+
+    service.progress.record(
+        run.id, StepStarted("external-research", NOW), claim_token=claim.claim_token
+    )
+    service.progress.record(
+        run.id,
+        SourceCalled("external-research", "search_sec", ok=False, at=NOW),
+        claim_token=claim.claim_token,
+    )
+    stale = service.progress.record(
+        run.id, StepStarted("lane-analyst", NOW), claim_token=UUID(int=7)
+    )
+    assert stale.steps[2].status is RunStepStatus.PENDING
+
+    persisted = service.get_run(run.id)
+    assert persisted.stage == "External research running"
+    assert persisted.steps[1].activity[0].source == "SEC EDGAR filings"
+
+    assert jobs.fail(
+        claim.id,
+        claim.claim_token,
+        NOW,
+        error_code="execution_failed",
+        retryable=False,
+        max_attempts=3,
+    )
+    failed = service.get_run(run.id)
+    assert {step.key: step.status for step in failed.steps} == {
+        "account-context": RunStepStatus.SKIPPED,
+        "external-research": RunStepStatus.FAILED,
+        "lane-analyst": RunStepStatus.SKIPPED,
+        "outreach-drafter": RunStepStatus.SKIPPED,
+        "review": RunStepStatus.SKIPPED,
+    }
+    late_write = replace(failed, steps=(), stage="External research running")
+    assert PostgresRunRepository(store).save_progress(late_write, None) is False
+    assert service.get_run(run.id).stage == "Execution failed"
+    store.close()

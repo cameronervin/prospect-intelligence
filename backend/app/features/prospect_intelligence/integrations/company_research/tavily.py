@@ -136,6 +136,7 @@ class TavilySearchSource:
         result = SourceResult(
             value=tuple(signals),
             coverage=SourceCoverage(
+                mode=SourceMode.LIVE,
                 source=_SOURCE,
                 status=(
                     SourceCoverageStatus.DEGRADED
@@ -157,6 +158,7 @@ class TavilySearchSource:
         return SourceResult(
             value=None,
             coverage=SourceCoverage(
+                mode=SourceMode.LIVE,
                 source=_SOURCE,
                 status=SourceCoverageStatus.UNAVAILABLE,
                 detail=detail,

@@ -1,5 +1,6 @@
 """Deterministic repositories for tests, demos, and bootstrap replacement."""
 
+from dataclasses import replace
 from uuid import UUID
 
 from ..contracts.models import (
@@ -8,6 +9,7 @@ from ..contracts.models import (
     ProspectRun,
     QualityEvent,
     RepPreference,
+    RunStatus,
     SendReceipt,
 )
 
@@ -79,6 +81,20 @@ class InMemoryRunRepository:
     ) -> bool:
         del claim_token, quality_event
         self.save(run)
+        return True
+
+    def save_progress(self, run: ProspectRun, claim_token: UUID | None) -> bool:
+        del claim_token
+        stored = self._runs.get(run.id)
+        if stored is None or stored.status is not RunStatus.RUNNING:
+            return False
+        self._runs[run.id] = replace(
+            stored,
+            stage=run.stage,
+            progress_percent=run.progress_percent,
+            steps=run.steps,
+            updated_at=run.updated_at,
+        )
         return True
 
 

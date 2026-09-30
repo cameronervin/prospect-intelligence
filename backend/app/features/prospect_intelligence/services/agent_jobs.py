@@ -31,6 +31,7 @@ from app.features.prospect_intelligence.contracts.sources import (
     SourceCallContext,
 )
 from app.features.prospect_intelligence.services.lane_analysis import analyze_lanes
+from app.features.prospect_intelligence.services.progress import RunProgressSink
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 
 
@@ -67,6 +68,10 @@ class ProspectAgentJobHandler:
         current = await asyncio.to_thread(self.service.get_run, run_id)
         if current.status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
             return
+        if current.status is RunStatus.RUNNING:
+            await asyncio.to_thread(
+                self.service.progress.reset_interrupted, run_id, claim_token=claim_token
+            )
         run = (
             await asyncio.to_thread(self.service.start_run, run_id, claim_token=claim_token)
             if current.status is RunStatus.QUEUED
@@ -83,6 +88,7 @@ class ProspectAgentJobHandler:
             tenant_id=run.tenant_id,
             rep_id=run.rep_id,
             tool_handlers=self._tool_handlers(run, source_context),
+            progress=RunProgressSink(self.service.progress, run.id, claim_token),
             rep_preferences=tuple(
                 preference.summary
                 for preference in await asyncio.to_thread(

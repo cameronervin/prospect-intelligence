@@ -10,18 +10,25 @@ from app.features.prospect_intelligence.contracts.models import (
     FitVerdict,
     OutreachDraft,
     ProspectBrief,
+    ProspectRun,
     RecommendedNextStep,
     ReviewAction,
     RunStatus,
     SourceCoverage,
     SourceCoverageStatus,
 )
+from app.features.prospect_intelligence.contracts.progress import RunStepStatus
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
 from app.features.prospect_intelligence.domain.errors import (
     InvalidRunTransitionError,
     UnsafeOutreachError,
 )
 from app.features.prospect_intelligence.domain.outreach import validate_customer_outreach
+from app.features.prospect_intelligence.domain.progress import (
+    SourceCalled,
+    StepFinished,
+    StepStarted,
+)
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
     InMemoryPreferenceRepository,
@@ -398,3 +405,70 @@ def test_unknown_run_is_not_treated_as_an_execution_failure() -> None:
 
     with pytest.raises(LookupError):
         service.get_run(UUID("00000000-0000-0000-0000-000000000001"))
+
+
+def _step_statuses(run: ProspectRun) -> dict[str, RunStepStatus]:
+    return {step.key: step.status for step in run.steps}
+
+
+def test_runs_record_specialist_progress_from_queue_to_review() -> None:
+    service = build_service()
+    account = service.list_accounts("tenant-demo")[0]
+    run = service.create_run("tenant-demo", "rep-demo", account.id)
+
+    assert set(_step_statuses(run).values()) == {RunStepStatus.PENDING}
+    service.start_run(run.id)
+    progressed = service.progress.record(run.id, StepStarted("account-context", NOW))
+    progressed = service.progress.record(
+        run.id, SourceCalled("account-context", "get_crm_account", ok=True, at=NOW)
+    )
+    progressed = service.progress.record(run.id, StepFinished("account-context", NOW, failed=False))
+
+    assert progressed.stage == "Researching account and freight activity"
+    assert progressed.progress_percent == 35
+    assert progressed.steps[0].activity[0].source == "CRM account record"
+
+    pending = service.submit_analysis(run.id, analysis("Could we compare freight needs?"))
+    assert _step_statuses(pending)["review"] is RunStepStatus.RUNNING
+    assert _step_statuses(pending)["lane-analyst"] is RunStepStatus.SKIPPED
+
+    reviewed = service.review_run(
+        run.id, ReviewAction.REJECT, tool_call_id=review_tool_call_id(run.id)
+    )
+    assert _step_statuses(reviewed)["review"] is RunStepStatus.COMPLETE
+
+
+def test_progress_outside_a_running_run_is_ignored() -> None:
+    service = build_service()
+    account = service.list_accounts("tenant-demo")[0]
+    run = service.create_run("tenant-demo", "rep-demo", account.id)
+
+    unchanged = service.progress.record(run.id, StepStarted("account-context", NOW))
+
+    assert unchanged.status is RunStatus.QUEUED
+    assert set(_step_statuses(unchanged).values()) == {RunStepStatus.PENDING}
+
+
+def test_progress_with_a_lost_worker_claim_is_dropped_without_failing() -> None:
+    class LostClaimRuns(InMemoryRunRepository):
+        def save_progress(self, run: ProspectRun, claim_token: UUID | None) -> bool:
+            del run, claim_token
+            return False
+
+    runs = LostClaimRuns()
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=runs,
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: NOW,
+    )
+    account = service.list_accounts("tenant-demo")[0]
+    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    service.start_run(run.id)
+
+    result = service.progress.record(
+        run.id, StepStarted("account-context", NOW), claim_token=UUID(int=1)
+    )
+
+    assert _step_statuses(result)["account-context"] is RunStepStatus.PENDING

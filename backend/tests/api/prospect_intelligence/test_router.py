@@ -25,6 +25,7 @@ from app.features.prospect_intelligence.contracts.models import (
     SourceCoverageStatus,
 )
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
+from app.features.prospect_intelligence.domain.progress import SourceCalled, StepStarted
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
     InMemoryPreferenceRepository,
@@ -34,6 +35,42 @@ from app.features.prospect_intelligence.repositories.memory import (
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import synthetic_prospect_sources
+
+NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
+
+
+def test_runs_expose_sanitized_specialist_steps_for_polling() -> None:
+    api, service, _ = api_with_service()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    service.start_run(run.id)
+    service.progress.record(run.id, StepStarted("external-research", NOW))
+    service.progress.record(
+        run.id, SourceCalled("external-research", "search_sec", ok=False, at=NOW)
+    )
+
+    body = api.get(
+        f"/api/v1/prospect-runs/{run.id}",
+        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"},
+    ).json()
+
+    assert body["stage"] == "External research running"
+    assert [step["key"] for step in body["steps"]] == [
+        "account-context",
+        "external-research",
+        "lane-analyst",
+        "outreach-drafter",
+        "review",
+    ]
+    research = body["steps"][1]
+    assert research["status"] == "running"
+    assert research["started_at"] == NOW.isoformat().replace("+00:00", "Z")
+    assert research["activity"] == [
+        {
+            "at": NOW.isoformat().replace("+00:00", "Z"),
+            "source": "SEC EDGAR filings",
+            "outcome": "unavailable",
+        }
+    ]
 
 
 def api_with_service() -> tuple[TestClient, ProspectRunService, InMemoryRunRepository]:
@@ -149,6 +186,43 @@ def test_awaiting_review_exposes_stable_review_contract() -> None:
     }
     assert "subject" not in response.json()["pending_review"]
     assert response.json()["outreach"]["subject"]
+
+
+def test_fit_lanes_expose_lane_fit_score_components() -> None:
+    api, service, _ = api_with_service()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
+
+    response = api.get(
+        f"/api/v1/prospect-runs/{run.id}",
+        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"},
+    )
+
+    lanes = response.json()["brief"]["lanes"]
+    assert lanes
+    for lane in lanes:
+        components = (lane["backhaul_fill"], lane["density"], lane["equipment_match"])
+        assert all(0 <= value <= 1 for value in components)
+        weighted = 0.5 * components[0] + 0.3 * components[1] + 0.2 * components[2]
+        assert lane["fit_score"] == pytest.approx(weighted, abs=0.001)
+
+
+def test_source_coverage_discloses_source_mode() -> None:
+    api, service, _ = api_with_service()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
+
+    response = api.get(
+        f"/api/v1/prospect-runs/{run.id}",
+        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"},
+    )
+
+    coverage = response.json()["source_coverage"]
+    assert coverage
+    assert {item["source"]: item["mode"] for item in coverage} == {
+        "GenLogs fixture": "fixture",
+        "Carrier network fixture": "fixture",
+    }
 
 
 def test_pending_review_is_null_for_non_review_lifecycle_states() -> None:

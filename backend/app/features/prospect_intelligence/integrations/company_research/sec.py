@@ -8,7 +8,7 @@ from typing import cast
 
 import httpx
 
-from ...contracts.models import SourceCoverage, SourceCoverageStatus
+from ...contracts.models import SourceCoverage, SourceCoverageStatus, SourceMode
 from ...contracts.sources import CompanySignal, SourceCallContext, SourceResult
 from ..http import put_cached, request_with_retries
 from .sec_payloads import declared_agent, normalize_filings, select_company
@@ -121,6 +121,7 @@ class SecEdgarSource:
         return SourceResult(
             value=None,
             coverage=SourceCoverage(
+                mode=SourceMode.LIVE,
                 source=_SOURCE,
                 status=SourceCoverageStatus.UNAVAILABLE,
                 detail=detail,
@@ -132,6 +133,8 @@ class SecEdgarSource:
     def _complete_empty() -> SourceResult[tuple[CompanySignal, ...]]:
         return SourceResult(
             value=(),
-            coverage=SourceCoverage(source=_SOURCE, status=SourceCoverageStatus.COMPLETE),
+            coverage=SourceCoverage(
+                mode=SourceMode.LIVE, source=_SOURCE, status=SourceCoverageStatus.COMPLETE
+            ),
             evidence=(),
         )

@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from ...contracts.models import Account, SourceCoverage, SourceCoverageStatus
+from ...contracts.models import Account, SourceCoverage, SourceCoverageStatus, SourceMode
 from ...contracts.sources import Facility, FreightActivity, SourceCallContext, SourceResult
 from ...fixtures.synthetic.catalog import SyntheticSourceCatalog
 
@@ -26,6 +26,7 @@ class SyntheticFreightIntelligenceSource:
             result = SourceResult[FreightActivity](
                 value=None,
                 coverage=SourceCoverage(
+                    mode=SourceMode.FIXTURE,
                     source="GenLogs fixture",
                     status=SourceCoverageStatus.UNAVAILABLE,
                     detail="No reviewed synthetic freight record exists for this account.",

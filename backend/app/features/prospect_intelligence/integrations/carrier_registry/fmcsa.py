@@ -120,7 +120,9 @@ class FmcsaCarrierRegistrySource:
         )
         return SourceResult(
             value=profile,
-            coverage=SourceCoverage(source=_SOURCE, status=SourceCoverageStatus.COMPLETE),
+            coverage=SourceCoverage(
+                mode=SourceMode.LIVE, source=_SOURCE, status=SourceCoverageStatus.COMPLETE
+            ),
             evidence=(evidence,),
         )
 
@@ -129,6 +131,7 @@ class FmcsaCarrierRegistrySource:
         return SourceResult(
             value=None,
             coverage=SourceCoverage(
+                mode=SourceMode.LIVE,
                 source=_SOURCE,
                 status=SourceCoverageStatus.UNAVAILABLE,
                 detail=detail,

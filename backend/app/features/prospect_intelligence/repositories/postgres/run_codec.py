@@ -1,6 +1,9 @@
 """Map run, error, outreach, and receipt records to typed contracts."""
 
 import json
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from typing import Any, cast
 
 from ...contracts.models import (
     Account,
@@ -11,6 +14,7 @@ from ...contracts.models import (
     RunStatus,
     SendReceipt,
 )
+from ...contracts.progress import RunStep, RunStepStatus, StepActivity, StepActivityOutcome
 from ...models.records import ProspectRunRecord, SendReceiptRecord
 from .analysis_codec import deserialize_analysis_output, serialize_analysis_output
 
@@ -33,6 +37,7 @@ def run_record_values(run: ProspectRun) -> dict[str, object]:
         "send_receipt_id": run.send_receipt_id,
         "error": serialize_run_error(run.error),
         "quality_metadata": run.quality_metadata,
+        "steps": serialize_steps(run.steps),
     }
 
 
@@ -54,6 +59,7 @@ def run_from_record(row: ProspectRunRecord, account: Account) -> ProspectRun:
         error=deserialize_run_error(row.error),
         quality_metadata=row.quality_metadata,
         thread_id=row.thread_id,
+        steps=deserialize_steps(row.steps),
     )
 
 
@@ -113,3 +119,53 @@ def deserialize_outreach(raw: str | None) -> OutreachDraft | None:
     except json.JSONDecodeError:
         return OutreachDraft(subject="Freight capacity conversation", body=raw)
     return OutreachDraft(subject=str(payload["subject"]), body=str(payload["body"]))
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _parse_time(value: object) -> datetime | None:
+    return datetime.fromisoformat(str(value)) if value is not None else None
+
+
+def serialize_steps(steps: Sequence[RunStep]) -> list[dict[str, object]]:
+    return [
+        {
+            "key": step.key,
+            "label": step.label,
+            "status": step.status.value,
+            "started_at": _iso(step.started_at),
+            "finished_at": _iso(step.finished_at),
+            "activity": [
+                {"at": item.at.isoformat(), "source": item.source, "outcome": item.outcome.value}
+                for item in step.activity
+            ],
+        }
+        for step in steps
+    ]
+
+
+def deserialize_steps(raw: Sequence[Mapping[str, Any]] | None) -> tuple[RunStep, ...]:
+    """Decode persisted progress; rows written before step tracking decode to no steps."""
+
+    if not raw:
+        return ()
+    return tuple(
+        RunStep(
+            key=str(item["key"]),
+            label=str(item["label"]),
+            status=RunStepStatus(item["status"]),
+            started_at=_parse_time(item.get("started_at")),
+            finished_at=_parse_time(item.get("finished_at")),
+            activity=tuple(
+                StepActivity(
+                    at=datetime.fromisoformat(str(entry["at"])),
+                    source=str(entry["source"]),
+                    outcome=StepActivityOutcome(entry["outcome"]),
+                )
+                for entry in cast("Sequence[Mapping[str, Any]]", item.get("activity") or [])
+            ),
+        )
+        for item in raw
+    )

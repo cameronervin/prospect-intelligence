@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 
 from app.features.prospect_intelligence.contracts.agent_runtime import (
+    ProgressSignal,
     ProspectAgentCheckpoint,
     ProspectAgentInput,
     ProspectAgentResult,
@@ -24,8 +25,10 @@ from app.features.prospect_intelligence.contracts.models import (
     ReviewAction,
     RunStatus,
 )
+from app.features.prospect_intelligence.contracts.progress import RunStepStatus
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
 from app.features.prospect_intelligence.domain.errors import InvalidRunTransitionError
+from app.features.prospect_intelligence.domain.progress import SourceCalled, StepStarted
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
     InMemoryPreferenceRepository,
@@ -383,3 +386,100 @@ class _FailOnceReviewService(ProspectRunService):
             tool_call_id=tool_call_id,
             edited_outreach=edited_outreach,
         )
+
+
+class _ProgressRuntime(_CompiledRuntime):
+    async def execute(
+        self,
+        input: ProspectAgentInput,
+        *,
+        context: ProspectRuntimeContext,
+    ) -> ProspectAgentResult:
+        assert context.progress is not None
+        await context.progress(ProgressSignal("started", "account-context"))
+        await context.progress(
+            ProgressSignal("source", "account-context", tool_name="get_crm_account")
+        )
+        await context.progress(ProgressSignal("finished", "account-context"))
+        await context.progress(ProgressSignal("started", "external-research"))
+        self.mid_run = context.run_id
+        return await super().execute(input, context=context)
+
+
+@pytest.mark.asyncio
+async def test_agent_job_handler_persists_specialist_progress_for_polling() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    handler = ProspectAgentJobHandler(
+        runtime=_ProgressRuntime(),
+        service=service,
+        sources=synthetic_prospect_sources(),
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000033"))
+
+    steps = {step.key: step for step in service.get_run(run.id).steps}
+    assert steps["account-context"].status is RunStepStatus.COMPLETE
+    assert steps["account-context"].activity[0].source == "CRM account record"
+    assert steps["external-research"].status is RunStepStatus.COMPLETE
+    assert steps["review"].status is RunStepStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_progress_failures_never_fail_the_run() -> None:
+    class BrokenProgressRuns(InMemoryRunRepository):
+        def save_progress(self, run: ProspectRun, claim_token: UUID | None) -> bool:
+            del run, claim_token
+            raise RuntimeError("database unavailable for progress")
+
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=BrokenProgressRuns(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    handler = ProspectAgentJobHandler(
+        runtime=_ProgressRuntime(),
+        service=service,
+        sources=synthetic_prospect_sources(),
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000034"))
+
+    assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
+
+
+@pytest.mark.asyncio
+async def test_retried_job_clears_the_interrupted_attempts_running_steps() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    service.start_run(run.id)
+    now = datetime(2026, 9, 29, 12, tzinfo=UTC)
+    service.progress.record(run.id, StepStarted("external-research", now))
+    service.progress.record(
+        run.id, SourceCalled("external-research", "search_sec", ok=True, at=now)
+    )
+    runtime = _CompiledRuntime()
+    handler = ProspectAgentJobHandler(
+        runtime=runtime, service=service, sources=synthetic_prospect_sources()
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000035"))
+
+    research = {step.key: step for step in service.get_run(run.id).steps}["external-research"]
+    assert research.status is RunStepStatus.SKIPPED
+    assert research.activity == ()
