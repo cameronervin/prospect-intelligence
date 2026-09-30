@@ -4,8 +4,14 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
+import pytest
 from sqlalchemy import Table, UniqueConstraint
 
+from app.features.agent_quality.contracts.models import (
+    EvaluationSamplingDecision,
+    QualityEvaluationEnvelope,
+    QualitySignal,
+)
 from app.features.prospect_intelligence.contracts.models import (
     QualityEvent,
     QualityEventType,
@@ -15,6 +21,9 @@ from app.features.prospect_intelligence.contracts.quality_events import (
     QualityEventSink,
 )
 from app.features.prospect_intelligence.models.records import QualityEventOutboxRecord
+from app.features.prospect_intelligence.repositories.postgres.quality_events import (
+    quality_event_from_payload,
+)
 
 
 class _Sink:
@@ -71,3 +80,84 @@ def test_quality_event_fixture_remains_sanitized() -> None:
     )
 
     assert set(event.to_payload()).isdisjoint({"tenant_id", "rep_id", "draft", "prompt"})
+
+
+def test_outbox_decoder_restores_sampling_decision_without_an_envelope() -> None:
+    event = QualityEvent(
+        event_id=UUID("00000000-0000-0000-0000-000000000001"),
+        run_id=UUID("00000000-0000-0000-0000-000000000002"),
+        account_id="account-safe-id",
+        tenant_id_hash="a" * 64,
+        rep_id_hash="b" * 64,
+        event_type=QualityEventType.ANALYSIS_COMPLETED,
+        occurred_at=datetime(2026, 9, 29, 12, tzinfo=UTC),
+        agent_version="prospect-intelligence-v1",
+        prompt_version="v1",
+        evaluation_sampling=EvaluationSamplingDecision(
+            selected=False,
+            sample_rate=0.1,
+            policy_version="sha256-run-id-v1",
+        ),
+    )
+
+    assert quality_event_from_payload(event.to_storage_payload()) == event
+
+
+def test_outbox_decoder_restores_selected_decision_with_its_envelope() -> None:
+    event = QualityEvent(
+        event_id=UUID("00000000-0000-0000-0000-000000000001"),
+        run_id=UUID("00000000-0000-0000-0000-000000000002"),
+        account_id="account-safe-id",
+        tenant_id_hash="a" * 64,
+        rep_id_hash="b" * 64,
+        event_type=QualityEventType.ANALYSIS_COMPLETED,
+        occurred_at=datetime(2026, 9, 29, 12, tzinfo=UTC),
+        agent_version="prospect-intelligence-v1",
+        prompt_version="v1",
+        evaluation=QualityEvaluationEnvelope(
+            evaluator_version="freight-evaluators-v2",
+            graph_revision="graph-v1",
+            rubric_version="semantic-v1",
+            deterministic_signals=(QualitySignal(key="trajectory_checks", score=1.0, passed=True),),
+        ),
+        evaluation_sampling=EvaluationSamplingDecision(
+            selected=True,
+            sample_rate=0.1,
+            policy_version="sha256-run-id-v1",
+        ),
+    )
+
+    assert quality_event_from_payload(event.to_storage_payload()) == event
+
+
+def test_outbox_decoder_accepts_legacy_analysis_event_without_sampling_marker() -> None:
+    event = QualityEvent(
+        event_id=UUID("00000000-0000-0000-0000-000000000001"),
+        run_id=UUID("00000000-0000-0000-0000-000000000002"),
+        account_id="account-safe-id",
+        tenant_id_hash="a" * 64,
+        rep_id_hash="b" * 64,
+        event_type=QualityEventType.ANALYSIS_COMPLETED,
+        occurred_at=datetime(2026, 9, 29, 12, tzinfo=UTC),
+        agent_version="prospect-intelligence-v1",
+        prompt_version="v1",
+    )
+
+    assert quality_event_from_payload(event.to_storage_payload()) == event
+
+
+def test_outbox_decoder_rejects_partial_sampling_marker() -> None:
+    event = QualityEvent(
+        event_id=UUID("00000000-0000-0000-0000-000000000001"),
+        run_id=UUID("00000000-0000-0000-0000-000000000002"),
+        account_id="account-safe-id",
+        tenant_id_hash="a" * 64,
+        rep_id_hash="b" * 64,
+        event_type=QualityEventType.ANALYSIS_COMPLETED,
+        occurred_at=datetime(2026, 9, 29, 12, tzinfo=UTC),
+        agent_version="prospect-intelligence-v1",
+        prompt_version="v1",
+    )
+
+    with pytest.raises(ValueError, match="incomplete evaluation sampling"):
+        quality_event_from_payload({**event.to_storage_payload(), "evaluation_sampled": False})

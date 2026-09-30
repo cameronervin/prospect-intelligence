@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from app.platform.config.settings import DEVELOPMENT_DATABASE_URL, Environment, Settings
 
@@ -27,6 +27,88 @@ def test_settings_have_safe_local_defaults(
     assert settings.sec_app_name == "freight-prospect-takehome"
     assert settings.sec_contact_email == "contact@example.invalid"
     assert settings.sec_declared_user_agent == ("freight-prospect-takehome contact@example.invalid")
+    assert settings.online_quality_enabled is False
+    assert settings.online_quality_sample_rate == 0.10
+    assert settings.online_quality_batch_size == 10
+    assert settings.online_quality_poll_seconds == 1.0
+    assert settings.online_quality_publish_timeout_seconds == 75.0
+
+
+def test_online_quality_requires_both_provider_credentials_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    for kwargs in (
+        {"online_quality_enabled": True},
+        {
+            "online_quality_enabled": True,
+            "langsmith_api_key": SecretStr("langsmith-test"),
+        },
+        {
+            "online_quality_enabled": True,
+            "typesafe_api_key": SecretStr("typesafe-test"),
+        },
+    ):
+        with pytest.raises(ValidationError, match="online quality requires"):
+            Settings(**kwargs)  # type: ignore[arg-type]
+
+    configured = Settings(
+        online_quality_enabled=True,
+        langsmith_api_key=SecretStr("langsmith-test"),
+        typesafe_api_key=SecretStr("typesafe-test"),
+    )
+
+    assert configured.online_quality_enabled is True
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("online_quality_sample_rate", -0.01),
+        ("online_quality_sample_rate", 1.01),
+        ("online_quality_sample_rate", float("nan")),
+        ("online_quality_sample_rate", float("inf")),
+        ("online_quality_batch_size", 0),
+        ("online_quality_batch_size", 101),
+        ("online_quality_poll_seconds", 0),
+        ("online_quality_publish_timeout_seconds", 9),
+    ),
+)
+def test_online_quality_runtime_limits_are_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: int | float,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValidationError):
+        Settings(**{field: value})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", (0.0, 0.37, 1.0))
+def test_online_quality_sample_rate_accepts_closed_unit_interval(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    value: float,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    settings = Settings(online_quality_sample_rate=value)
+
+    assert settings.online_quality_sample_rate == value
+
+
+def test_online_quality_sample_rate_uses_prefixed_environment_name(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TAKEHOME_ONLINE_QUALITY_SAMPLE_RATE", "0.37")
+
+    assert Settings().online_quality_sample_rate == 0.37
 
 
 def test_openai_base_url_is_read_from_the_application_prefix(

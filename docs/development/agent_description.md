@@ -270,24 +270,28 @@ Rules:
 
 ### 7.2 Online harness (Monitor)
 
-This section is a production target, not behavior delivered by the take-home MVP.
+CAM-42 delivers an opt-in app-side evaluator path. After graph execution, the application builds a
+bounded envelope containing deterministic signals and one sanitized state per Jev question, then
+commits it with the product transition's outbox event. A lifecycle worker publishes a dedicated
+LangSmith event run keyed by the quality-event ID, deterministic feedback IDs, HITL decisions, and
+annotation routing. It never uploads the envelope, trace, raw artifacts, source payloads, prompts,
+contacts, or judge responses.
 
-- All runs traced to a LangSmith project with metadata: `agent_version`, `rep_id` (hashed),
-  `account_id`, `tenant_id`, `prompt_version`. Trajectories view used for session review.
-- Online evaluators on the tracing project:
-  - Code: `numeric_groundedness`, `trajectory_checks` on 100% of runs
-  - Jev: same typed questions on 100% of runs (LangSmith decision model online evaluator)
-  - LLM judge: none by default; runs only on flagged traces to write a failure explanation
-    for the annotation queue
-- Implicit feedback: HITL approve / edit / reject and edit distance, logged per run.
-- Dashboard: approve rate, edit rate, reject rate, groundedness pass rate, Jev scores,
-  cost, latency, tool error rate, all filterable by `agent_version`.
-- Alerts: groundedness pass rate drop, reject-rate spike, GenLogs/API error spike, cost spike.
-- Safe rollout: new versions run as canary (small share of traffic, tagged by
-  `agent_version`); compare online scores before full rollout.
-- For the demo, a traffic simulator runs accounts from a separate "live" pool (not in the
-  offline dataset) through the deployed agent, with a simulated rep policy
-  (approve / edit / reject), to populate the monitoring view.
+- Code: all ten deterministic catalog signals on completed analyses. Lane precision, correctness,
+  and verdict compare the agent artifact with the canonical product analysis; latency and tool count
+  are informational. Cost is explicitly unavailable until versioned provider usage/pricing exists.
+- Jev: the same seven app-owned questions and rubric as the offline harness, with no LLM fallback.
+- Implicit feedback: HITL approve/edit/reject and edit distance.
+- Failure behavior: deterministic failures and rejection route to annotation; provider failure or
+  timeout keeps the row pending for retry; duplicate provider conflicts are success.
+- Operation: disabled by default; enabling requires LangSmith and TypeSafe credentials. Defaults are
+  ten events per batch, one-second idle polling, and a 75-second event budget.
+- Bounds: eight qualitative claims per envelope and eight concurrent Jev calls. Version-mismatched
+  pending envelopes are annotated without calling a newer rubric.
+
+Dashboard/alert provisioning, traffic execution, canary policy, production retention, and alert
+destinations remain CAM-43/deployment work. The current alert numbers are demo defaults rather than
+SLOs. Semantic scores remain informational until CAM-41 calibration.
 
 ### 7.3 Closing the loop
 
@@ -323,8 +327,9 @@ Jev operating rules:
 - Log state, option order, model version, and confidence with every feedback entry.
 - Test option-order permutations for each choice question during calibration.
 - Keep states small and relevant; filter in code before calling.
-- Offline: custom LangSmith evaluator wrapping the TypeSafe Python SDK. Online: LangSmith
-  decision model evaluator (TypeSafe key stored as a workspace secret).
+- Offline: LangSmith evaluator wrappers around the app-owned TypeSafe/Jev contract. Online: the same
+  app-owned Jev client consumes bounded states asynchronously; TypeSafe and LangSmith credentials
+  remain server-only runtime secrets.
 
 ---
 

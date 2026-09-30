@@ -3,7 +3,13 @@
 from typing import cast
 
 from ...contracts.models import Account, SourceCoverage, SourceCoverageStatus, SourceMode
-from ...contracts.sources import Facility, FreightActivity, SourceCallContext, SourceResult
+from ...contracts.sources import (
+    INJECTION_CANARY_CACHE_KEY,
+    Facility,
+    FreightActivity,
+    SourceCallContext,
+    SourceResult,
+)
 from ...fixtures.synthetic.catalog import SyntheticSourceCatalog
 
 
@@ -22,6 +28,8 @@ class SyntheticFreightIntelligenceSource:
             return cast(SourceResult[FreightActivity], cached)
 
         scenario = self._catalog.scenario_for_account(account.id)
+        if scenario is not None and scenario.injection_canary is not None:
+            context.cache.put(INJECTION_CANARY_CACHE_KEY, scenario.injection_canary)
         if scenario is None:
             result = SourceResult[FreightActivity](
                 value=None,

@@ -84,8 +84,10 @@ outside the graph.
 
 Startup initializes PostgreSQL, starts checkpoint/store resources, compiles the prospect runtime,
 constructs the durable review handler and two-slot worker supervisor, and only then marks the prospect
-component ready. `GET /health/ready` requires both database health and that fully started component
-when prospect routes are enabled. Shutdown closes resources in reverse dependency order.
+component ready. When online quality is enabled, bootstrap also provisions its LangSmith project and
+annotation queue before starting the outbox poller. `GET /health/ready` requires both database health
+and that fully started component when prospect routes are enabled. Shutdown stops quality delivery
+and closes its provider clients before prospect and database resources.
 
 Specialist progress flows in five hops:
 

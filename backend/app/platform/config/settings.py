@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEVELOPMENT_DATABASE_URL = "postgresql+psycopg://takehome:takehome@localhost:5432/takehome"
@@ -52,6 +52,16 @@ class Settings(BaseSettings):
     external_live_enabled: bool = False
     external_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
     external_retry_attempts: int = Field(default=2, ge=0, le=5)
+    online_quality_enabled: bool = False
+    online_quality_sample_rate: float = Field(
+        default=0.10,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+    )
+    online_quality_batch_size: int = Field(default=10, ge=1, le=100)
+    online_quality_poll_seconds: float = Field(default=1.0, gt=0, le=60)
+    online_quality_publish_timeout_seconds: float = Field(default=75.0, ge=10, le=300)
     sec_app_name: str = Field(
         default="freight-prospect-takehome",
         min_length=1,
@@ -84,6 +94,20 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="FMCSA_WEB_KEY",
     )
+
+    @model_validator(mode="after")
+    def _validate_online_quality_credentials(self) -> "Settings":
+        if not self.online_quality_enabled:
+            return self
+        configured = (
+            self.langsmith_api_key is not None
+            and bool(self.langsmith_api_key.get_secret_value().strip())
+            and self.typesafe_api_key is not None
+            and bool(self.typesafe_api_key.get_secret_value().strip())
+        )
+        if not configured:
+            raise ValueError("online quality requires LangSmith and TypeSafe credentials")
+        return self
 
     @field_validator("openai_base_url")
     @classmethod

@@ -177,3 +177,17 @@ def test_numeric_and_date_claims_are_excluded_from_semantic_judging() -> None:
         "Its 3PL capability and SOC 2 posture are mature.",
         "Reviewed evidence indicates a viable fit.",
     ]
+
+
+def test_semantic_observations_bound_qualitative_claim_fanout() -> None:
+    freight_citation = citation_id(_provenance(source=PROSPECT_FILES.freight_research))
+    claims = "\n".join(
+        f"- Qualitative claim letter {chr(65 + index)} is supported. [{freight_citation}]"
+        for index in range(9)
+    )
+
+    with pytest.raises(ValueError, match="8-claim bound"):
+        semantic_observations(
+            _artifacts(f"## Evidence-backed claims\n{claims}\n"),
+            account_name="Acme Foods",
+        )

@@ -9,6 +9,8 @@ from uuid import UUID
 from ..domain.models import NetworkLane, ShipperLane
 from .models import Account, Evidence, SourceCoverage, SourceCoverageStatus
 
+INJECTION_CANARY_CACHE_KEY = "quality:synthetic-injection-canary"
+
 
 @dataclass(frozen=True, slots=True)
 class SourceResult[SourceValue]:

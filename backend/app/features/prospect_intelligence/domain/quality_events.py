@@ -3,6 +3,11 @@
 from hashlib import sha256
 from uuid import NAMESPACE_URL, uuid5
 
+from app.features.agent_quality.contracts.models import (
+    EvaluationSamplingDecision,
+    QualityEvaluationEnvelope,
+)
+
 from ..contracts.models import ProspectRun, QualityEvent, QualityEventType, SourceMode
 
 
@@ -11,6 +16,8 @@ def build_quality_event(
     event_type: QualityEventType,
     *,
     edit_distance: float | None = None,
+    evaluation: QualityEvaluationEnvelope | None = None,
+    evaluation_sampling: EvaluationSamplingDecision | None = None,
 ) -> QualityEvent:
     """Project a product run into the public-safe quality-event allowlist."""
 
@@ -31,6 +38,8 @@ def build_quality_event(
         edit_distance=edit_distance if event_type is QualityEventType.REVIEW_COMPLETED else None,
         source_modes=_source_modes(run),
         error_code=run.error.code if run.error is not None else None,
+        evaluation=evaluation,
+        evaluation_sampling=evaluation_sampling,
     )
 
 

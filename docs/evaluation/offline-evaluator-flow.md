@@ -68,13 +68,16 @@ LangSmith aevaluate(upload_results=False)
 
 - `datasets/`: examples, target inputs, and reference outputs.
 - `targets/`: run the compiled graph. They do not import evaluators.
-- `contracts/`: define judge interfaces, decode files, and build the safe snapshot and observations.
+- `app/features/agent_quality/`: owns the shared evaluator catalog, bounded projections, semantic
+  judge contracts, rubrics, provider adapters, and SDK-neutral scoring used online and offline.
+- `contracts/`: build the offline safe snapshot and observations; semantic contract modules are
+  compatibility re-exports of the application-owned definitions.
 - `evaluators/`: one native LangSmith code evaluator per deterministic metric plus async semantic
   evaluator factories returning native `EvaluationResult` objects.
 - `evaluators/suite.py`: evaluator order, version, and gate thresholds.
-- `rubrics/`: exact versioned question text and criteria shared by provider judges.
-- `judges/`: injected async provider boundaries. Jev is the semantic default; GPT-5.6 Sol is
-  limited to comparison and text-only failure explanation.
+- `rubrics/`: compatibility re-exports of application-owned versioned question text and criteria.
+- `judges/`: offline adapters over the application-owned provider boundaries. Jev is the semantic
+  default; GPT-5.6 Sol remains limited to comparison and text-only failure explanation.
 - `experiments/`: run evaluation, aggregate rows, apply gates, and write the report.
 
 ## Data boundary

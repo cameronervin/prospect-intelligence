@@ -4,12 +4,12 @@ from collections.abc import Mapping
 
 from langsmith.evaluation import EvaluationResult
 
+from app.features.agent_quality.domain.runtime_scoring import score_informational
+
 
 def evaluate_cost(
     outputs: Mapping[str, object], reference_outputs: Mapping[str, object]
 ) -> EvaluationResult:
     del reference_outputs
-    value = outputs.get("cost_usd")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return EvaluationResult(key="cost_usd", score=None, metadata={"missing": True})
-    return EvaluationResult(key="cost_usd", score=value, metadata={"informational": True})
+    signal = score_informational("cost_usd", outputs.get("cost_usd"))
+    return EvaluationResult(key=signal.key, score=signal.score, metadata=dict(signal.metadata))

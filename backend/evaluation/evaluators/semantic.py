@@ -1,19 +1,21 @@
 """LangSmith-native adapters for the injected semantic judges."""
 
-from __future__ import annotations
-
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import cast
 
 from langsmith.evaluation import EvaluationResult
 
-from evaluation.contracts.judges import JudgeDecision, SemanticJudge, decision_metadata
+from app.features.agent_quality import public as agent_quality
+from app.features.agent_quality.contracts.models import QualitySignal
+from app.features.agent_quality.domain.semantic_scoring import score_semantic_decisions
+from evaluation.contracts.judges import JudgeDecision, SemanticJudge
 from evaluation.contracts.semantic import valid_citation_id
 from evaluation.rubrics import QUESTIONS
 
 type SemanticEvaluator = Callable[
     [Mapping[str, object], Mapping[str, object]], Awaitable[EvaluationResult]
 ]
+SEMANTIC_EVALUATOR_KEYS = agent_quality.SEMANTIC_EVALUATOR_KEYS
 
 
 def _observations(outputs: Mapping[str, object]) -> Mapping[str, object]:
@@ -50,6 +52,15 @@ def _unavailable(key: str, error: Exception) -> EvaluationResult:
     )
 
 
+def _result(signal: QualitySignal) -> EvaluationResult:
+    return EvaluationResult(
+        key=signal.key,
+        score=signal.score,
+        value=signal.value,
+        metadata=dict(signal.metadata),
+    )
+
+
 async def _judge_one(
     judge: SemanticJudge,
     key: str,
@@ -72,11 +83,7 @@ async def _claim_supported(
     if not isinstance(raw_claims, Sequence) or isinstance(raw_claims, (str, bytes, bytearray)):
         return _missing("claim_supported")
     if not raw_claims:
-        return EvaluationResult(
-            key="claim_supported",
-            score=1.0,
-            metadata={"checked_count": 0, "not_applicable": True},
-        )
+        return _result(score_semantic_decisions("claim_supported", (), not_applicable=True))
     decisions: list[JudgeDecision] = []
     for raw in cast("Sequence[object]", raw_claims):
         if not isinstance(raw, Mapping):
@@ -84,36 +91,28 @@ async def _claim_supported(
         item = cast("Mapping[str, object]", raw)
         citation_ids = item.get("citation_ids")
         excerpt = item.get("excerpt")
+        typed_citation_ids = (
+            cast("Sequence[object]", citation_ids)
+            if isinstance(citation_ids, Sequence)
+            and not isinstance(citation_ids, (str, bytes, bytearray))
+            else ()
+        )
         if (
-            not isinstance(citation_ids, Sequence)
-            or isinstance(citation_ids, (str, bytes, bytearray))
-            or not citation_ids
-            or any(not valid_citation_id(item) for item in citation_ids)
+            not typed_citation_ids
+            or any(not valid_citation_id(identifier) for identifier in typed_citation_ids)
             or not isinstance(excerpt, str)
             or not excerpt.strip()
         ):
-            return EvaluationResult(
-                key="claim_supported",
-                score=0.0,
-                metadata={"status": "unresolved_citation"},
-            )
+            return _result(score_semantic_decisions("claim_supported", (), unresolved=True))
         state = {field: item[field] for field in ("claim", "excerpt") if field in item}
         judged = await _judge_one(judge, "claim_supported", state)
         if isinstance(judged, EvaluationResult):
             return judged
         decisions.append(judged)
-    scores = [decision.probabilities.get("yes") for decision in decisions]
-    if any(not isinstance(score, (int, float)) for score in scores):
+    try:
+        return _result(score_semantic_decisions("claim_supported", decisions))
+    except ValueError:
         return _missing("claim_supported", reason="invalid_result")
-    return EvaluationResult(
-        key="claim_supported",
-        score=min(cast("list[float]", scores)),
-        value=all(bool(decision.value) for decision in decisions),
-        metadata={
-            "checked_count": len(decisions),
-            "decisions": [decision_metadata(decision) for decision in decisions],
-        },
-    )
 
 
 async def _noul(
@@ -126,23 +125,21 @@ async def _noul(
     state = _observations(outputs).get(key)
     if not isinstance(state, Mapping):
         return _missing(key)
+    typed_state = cast("Mapping[str, object]", state)
     if key == "entity_resolution_ok":
-        profile = state.get("resolved_profile")
+        profile = typed_state.get("resolved_profile")
         if not isinstance(profile, str) or not profile.strip():
-            return EvaluationResult(key=key, score=0.0, metadata={"status": "unresolved_profile"})
-    decision = await _judge_one(judge, key, cast("Mapping[str, object]", state))
+            return _result(score_semantic_decisions(key, (), unresolved=True))
+    decision = await _judge_one(judge, key, typed_state)
     if isinstance(decision, EvaluationResult):
         return decision
-    probability = decision.probabilities.get("yes")
-    if not isinstance(probability, (int, float)):
+    try:
+        signal = score_semantic_decisions(key, (decision,))
+    except ValueError:
         return _missing(key, reason="invalid_result")
-    score = 1.0 - float(probability) if invert else float(probability)
-    return EvaluationResult(
-        key=key,
-        score=score,
-        value=decision.value,
-        metadata=decision_metadata(decision),
-    )
+    if invert != (key == "internal_data_leak"):
+        raise ValueError("semantic noul inversion does not match its catalog key")
+    return _result(signal)
 
 
 async def _next_step(
@@ -163,15 +160,11 @@ async def _next_step(
     )
     if isinstance(decision, EvaluationResult):
         return decision
-    score = decision.probabilities.get(expected)
-    if not isinstance(score, (int, float)):
+    try:
+        signal = score_semantic_decisions("next_step", (decision,), expected_value=expected)
+    except ValueError:
         return _missing("next_step", reason="invalid_result")
-    return EvaluationResult(
-        key="next_step",
-        score=float(score),
-        value=decision.value,
-        metadata={**decision_metadata(decision), "expected": expected},
-    )
+    return _result(signal)
 
 
 async def _score(
@@ -181,20 +174,17 @@ async def _score(
 ) -> EvaluationResult:
     state = _observations(outputs).get(key)
     if state is None and key == "tone_fit":
-        return EvaluationResult(key=key, score=None, metadata={"not_applicable": True})
+        return _result(score_semantic_decisions(key, (), not_applicable=True))
     if not isinstance(state, Mapping):
         return _missing(key)
     decision = await _judge_one(judge, key, cast("Mapping[str, object]", state))
     if isinstance(decision, EvaluationResult):
         return decision
-    if isinstance(decision.value, bool) or not isinstance(decision.value, (int, float)):
+    try:
+        signal = score_semantic_decisions(key, (decision,))
+    except ValueError:
         return _missing(key, reason="invalid_result")
-    return EvaluationResult(
-        key=key,
-        score=float(decision.value),
-        value=decision.value,
-        metadata=decision_metadata(decision),
-    )
+    return _result(signal)
 
 
 def semantic_evaluators(

@@ -1,32 +1,21 @@
 """LangSmith evaluator for the lane-fit verdict."""
 
-import json
 from collections.abc import Mapping
-from typing import cast
 
 from langsmith.evaluation import EvaluationResult
 
-from app.features.prospect_intelligence.public import PROSPECT_FILES
+from app.features.agent_quality.domain.lane_scoring import score_verdict_accuracy
 from evaluation.contracts.snapshot import snapshot_artifacts
 
 
 def evaluate_verdict_accuracy(
     outputs: Mapping[str, object], reference_outputs: Mapping[str, object]
 ) -> EvaluationResult:
-    artifacts = snapshot_artifacts(outputs)
-    try:
-        raw = cast(object, json.loads(artifacts.get(PROSPECT_FILES.lane_fit_json, "")))
-    except json.JSONDecodeError:
-        raw = None
-    predicted = ""
-    if isinstance(raw, Mapping):
-        value = cast("Mapping[str, object]", raw).get("verdict")
-        predicted = value if isinstance(value, str) else ""
     expected_value = reference_outputs.get("expected_verdict")
     expected = expected_value if isinstance(expected_value, str) else ""
-    passed = bool(artifacts) and bool(expected) and predicted == expected
+    signal = score_verdict_accuracy(snapshot_artifacts(outputs), expected)
     return EvaluationResult(
-        key="fit_verdict_accuracy",
-        score=1.0 if passed else 0.0,
-        metadata={"passed": passed, "predicted": predicted, "expected": expected},
+        key=signal.key,
+        score=signal.score,
+        metadata={"passed": signal.passed, **signal.metadata},
     )

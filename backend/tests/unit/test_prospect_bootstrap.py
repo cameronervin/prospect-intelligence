@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from langsmith import Client as LangSmithClient
 from pydantic import SecretStr
 
-from app.bootstrap.container import Container, ProspectComponent
+from app.bootstrap.container import Container, ProspectComponent, QualityComponent
 from app.bootstrap.wiring import build_container
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryAccountRepository,
@@ -34,6 +34,40 @@ class _NoLiveModelRuntime:
 
     async def close(self) -> None:
         return None
+
+
+class _AsyncLifecycleRecorder:
+    def __init__(self, events: list[str], name: str) -> None:
+        self._events = events
+        self._name = name
+
+    async def start(self) -> None:
+        self._events.append(f"{self._name}.start")
+
+    async def provision(self) -> None:
+        self._events.append(f"{self._name}.provision")
+
+    async def close(self) -> None:
+        self._events.append(f"{self._name}.close")
+
+
+@pytest.mark.asyncio
+async def test_quality_component_provisions_before_delivery_and_closes_in_reverse() -> None:
+    events: list[str] = []
+    quality = QualityComponent(
+        provisioner=_AsyncLifecycleRecorder(events, "gateway"),
+        delivery=_AsyncLifecycleRecorder(events, "delivery"),
+    )
+
+    await quality.start()
+    await quality.close()
+
+    assert events == [
+        "gateway.provision",
+        "delivery.start",
+        "delivery.close",
+        "gateway.close",
+    ]
 
 
 def test_production_container_fails_closed_without_model_credentials(
@@ -80,6 +114,63 @@ async def test_container_keeps_fake_model_runtime_separate_from_source_bundle(
     assert container.prospect.sources is not None
     assert container.prospect.source_http_transport is not None
     assert container.prospect.worker_supervisor is None
+    assert container.prospect.quality_projector is None
+    assert container.quality is None
+
+    await container.close()
+
+
+@pytest.mark.asyncio
+async def test_production_container_builds_quality_delivery_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(
+        environment=Environment.TEST,
+        online_quality_enabled=True,
+        langsmith_api_key=SecretStr("langsmith-test"),
+        typesafe_api_key=SecretStr("typesafe-test"),
+    )
+
+    container = build_container(
+        settings,
+        model_runtime=cast(ManagedModelRuntime, cast(Any, _NoLiveModelRuntime())),
+    )
+
+    assert container.quality is not None
+    assert container.quality.started is False
+    assert container.prospect is not None
+    assert container.prospect.quality_projector is not None
+
+    await container.close()
+
+
+@pytest.mark.asyncio
+async def test_production_container_shares_configured_evaluation_sample_rate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(
+        environment=Environment.TEST,
+        online_quality_enabled=True,
+        online_quality_sample_rate=0.37,
+        langsmith_api_key=SecretStr("langsmith-test"),
+        typesafe_api_key=SecretStr("typesafe-test"),
+    )
+
+    container = build_container(
+        settings,
+        model_runtime=cast(ManagedModelRuntime, cast(Any, _NoLiveModelRuntime())),
+    )
+
+    assert container.prospect is not None
+    assert container.quality is not None
+    projector = cast(Any, container.prospect.quality_projector)
+    service = cast(Any, container.quality.provisioner)
+    assert projector._evaluation_sample_rate == 0.37
+    assert service._config.evaluation_sample_rate == 0.37
 
     await container.close()
 

@@ -11,6 +11,7 @@ from evaluation.experiments.semantic_smoke import SmokeSummary, main
 
 def _settings(*, typesafe: str | None, openai: str | None) -> Settings:
     return Settings(
+        online_quality_enabled=False,
         typesafe_api_key=SecretStr(typesafe) if typesafe is not None else None,
         openai_api_key=SecretStr(openai) if openai is not None else None,
     )

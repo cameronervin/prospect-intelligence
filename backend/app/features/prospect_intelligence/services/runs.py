@@ -5,6 +5,11 @@ from dataclasses import replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from app.features.agent_quality.contracts.models import (
+    EvaluationSamplingDecision,
+    QualityEvaluationEnvelope,
+)
+
 from ..contracts import repositories
 from ..contracts.models import (
     Account,
@@ -119,6 +124,8 @@ class ProspectRunService:
         output: AnalysisOutput,
         *,
         claim_token: UUID | None = None,
+        evaluation: QualityEvaluationEnvelope | None = None,
+        evaluation_sampling: EvaluationSamplingDecision | None = None,
     ) -> ProspectRun:
         run = self.get_run(run_id)
         self._require(run, RunStatus.RUNNING)
@@ -140,7 +147,12 @@ class ProspectRunService:
         self._save_execution_state(
             updated,
             claim_token,
-            build_quality_event(updated, QualityEventType.ANALYSIS_COMPLETED),
+            build_quality_event(
+                updated,
+                QualityEventType.ANALYSIS_COMPLETED,
+                evaluation=evaluation,
+                evaluation_sampling=evaluation_sampling,
+            ),
         )
         return updated
 

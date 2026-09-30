@@ -118,14 +118,15 @@ The implementation separates observation from judgment:
 
 See [offline-evaluator-flow.md](offline-evaluator-flow.md) for the short module and data-flow map.
 
-- `evaluation/contracts/` defines the sanitized snapshot, typed judge protocol/decision, and
-  projections shared by graph targets and code evaluators. It is SDK-neutral and cannot import
-  higher-level harness packages.
+- `app/features/agent_quality/` owns the SDK-neutral evaluator catalog, semantic projections,
+  rubrics, judge contracts, and app-side runtime. `evaluation/contracts/`, `evaluation/rubrics/`,
+  and `evaluation/judges/` retain compatibility re-exports so offline and online meaning cannot
+  drift.
 - `evaluation/targets/` runs the application and emits that contract. It does not import evaluators.
 - `evaluation/evaluators/` contains one native LangSmith evaluator callable per metric. Each accepts
   `outputs` and `reference_outputs` and returns `EvaluationResult`.
-- `evaluation/evaluators/suite.py` is the only place that orders metrics and owns evaluator version
-  and release thresholds.
+- `evaluation/evaluators/suite.py` orders offline wrappers and owns release thresholds; evaluator
+  identity and scope come from the application-owned catalog.
 - `evaluation/rubrics/semantic_v1.py` stores the exact source-controlled question text and criteria;
   each decision records `semantic-v1` so live evidence resolves to the rubric used.
 - `evaluation/judges/` owns only injected, provider-specific Jev and OpenAI adapters, separately
@@ -150,10 +151,11 @@ CAM-41 will calibrate Jev using 40 human labels per question, five judge repetit
 option-order permutation. Rework any question below 85% human agreement or more than five percentage
 points behind the comparison LLM judge. Those calibration criteria are not current promotion gates.
 
-Online quality operations live in `features/agent_quality`. That feature owns rule, dashboard,
-alert, annotation-queue, traffic-simulation, and regression-candidate workflows. It receives only
-sanitized contracts and reaches LangSmith through an injected gateway. Actor identifiers are
-hashed, and raw tool/web output is never sent to Jev.
+Online quality operations live in `features/agent_quality`. That feature owns app-side evaluation,
+the concrete injected LangSmith gateway, annotation routing, traffic simulation, and regression
+candidate workflows. Evaluation envelopes are durable but never sent wholesale to LangSmith;
+actor identifiers are hashed, current account IDs are synthetic fixtures, and raw tool/web output
+is never sent to Jev.
 
 Use [experiment-result-template.md](experiment-result-template.md) for live evidence. Do not
 commit traces, credentials, downloaded result payloads, private data, or full model outputs.

@@ -13,6 +13,7 @@ from sqlalchemy import func, insert, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.features.agent_quality.contracts.models import EvaluationSamplingDecision
 from app.features.prospect_intelligence.contracts.models import (
     QualityEvent,
     QualityEventType,
@@ -52,6 +53,7 @@ def _event(
     *,
     event_id: UUID,
     occurred_at: datetime = NOW,
+    evaluation_sampling: EvaluationSamplingDecision | None = None,
 ) -> QualityEvent:
     return QualityEvent(
         event_id=event_id,
@@ -63,6 +65,7 @@ def _event(
         occurred_at=occurred_at,
         agent_version="prospect-intelligence-v1",
         prompt_version="v1",
+        evaluation_sampling=evaluation_sampling,
     )
 
 
@@ -124,6 +127,11 @@ def test_outbox_persists_restart_delivery_and_sanitized_failure_state(
         QualityEventType.ANALYSIS_COMPLETED,
         event_id=UUID("00000000-0000-0000-0000-000000000012"),
         occurred_at=NOW + timedelta(seconds=1),
+        evaluation_sampling=EvaluationSamplingDecision(
+            selected=False,
+            sample_rate=0.1,
+            policy_version="sha256-run-id-v1",
+        ),
     )
     outbox = PostgresQualityEventOutbox(first_store)
     outbox.enqueue(first)

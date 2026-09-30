@@ -1,21 +1,18 @@
 """LangSmith evaluator for numeric claims in model-authored outputs."""
 
-import re
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import cast
 
 from langsmith.evaluation import EvaluationResult
 
-from app.features.prospect_intelligence.public import PROSPECT_FILES
+from app.features.agent_quality.domain.deterministic import score_numeric_grounding
 from evaluation.contracts.observations import decimal_value
 from evaluation.contracts.snapshot import (
     snapshot_artifacts,
     snapshot_mapping,
     snapshot_observations,
 )
-
-_NUMBER = re.compile(r"(?<![\w])[-+]?\$?\d[\d,]*(?:\.\d+)?%?")
 
 
 def _observed_values(observation: Mapping[str, object]) -> tuple[set[Decimal], list[str]]:
@@ -48,24 +45,9 @@ def evaluate_numeric_grounding(
     artifacts = snapshot_artifacts(outputs)
     evidence = snapshot_mapping(snapshot_observations(outputs).get("numeric_evidence"))
     valid, invalid_evidence = _observed_values(evidence)
-    rendered = [
-        token
-        for path in (PROSPECT_FILES.sales_brief, PROSPECT_FILES.outreach_draft)
-        for token in _NUMBER.findall(artifacts.get(path, ""))
-    ]
-    unsupported = [
-        token
-        for token in rendered
-        if decimal_value(token, percentage=token.endswith("%")) not in valid
-    ]
-    passed = bool(artifacts) and not invalid_evidence and not unsupported
+    signal = score_numeric_grounding(artifacts, valid, invalid_evidence)
     return EvaluationResult(
-        key="numeric_groundedness",
-        score=1.0 if passed else 0.0,
-        metadata={
-            "passed": passed,
-            "unsupported_values": unsupported,
-            "invalid_evidence": invalid_evidence,
-            "checked_count": len(rendered),
-        },
+        key=signal.key,
+        score=signal.score,
+        metadata={"passed": signal.passed, **signal.metadata},
     )

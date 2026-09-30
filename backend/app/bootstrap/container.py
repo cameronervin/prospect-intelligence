@@ -6,6 +6,9 @@ from typing import Any, Protocol
 from app.features.prospect_intelligence.agents.compiler import build_prospect_agent_runtime
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectAgentRuntime
 from app.features.prospect_intelligence.contracts.jobs import JobRepository
+from app.features.prospect_intelligence.contracts.quality_evaluation import (
+    OnlineQualityProjector,
+)
 from app.features.prospect_intelligence.contracts.sources import ProspectSources
 from app.features.prospect_intelligence.services.agent_jobs import ProspectAgentJobHandler
 from app.features.prospect_intelligence.services.agent_reviews import ProspectAgentReviewHandler
@@ -37,6 +40,41 @@ class GraphPersistence(Protocol):
     async def close(self) -> None: ...
 
 
+class QualityProvisioner(Protocol):
+    async def provision(self) -> None: ...
+
+    async def close(self) -> None: ...
+
+
+class AsyncLifecycle(Protocol):
+    async def start(self) -> None: ...
+
+    async def close(self) -> None: ...
+
+
+@dataclass(slots=True)
+class QualityComponent:
+    """Own provider provisioning and durable quality-event delivery."""
+
+    provisioner: QualityProvisioner
+    delivery: AsyncLifecycle
+    started: bool = False
+
+    async def start(self) -> None:
+        if self.started:
+            return
+        await self.provisioner.provision()
+        await self.delivery.start()
+        self.started = True
+
+    async def close(self) -> None:
+        self.started = False
+        try:
+            await self.delivery.close()
+        finally:
+            await self.provisioner.close()
+
+
 @dataclass(slots=True)
 class ProspectComponent:
     """Own the complete prospect runtime and its dependency-ordered lifecycle."""
@@ -48,6 +86,7 @@ class ProspectComponent:
     jobs: JobRepository
     sources: ProspectSources
     source_http_transport: SyncLifecycle
+    quality_projector: OnlineQualityProjector | None = None
     runtime: ProspectAgentRuntime | None = None
     review_handler: ProspectAgentReviewHandler | None = None
     worker_supervisor: ProspectWorkerSupervisor | None = None
@@ -96,6 +135,7 @@ class ProspectComponent:
             runtime=runtime,
             service=self.service,
             sources=self.sources,
+            quality_projector=self.quality_projector,
         )
         if self.review_handler is None:
             self.review_handler = ProspectAgentReviewHandler(
@@ -130,6 +170,7 @@ class Container:
     settings: Settings
     database: DatabaseLifecycle
     prospect: ProspectComponent | None = None
+    quality: QualityComponent | None = None
     started: bool = False
 
     async def is_ready(self) -> bool:
@@ -143,11 +184,17 @@ class Container:
     async def start_resources(self) -> None:
         if self.prospect is not None:
             await self.prospect.start(self.settings.service_name)
+        if self.quality is not None:
+            await self.quality.start()
 
     async def close(self) -> None:
         self.started = False
         try:
-            if self.prospect is not None:
-                await self.prospect.close()
+            if self.quality is not None:
+                await self.quality.close()
         finally:
-            await self.database.close()
+            try:
+                if self.prospect is not None:
+                    await self.prospect.close()
+            finally:
+                await self.database.close()

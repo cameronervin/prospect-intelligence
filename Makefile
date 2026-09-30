@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/sh
 
-.PHONY: help setup dev verify test-e2e audit docker-config docker-up docker-down feature secret-scan cleanup
+.PHONY: help setup dev verify test-e2e audit docker-config docker-up docker-down feature smoke-online-quality secret-scan cleanup
 
 help:
 	@echo "LangChain take-home development targets"
@@ -14,6 +14,7 @@ help:
 	@echo "  docker-up      Build and start the container stack"
 	@echo "  docker-down    Stop the container stack"
 	@echo "  feature        Create a feature with NAME=<snake_case> [DRY_RUN=1]"
+	@echo "  smoke-online-quality  Publish one credential-gated synthetic LangSmith event"
 	@echo "  secret-scan    Scan project files for likely credentials"
 	@echo "  cleanup        Remove generated caches; CLEAN_VOLUMES=1 also removes local DB data"
 
@@ -45,9 +46,11 @@ feature:
 	@test -n "$(NAME)" || (echo "error: NAME=<snake_case> is required" >&2; exit 2)
 	@cd backend && uv run python scripts/scaffold_feature.py "$(NAME)" $(if $(DRY_RUN),--dry-run,)
 
+smoke-online-quality:
+	@cd backend && uv run python scripts/smoke_online_quality.py --execute
+
 secret-scan:
 	@sh scripts/secret-scan.sh
 
 cleanup:
 	@sh scripts/cleanup.sh
-

@@ -6,6 +6,11 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
+from app.features.agent_quality.contracts.models import (
+    EvaluationSamplingDecision,
+    QualityEvaluationEnvelope,
+)
+
 from ..domain.models import LaneFitResult
 from .progress import RunStep
 
@@ -195,6 +200,8 @@ class QualityEvent:
     edit_distance: float | None = None
     source_modes: tuple[SourceMode, ...] = ()
     error_code: str | None = None
+    evaluation: QualityEvaluationEnvelope | None = None
+    evaluation_sampling: EvaluationSamplingDecision | None = None
 
     def __post_init__(self) -> None:
         if self.edit_distance is not None and not 0 <= self.edit_distance <= 1:
@@ -204,11 +211,15 @@ class QualityEvent:
             self.rep_id_hash
         ):
             raise ValueError("quality events require lowercase SHA-256 tenant and rep hashes")
+        if self.evaluation_sampling is not None:
+            if self.event_type is not QualityEventType.ANALYSIS_COMPLETED:
+                raise ValueError("evaluation sampling is valid only for analysis-completed events")
+            self.evaluation_sampling.validate_envelope(present=self.evaluation is not None)
 
     def to_payload(self) -> dict[str, object]:
         """Serialize only the explicit sanitized allowlist."""
 
-        return {
+        payload: dict[str, object] = {
             "event_id": str(self.event_id),
             "run_id": str(self.run_id),
             "account_id": self.account_id,
@@ -226,3 +237,14 @@ class QualityEvent:
             "source_modes": [mode.value for mode in self.source_modes],
             "error_code": self.error_code,
         }
+        if self.evaluation_sampling is not None:
+            payload.update(self.evaluation_sampling.to_event_payload())
+        return payload
+
+    def to_storage_payload(self) -> dict[str, object]:
+        """Include bounded evaluator state only in the durable internal record."""
+
+        payload = self.to_payload()
+        if self.evaluation is not None:
+            payload["evaluation"] = self.evaluation.to_payload()
+        return payload

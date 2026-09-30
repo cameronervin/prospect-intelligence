@@ -3,7 +3,8 @@
 from collections.abc import Mapping
 from typing import Protocol
 
-from app.features.agent_quality.contracts.models import OnlineQualityConfig, QualitySignal
+from app.features.agent_quality.contracts.models import QualitySignal
+from app.features.agent_quality.contracts.online_config import OnlineQualityConfig
 from app.features.agent_quality.domain.regression import RegressionCandidate
 
 
@@ -15,6 +16,8 @@ class LangSmithQualityGateway(Protocol):
     async def record_feedback(self, run_id: str, signal: QualitySignal) -> None: ...
 
     async def route_annotation(self, run_id: str, reason: str) -> None: ...
+
+    async def aclose(self) -> None: ...
 
 
 class RegressionRepository(Protocol):

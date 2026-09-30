@@ -10,6 +10,11 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.orm import Session
 
+from app.features.agent_quality.contracts.models import (
+    EvaluationSamplingDecision,
+    QualityEvaluationEnvelope,
+)
+
 from ...contracts.models import (
     FitVerdict,
     QualityEvent,
@@ -49,7 +54,7 @@ class PostgresQualityEventOutbox:
                 )
                 .limit(limit)
             ).all()
-            return tuple(_event_from_payload(record.payload) for record in records)
+            return tuple(quality_event_from_payload(record.payload) for record in records)
 
     def mark_delivered(self, event_id: UUID, delivered_at: datetime) -> None:
         with Session(self._engine) as session, session.begin():
@@ -91,7 +96,7 @@ def quality_event_record_values(event: QualityEvent) -> dict[str, object]:
         "run_id": event.run_id,
         "event_type": event.event_type.value,
         "occurred_at": event.occurred_at,
-        "payload": event.to_payload(),
+        "payload": event.to_storage_payload(),
         "delivery_attempts": 0,
         "delivered_at": None,
         "last_error_code": None,
@@ -108,12 +113,17 @@ def quality_event_insert(event: QualityEvent) -> Insert:
     )
 
 
-def _event_from_payload(raw_payload: Mapping[str, object]) -> QualityEvent:
+def quality_event_from_payload(raw_payload: Mapping[str, object]) -> QualityEvent:
+    """Restore one validated quality event from its durable JSON payload."""
+
     payload = dict(raw_payload)
     source_modes = _string_list(payload, "source_modes")
     edit_distance = payload.get("edit_distance")
     verdict = _optional_string(payload, "verdict")
     review_decision = _optional_string(payload, "review_decision")
+    raw_evaluation = payload.get("evaluation")
+    if raw_evaluation is not None and not isinstance(raw_evaluation, Mapping):
+        raise ValueError("quality event payload has invalid evaluation")
     return QualityEvent(
         event_id=UUID(_string(payload, "event_id")),
         run_id=UUID(_string(payload, "run_id")),
@@ -131,6 +141,34 @@ def _event_from_payload(raw_payload: Mapping[str, object]) -> QualityEvent:
         ),
         source_modes=tuple(SourceMode(item) for item in source_modes),
         error_code=_optional_string(payload, "error_code"),
+        evaluation=(
+            QualityEvaluationEnvelope.from_payload(cast("Mapping[str, object]", raw_evaluation))
+            if isinstance(raw_evaluation, Mapping)
+            else None
+        ),
+        evaluation_sampling=_sampling_from_payload(payload),
+    )
+
+
+def _sampling_from_payload(
+    payload: Mapping[str, object],
+) -> EvaluationSamplingDecision | None:
+    keys = (
+        "evaluation_sampled",
+        "evaluation_sample_rate",
+        "evaluation_sampling_policy",
+    )
+    present = tuple(key in payload for key in keys)
+    if not any(present):
+        return None
+    if not all(present):
+        raise ValueError("quality event payload has incomplete evaluation sampling decision")
+    return EvaluationSamplingDecision.from_payload(
+        {
+            "selected": payload["evaluation_sampled"],
+            "sample_rate": payload["evaluation_sample_rate"],
+            "policy_version": payload["evaluation_sampling_policy"],
+        }
     )
 
 

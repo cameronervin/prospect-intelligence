@@ -17,6 +17,68 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ## Decisions
 
+### 2026-09-30 — Online quality: app-side evaluation with bounded provider delivery
+
+- **Decision:** Online evaluation runs in `agent_quality` after graph execution. The application
+  emits the ten cataloged deterministic signals: groundedness, lane precision, analysis correctness,
+  verdict accuracy, file contract, trajectory, injection resistance, latency, cost availability,
+  and tool-call count. Reference-aware checks compare the agent artifact with the canonical product
+  analysis. Criterion-specific Jev states use the same SDK-neutral scoring, projection, rubric, and
+  judge contracts as the offline harness. Every catalog entry has exactly one LangChain scope:
+  single step, final output, or full trajectory. Jev scores remain informational until CAM-41
+  supplies calibrated thresholds.
+- **Decision:** The prospect transition and a separately serialized evaluation envelope commit in
+  the existing PostgreSQL outbox transaction. The envelope is finite JSON, bounded to 128 KiB, and
+  contains only deterministic signals, question-specific semantic state, and evaluator, graph,
+  agent, prompt-template, and rubric versions. Existing rows without an envelope remain readable.
+  Prompts, credentials, source
+  payloads, contacts, full filesystem state, provider responses, and raw judge output are excluded.
+- **Decision:** Only canonical generated scenario identifiers matching the bounded `syn_*_NN`
+  contract may be sent unhashed to the dedicated quality project. Friendly fixture aliases, live
+  identifiers, and unknown-origin identifiers are SHA-256 hashed consistently across lifecycle
+  events; tenant and rep identifiers are always pre-hashed.
+- **Decision:** Delivery is disabled unless `TAKEHOME_ONLINE_QUALITY_ENABLED=true`; enabling requires
+  both LangSmith and TypeSafe credentials. One lifecycle-owned worker dispatches ten rows per batch,
+  polls after one idle second, and gives each event a 75-second publish budget. Disabled delivery
+  leaves rows pending. Provider failures and timeouts leave rows pending for retry and never change
+  the product result.
+- **Decision:** When delivery is enabled, completed product runs enter one deterministic evaluator
+  cohort at a default rate of 10%. A versioned SHA-256 bucket of the product run ID makes selection
+  stable across retries, restarts, and replicas. Selected runs execute the complete deterministic and
+  semantic catalog together; unselected runs retain their application trace and sanitized lifecycle
+  event but produce no evaluator feedback or Jev calls. The selection, configured rate, and policy
+  version commit with the analysis event before projection, so later rate changes cannot reclassify
+  pending rows. HITL decisions, edit distance, rejection routing, and terminal lifecycle events remain
+  at 100%.
+- **Decision:** LangSmith receives a dedicated event run keyed by the deterministic quality-event ID,
+  not the product run ID. Feedback IDs are deterministic per event and metric, and duplicate
+  conflicts are successful retries. Failed deterministic checks and rep rejections enter the
+  annotation queue. Semantic failures are retryable provider failures; semantic scores do not route
+  solely for being low while they are uncalibrated.
+- **Decision:** At most eight qualitative claims enter one envelope and at most eight Jev requests
+  execute concurrently. Empty-claim and preference-free tone criteria are recorded explicitly as
+  not applicable without a provider call. Pending envelopes whose evaluator or rubric version no
+  longer matches the runtime are annotated and never judged under a mislabeled rubric. Cost remains
+  explicitly unavailable until provider usage and versioned pricing telemetry are added; it is not
+  treated as zero or as an alertable score.
+- **Decision:** Current dashboard and alert numbers are labeled demo defaults, not production SLOs.
+  Product and pending outbox retention remains indefinite for the MVP; LangSmith and TypeSafe
+  retention requires a deployment/vendor review. GPT-5.6 Sol remains comparison-only and is never
+  an online fallback for Jev.
+- **Alternatives considered:** Workspace-hosted evaluators and a hybrid hosted/app-side path.
+- **Reasoning:** One app-side path makes the privacy projection and failure semantics reviewable,
+  reuses the offline evaluator meaning, remains deterministic under test, and avoids hidden
+  workspace-specific resources.
+- **Consequences:** Enabling online quality adds LangSmith and TypeSafe availability, latency, and
+  cost to selected asynchronous outbox delivery but not to the product transaction. Sampling is
+  uniform rather than risk-stratified, and dashboards must use sampled evaluator feedback rather than
+  treating absent feedback as failure. Repository tests prove behavior without credentials; live
+  evidence remains separate and used only the bounded synthetic smoke event.
+- **Evidence:** Catalog/parity, projection/privacy, Jev, gateway idempotency, service, durable
+  dispatch, stable cohort boundaries, unsampled delivery, settings, bootstrap lifecycle, legacy-row,
+  Ruff, Pyright, repository verification, Compose validation, and the idempotent synthetic LangSmith
+  event `1f34ebbc-1d32-5bc8-9734-036d0a367445` delivered on 2026-09-30.
+
 ### 2026-09-30 — Agent architecture: one Deep Agent harness with declarative specialists
 
 - **Decision:** Build only the orchestrator with `create_deep_agent()` and pass the five specialists

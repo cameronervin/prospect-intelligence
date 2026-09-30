@@ -7,6 +7,11 @@ from uuid import UUID
 
 import pytest
 
+from app.features.agent_quality.contracts.models import (
+    EvaluationSamplingDecision,
+    QualityEvaluationEnvelope,
+)
+from app.features.agent_quality.services.projector import OnlineQualityProjector
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProgressSignal,
     ProspectAgentCheckpoint,
@@ -43,11 +48,16 @@ from tests.fakes import synthetic_prospect_sources
 
 
 class _CompiledRuntime:
-    def __init__(self, interrupt_name: str = "send_outreach") -> None:
+    def __init__(
+        self,
+        interrupt_name: str = "send_outreach",
+        brief_content: str = "Evidence supports the reviewed ATL to DAL opportunity.",
+    ) -> None:
         self.context: ProspectRuntimeContext | None = None
         self.input: ProspectAgentInput | None = None
         self.invoke_calls = 0
         self.interrupt_name = interrupt_name
+        self.brief_content = brief_content
         self.snapshot = ProspectAgentCheckpoint(values={}, pending_interrupt=None)
 
     async def checkpoint(
@@ -70,7 +80,7 @@ class _CompiledRuntime:
         self.context = context
         files: dict[str, object] = {
             "/output/brief.md": {
-                "content": "Evidence supports the reviewed ATL to DAL opportunity.",
+                "content": self.brief_content,
                 "encoding": "utf-8",
             },
             "/output/outreach_draft.md": {
@@ -112,6 +122,7 @@ class _FailOnceService(ProspectRunService):
             clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
         )
         self.submit_attempts = 0
+        self.sampling_attempts: list[EvaluationSamplingDecision | None] = []
 
     def submit_analysis(
         self,
@@ -119,11 +130,52 @@ class _FailOnceService(ProspectRunService):
         output: AnalysisOutput,
         *,
         claim_token: UUID | None = None,
+        evaluation: QualityEvaluationEnvelope | None = None,
+        evaluation_sampling: EvaluationSamplingDecision | None = None,
     ) -> ProspectRun:
         self.submit_attempts += 1
+        self.sampling_attempts.append(evaluation_sampling)
         if self.submit_attempts == 1:
             raise RuntimeError("synthetic commit failure")
-        return super().submit_analysis(run_id, output, claim_token=claim_token)
+        return super().submit_analysis(
+            run_id,
+            output,
+            claim_token=claim_token,
+            evaluation=evaluation,
+            evaluation_sampling=evaluation_sampling,
+        )
+
+
+class _CaptureEvaluationService(ProspectRunService):
+    def __init__(self) -> None:
+        super().__init__(
+            accounts=InMemoryAccountRepository.seeded(),
+            runs=InMemoryRunRepository(),
+            receipts=InMemorySendReceiptRepository(),
+            preferences=InMemoryPreferenceRepository(),
+            clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+        )
+        self.evaluation: QualityEvaluationEnvelope | None = None
+        self.evaluation_sampling: EvaluationSamplingDecision | None = None
+
+    def submit_analysis(
+        self,
+        run_id: UUID,
+        output: AnalysisOutput,
+        *,
+        claim_token: UUID | None = None,
+        evaluation: QualityEvaluationEnvelope | None = None,
+        evaluation_sampling: EvaluationSamplingDecision | None = None,
+    ) -> ProspectRun:
+        self.evaluation = evaluation
+        self.evaluation_sampling = evaluation_sampling
+        return super().submit_analysis(
+            run_id,
+            output,
+            claim_token=claim_token,
+            evaluation=evaluation,
+            evaluation_sampling=evaluation_sampling,
+        )
 
 
 @pytest.mark.asyncio
@@ -173,6 +225,87 @@ async def test_agent_job_handler_commits_validated_graph_output_to_review() -> N
 
 
 @pytest.mark.asyncio
+async def test_agent_job_handler_commits_when_quality_projection_is_incomplete() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    handler = ProspectAgentJobHandler(
+        runtime=_CompiledRuntime(),
+        service=service,
+        sources=synthetic_prospect_sources(),
+        quality_projector=OnlineQualityProjector(
+            evaluator_version="freight-evaluators-v2",
+            graph_revision="prospect-graph-v1",
+            rubric_version="semantic-v1",
+            evaluation_sample_rate=1.0,
+        ),
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000032"))
+
+    completed = service.get_run(run.id)
+    assert completed.status is RunStatus.AWAITING_REVIEW
+    assert completed.output is not None
+
+
+@pytest.mark.asyncio
+async def test_agent_job_handler_projects_the_selected_synthetic_injection_canary() -> None:
+    service = _CaptureEvaluationService()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    handler = ProspectAgentJobHandler(
+        runtime=_CompiledRuntime(brief_content="FREIGHT_CANARY_7F3A"),
+        service=service,
+        sources=synthetic_prospect_sources(aliases={"acme-foods": "edge_05"}),
+        quality_projector=OnlineQualityProjector(
+            evaluator_version="freight-evaluators-v2",
+            graph_revision="prospect-graph-v1",
+            rubric_version="semantic-v1",
+            evaluation_sample_rate=1.0,
+        ),
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000032"))
+
+    assert service.evaluation is not None
+    signal = next(
+        item
+        for item in service.evaluation.deterministic_signals
+        if item.key == "injection_resistance"
+    )
+    assert signal.passed is False
+    assert signal.metadata["canary_found"] is True
+
+
+@pytest.mark.asyncio
+async def test_agent_job_handler_persists_an_unsampled_decision_without_an_envelope() -> None:
+    service = _CaptureEvaluationService()
+    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    handler = ProspectAgentJobHandler(
+        runtime=_CompiledRuntime(),
+        service=service,
+        sources=synthetic_prospect_sources(),
+        quality_projector=OnlineQualityProjector(
+            evaluator_version="freight-evaluators-v2",
+            graph_revision="prospect-graph-v1",
+            rubric_version="semantic-v1",
+            evaluation_sample_rate=0.0,
+        ),
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000032"))
+
+    assert service.evaluation is None
+    assert service.evaluation_sampling is not None
+    assert service.evaluation_sampling.selected is False
+    assert service.evaluation_sampling.sample_rate == 0.0
+
+
+@pytest.mark.asyncio
 async def test_agent_job_retry_uses_interrupted_checkpoint_without_replaying_roles() -> None:
     service = _FailOnceService()
     run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
@@ -181,6 +314,12 @@ async def test_agent_job_retry_uses_interrupted_checkpoint_without_replaying_rol
         runtime=runtime,
         service=service,
         sources=synthetic_prospect_sources(),
+        quality_projector=OnlineQualityProjector(
+            evaluator_version="freight-evaluators-v2",
+            graph_revision="prospect-graph-v1",
+            rubric_version="semantic-v1",
+            evaluation_sample_rate=0.37,
+        ),
     )
     claim_token = UUID("10000000-0000-0000-0000-000000000032")
 
@@ -190,6 +329,7 @@ async def test_agent_job_retry_uses_interrupted_checkpoint_without_replaying_rol
 
     assert runtime.invoke_calls == 1
     assert service.submit_attempts == 2
+    assert service.sampling_attempts[0] == service.sampling_attempts[1]
     assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
 
 
