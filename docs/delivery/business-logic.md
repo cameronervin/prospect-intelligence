@@ -33,7 +33,7 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ### 2026-09-29 — Agent workflow: four specialists with role-based models
 
-- **Decision:** Use Settings-selected GPT-6 Sol at medium reasoning for orchestration and GPT-6 Luna
+- **Decision:** Use Settings-selected GPT-5.6 Sol at medium reasoning for orchestration and GPT-5.6 Luna
   for account context, external research, lane analysis, and outreach drafting through the OpenAI
   Responses API. Context and research are concurrently eligible; their exact scheduling remains
   model-directed. Analysis, brief synthesis, and drafting run after their required inputs exist.
@@ -195,8 +195,9 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Decision:** The root `send_outreach` tool call means `review.requested`, not an external send.
   Trajectory evaluation requires research before analysis, analysis before drafting, and drafting
   before review; an `outreach.sent` event is valid only after `review.approved`. Efficiency metrics
-  remain informational. CAM-39 will add Jev semantic gates, pin `jev-1.13.0`, and calibrate each
-  question independently against human labels and a GPT-6 Sol comparison judge.
+  remain informational. CAM-39 adds Jev semantic evidence pinned to `jev-1.13.0`; CAM-41 will
+  calibrate each question independently against human labels and a GPT-5.6 Sol comparison judge
+  before setting semantic gates.
 - **Alternatives considered:** Grounding as the only release gate; live public APIs in the release
   dataset; dividing precision by the number of returned predictions; treating the review request as
   a send; using the application scorer as both target and oracle; one shared threshold for semantic
@@ -210,8 +211,8 @@ include credentials, private customer data, raw traces, or generated result expo
   retain model-authored analysis/output bodies but reduce task, context, and research artifacts to
   typed contract and numeric observations. Measured latency is retained as a LangSmith metric but
   omitted from the committed report value so repository evidence is reproducible. Its scripted-model
-  result validates wiring and gates, not live model quality. Live LangSmith experiments and semantic
-  calibration remain CAM-39/CAM-40 work requiring credentials.
+  result validates wiring and gates, not live model quality. Hosted LangSmith experiments remain
+  CAM-40 work requiring credentials, and semantic calibration remains CAM-41 work.
 - **Evidence:** Evaluator true/false-positive, boundary, and adversarial tests; compiled-graph target
   test; 72-row sanitized CAM-38 report; future calibration and named live LangSmith experiments.
 
@@ -358,3 +359,58 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Reasoning:** Explicit source modes preserve user trust and make degraded evidence visible, while
   narrow replaceable contracts allow post-MVP private integrations without changing agent behavior.
 - **Evidence:** CAM-30 contract, adapter, retry, cache-isolation, provenance, and redaction tests.
+
+### 2026-09-29 — Semantic evaluation: narrow Jev decisions with fail-closed evidence
+
+- **Decision:** Use seven async LangSmith-native semantic metrics with Jev `jev-1.13.0` as the
+  default judge: `claim_supported`, `internal_data_leak`, `draft_matches_brief`, `next_step`,
+  `entity_resolution_ok`, `actionability`, and `tone_fit`. GPT-5.6 Sol is an injected comparison judge
+  and text-only failure explainer; it never substitutes automatically when Jev fails. Numeric, date,
+  and count claims remain deterministic evaluator concerns.
+- **Decision:** Semantic calls receive only strict, bounded, synthetic projections. Qualitative
+  evidence is named by a stable `ev_<24 hex>` ID derived from canonical provenance and resolved
+  locally to bounded, application-authored support text. Raw source/tool output, CRM bodies, traces,
+  arbitrary objects, unknown citations, oversized state, and injection canaries are rejected before
+  either provider is called.
+- **Decision:** `claim_supported` is the minimum `P(yes)` across qualitative claims, with unresolved
+  citations scoring `0` and no qualitative claims scoring `1`. `internal_data_leak` is `1-P(leak)`;
+  `draft_matches_brief` and resolved `entity_resolution_ok` use `P(yes)`; `next_step` uses the
+  probability assigned to the reference choice; `actionability` and applicable `tone_fit` retain
+  their native 1–5 scores. Missing rep preferences make `tone_fit` explicitly not applicable.
+  Provider or response-validation failures yield no score plus sanitized error metadata, causing
+  coverage to fail closed.
+- **Decision:** Jev has a 30-second budget and at most two SDK retries for connection/timeout errors,
+  HTTP 408/429, and 5xx responses. Normalized metadata retains model revisions, actual option order,
+  canonical SHA-256 state hash, probabilities, certainty and its source, latency, request ID, token
+  usage, retry count, rubric and pricing versions, and estimated cost, but not raw state or provider
+  debug payloads. Jev retry count is instrumented on its per-call SDK policy. Model, token, and retry
+  source labels distinguish provider observations from configured aliases or unavailable adapter
+  telemetry; missing values remain null. Noul certainty
+  is `2 × |P(yes) - 0.5|`; choice and score certainty use normalized provider confidence.
+- **Decision:** Cost metadata uses reviewed estimate cards: TypeSafe revision 2026-09-15 at
+  `$0.042/M` input and free output, and OpenAI standard revision 2026-08-21 at `$4/M` input,
+  `$0.40/M` cached input, and `$20/M` output. These are estimates rather than invoices and require
+  review before future live runs. OpenAI retry-total input is conservatively charged at the standard
+  rate when the adapter omits a cached-token total. TypeSafe zero data retention is not assumed; any
+  production judge use requires vendor/DPA and retention review.
+- **Decision:** Store the exact provider-neutral rubrics in versioned source code at
+  `evaluation/rubrics/semantic_v1.py`, keep judge contracts in `evaluation/contracts/judges.py`, and
+  keep Jev and OpenAI implementations in separate provider modules. Normalized evidence records
+  `semantic-v1`, allowing results to resolve to the question text and criteria used.
+- **Decision:** Semantic scores remain informational until CAM-41 calibrates each question against
+  human labels and sets promotion thresholds. The explicit `--live` smoke uses synthetic state and
+  local LangSmith `aevaluate(upload_results=False)`; it is live-provider evidence, not hosted
+  LangSmith experiment evidence. Repository verification, local smoke evidence, and hosted
+  experiment evidence remain distinct.
+- **Alternatives considered:** Send whole traces or raw citations to a judge; let GPT silently rescue
+  unavailable Jev results; reuse one semantic threshold without calibration; treat a local provider
+  smoke or passing unit tests as a hosted experiment; assume provider zero-data retention.
+- **Reasoning:** Narrow typed questions preserve deterministic ownership of computable facts, reduce
+  privacy and prompt-injection exposure, and make provider behavior observable without masking
+  missing coverage.
+- **Consequences:** CI stays credential-free. Judge outages cannot produce a false pass. Live runs
+  are opt-in and limited to synthetic, sanitized state; calibration and hosted experiment promotion
+  remain separate work.
+- **Evidence:** Projection/citation, answer-validation, option-permutation, retry, fail-closed,
+  LangSmith result, and credential-gated synthetic smoke tests. Live smoke output is recorded only as
+  sanitized execution evidence.

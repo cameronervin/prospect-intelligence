@@ -11,16 +11,18 @@ The package follows the same four-part shape used by LangSmith's
 [agent evaluation](https://docs.langchain.com/langsmith/evaluate-complex-agent) guides:
 
 - `datasets/` owns stable examples and references.
-- `contracts/` owns the SDK-neutral `OfflineRunSnapshot`, UTF-8 artifact decoding, fail-closed
-  snapshot accessors, and privacy-safe observations. It imports no targets, evaluators, judges, or
-  experiments.
+- `contracts/` owns the SDK-neutral snapshot, judge protocol/decision types, UTF-8 artifact
+  decoding, fail-closed accessors, and privacy-safe observations. It imports no targets,
+  evaluators, judges, or experiments.
 - `targets/` executes the compiled graph and produces the sanitized snapshot contract. Targets do
   not know which evaluators will consume it.
 - `evaluators/` contains one LangSmith-native code evaluator per module. Every public callable uses
   `(outputs, reference_outputs) -> EvaluationResult`; `suite.py` is the only composition and release
   threshold boundary.
-- `judges/` keeps semantic judges distinct from deterministic code metrics. `judges/jev.py` is the
-  typed CAM-39 handoff and performs no live SDK calls by itself.
+- `rubrics/semantic_v1.py` stores the exact, versioned question text and criteria used by both
+  providers. The rubric version is retained in every normalized decision.
+- `judges/` contains only provider-specific async adapters: Jev is the default semantic judge and
+  GPT-5.6 Sol is comparison-only, never an automatic fallback.
 - `experiments/` selects a target and evaluator suite, invokes `evaluate(...)`, aggregates rows, and
   renders evidence. `offline_results.gate_results()` is the only release-gate implementation.
 
@@ -63,9 +65,42 @@ analysis correctness, file-contract, trajectory, and injection checks; reference
 precision@3 of at least 0.80; and verdict accuracy of at least 0.90. Latency, cost, and tool-call
 count are informational. The tool-call count includes every model-requested call, including the
 interrupted `send_outreach` review request. Measured latency is not persisted in the report so its
-repository evidence remains reproducible. Jev semantic gates remain a separate extension owned by
-CAM-39.
+repository evidence remains reproducible. CAM-39 semantic metrics remain informational until human
+calibration establishes their promotion thresholds in CAM-41.
 
 Live experiments require explicit credentials, a
 reviewed synthetic dataset, and a sanitized result entry under `docs/evaluation/`. Raw traces,
 inputs, customer data, API keys, and downloaded LangSmith results must not be committed.
+
+Run the explicit local semantic smoke from `backend/` only when live provider calls are intended:
+
+```sh
+TYPESAFE_API_KEY=... OPENAI_API_KEY=... \
+  uv run python -m evaluation.experiments.semantic_smoke --live
+```
+
+The command rejects a missing `--live` flag or either credential before making a request. It uses
+synthetic, sanitized states and LangSmith `aevaluate(upload_results=False)`, exercises Jev, the
+GPT-5.6 Sol comparison judge, and a text-only failure explanation, and prints sanitized metadata only.
+It does not upload a hosted LangSmith experiment and does not require `LANGSMITH_API_KEY`.
+
+Semantic projections accept bounded strings and known typed fields only. Stable `ev_<24 hex>` IDs
+are derived from canonical provenance and resolved locally to bounded support text; raw source/tool
+output, CRM bodies, traces, arbitrary objects, unknown citations, and canaries are rejected before
+a judge call. Numbers, counts, and dates stay with deterministic evaluators. Provider failure emits
+a missing score and sanitized error metadata so coverage fails closed.
+
+Jev requests have a 30-second budget and at most two SDK retries for connection/timeout errors, HTTP
+408/429, and 5xx responses. The normalized result records model revisions, actual option order,
+rubric and pricing versions, canonical state hash, probabilities, certainty source, latency, request
+ID, token usage, retries, and estimated cost without retaining raw state or adapter debug payloads.
+Jev retries are counted by the per-call SDK policy. The OpenAI adapter reports its configured model
+alias rather than a native response snapshot, and request, cached-token, or retry detail is nullable
+when the adapter does not expose it; metadata labels those sources instead of inventing values.
+Estimate cards are pinned to the revisions reviewed for CAM-39: TypeSafe 2026-09-15 at `$0.042/M`
+input and free output; OpenAI standard revision 2026-08-21 at `$4/M` input, `$0.40/M` cached input,
+and `$20/M` output. Estimates are not invoices and must be re-reviewed before later live runs.
+
+TypeSafe zero data retention is not assumed. The MVP permits only synthetic, sanitized judge state;
+production use requires a vendor/DPA and retention review. A successful smoke is live-provider
+evidence but not hosted LangSmith experiment evidence, and neither replaces repository verification.

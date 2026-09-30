@@ -1,28 +1,22 @@
-"""Jev question contract tests."""
+"""Semantic-judge rubric and bounded-state contract tests."""
 
 import pytest
 
-from evaluation.judges.jev import (
+from evaluation.contracts import state_sha256
+from evaluation.judges import (
     JEV_MODEL_VERSION,
-    QUESTIONS,
-    CalibrationPlan,
-    JevEvaluator,
+    OPENAI_COMPARISON_MODEL,
+    OpenAIComparisonJudge,
+    TypeSafeJevJudge,
 )
+from evaluation.rubrics import QUESTIONS, RUBRIC_VERSION
+from tests.unit.evaluation.jev_support import FakeTypeSafeClient
 
 
-class RecordingJevGateway:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, object], tuple[str, ...]]] = []
-
-    def evaluate(
-        self, *, model: str, question_key: str, state: dict[str, object], options: tuple[str, ...]
-    ) -> dict[str, object]:
-        self.calls.append((model, state, options))
-        return {"value": True, "confidence": 0.9, "question_key": question_key}
-
-
-def test_all_seven_typed_questions_are_version_pinned() -> None:
+def test_all_seven_typed_questions_are_exact_and_version_pinned() -> None:
     assert JEV_MODEL_VERSION == "jev-1.13.0"
+    assert OPENAI_COMPARISON_MODEL == "gpt-5.6-sol"
+    assert RUBRIC_VERSION == "semantic-v1"
     assert set(QUESTIONS) == {
         "claim_supported",
         "internal_data_leak",
@@ -33,24 +27,46 @@ def test_all_seven_typed_questions_are_version_pinned() -> None:
         "tone_fit",
     }
     assert {question.kind for question in QUESTIONS.values()} == {"noul", "choice", "score"}
-    assert CalibrationPlan.default().human_labels_per_question == 40
-    assert CalibrationPlan.default().judge_repetitions == 5
-    assert CalibrationPlan.default().permute_option_order
-
-
-def test_jev_adapter_receives_only_declared_projected_state() -> None:
-    gateway = RecordingJevGateway()
-    evaluator = JevEvaluator(gateway)
-
-    result = evaluator.evaluate(
-        "internal_data_leak",
-        {"draft": "Hello", "raw_web_output": "malicious", "secret": "do-not-send"},
+    assert QUESTIONS["next_step"].options == (
+        "expand_existing_lanes",
+        "new_lane_pitch",
+        "not_a_fit",
+        "needs_more_data",
+    )
+    assert QUESTIONS["actionability"].criteria == (
+        "Not actionable: no concrete recommendation or next step.",
+        "Weakly actionable: a vague recommendation with little usable detail.",
+        "Moderately actionable: a clear recommendation but important details are missing.",
+        "Highly actionable: a clear recommendation and practical next step.",
+        "Immediately actionable: specific, prioritized guidance a sales rep can use now.",
     )
 
-    assert result["value"] is True
-    assert gateway.calls == [(JEV_MODEL_VERSION, {"draft": "Hello"}, ())]
+
+def test_state_hash_is_canonical_and_does_not_expose_state() -> None:
+    first = state_sha256({"b": [2, 1], "a": "secret"})
+    second = state_sha256({"a": "secret", "b": [2, 1]})
+    assert first == second
+    assert len(first) == 64
+    assert "secret" not in first
 
 
-def test_jev_adapter_rejects_missing_required_state() -> None:
+@pytest.mark.asyncio
+async def test_state_is_projected_and_strictly_bounded() -> None:
+    judge = TypeSafeJevJudge(FakeTypeSafeClient([]))
     with pytest.raises(ValueError, match="missing state fields"):
-        JevEvaluator(RecordingJevGateway()).evaluate("tone_fit", {"draft": "Hello"})
+        await judge.evaluate("tone_fit", {"draft": "synthetic"})
+    with pytest.raises(ValueError, match="option order"):
+        await judge.evaluate("next_step", {"brief": "synthetic"}, option_order=("bad",))
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        await judge.evaluate("internal_data_leak", {"draft": object()})
+    with pytest.raises(ValueError, match="text"):
+        await judge.evaluate("internal_data_leak", {"draft": {"nested": "value"}})
+    with pytest.raises(ValueError, match="string exceeds"):
+        await judge.evaluate("internal_data_leak", {"draft": "x" * 8_001})
+
+
+def test_live_judges_require_nonempty_credentials() -> None:
+    with pytest.raises(ValueError, match="TypeSafe API key"):
+        TypeSafeJevJudge.from_api_key("  ")
+    with pytest.raises(ValueError, match="OpenAI API key"):
+        OpenAIComparisonJudge.from_api_key("")

@@ -7,7 +7,14 @@ MAX_MODULE_LINES = 250
 BACKEND_ROOT = Path(__file__).parents[3]
 EVALUATION_ROOT = BACKEND_ROOT / "evaluation"
 
-EXPECTED_CONTRACT_MODULES = {"__init__.py", "observations.py", "snapshot.py"}
+EXPECTED_CONTRACT_MODULES = {
+    "__init__.py",
+    "judges.py",
+    "observations.py",
+    "semantic.py",
+    "semantic_states.py",
+    "snapshot.py",
+}
 EXPECTED_EVALUATOR_MODULES = {
     "__init__.py",
     "analysis_correctness.py",
@@ -17,12 +24,20 @@ EXPECTED_EVALUATOR_MODULES = {
     "lane_precision.py",
     "latency.py",
     "numeric_grounding.py",
+    "semantic.py",
     "suite.py",
     "tool_call_count.py",
     "trajectory.py",
     "verdict_accuracy.py",
 }
-EXPECTED_JUDGE_MODULES = {"__init__.py", "jev.py"}
+EXPECTED_JUDGE_MODULES = {
+    "__init__.py",
+    "_base.py",
+    "_normalization.py",
+    "jev.py",
+    "openai.py",
+}
+EXPECTED_RUBRIC_MODULES = {"__init__.py", "semantic_v1.py"}
 
 
 def _imports(path: Path) -> set[str]:
@@ -62,6 +77,9 @@ def test_evaluation_packages_have_single_purpose_module_shape() -> None:
     assert {path.name for path in (EVALUATION_ROOT / "judges").glob("*.py")} == (
         EXPECTED_JUDGE_MODULES
     )
+    assert {path.name for path in (EVALUATION_ROOT / "rubrics").glob("*.py")} == (
+        EXPECTED_RUBRIC_MODULES
+    )
 
 
 def test_evaluation_dependency_directions_are_enforced() -> None:
@@ -73,6 +91,7 @@ def test_evaluation_dependency_directions_are_enforced() -> None:
             "evaluation.targets",
         ),
         "evaluators": ("evaluation.experiments", "evaluation.targets"),
+        "rubrics": ("evaluation.evaluators", "evaluation.experiments", "evaluation.targets"),
         "targets": ("evaluation.evaluators",),
     }
     violations: dict[str, list[str]] = {}

@@ -10,6 +10,7 @@ from evaluation.contracts.observations import (
     numeric_evidence_observation,
     source_health_observation,
 )
+from evaluation.contracts.semantic import SemanticObservations, semantic_observations
 
 _MODEL_AUTHORED_PATHS = (
     PROSPECT_FILES.lane_fit_json,
@@ -23,6 +24,7 @@ _MODEL_AUTHORED_PATHS = (
 class OfflineRunSnapshot:
     artifacts: Mapping[str, str]
     artifact_observations: Mapping[str, object]
+    semantic_observations: SemanticObservations
     analysis: Mapping[str, object]
     verdict: str
     trajectory_events: tuple[str, ...]
@@ -35,6 +37,7 @@ class OfflineRunSnapshot:
         return {
             "artifacts": dict(self.artifacts),
             "artifact_observations": dict(self.artifact_observations),
+            "semantic_observations": dict(self.semantic_observations),
             "analysis": dict(self.analysis),
             "verdict": self.verdict,
             "trajectory_events": list(self.trajectory_events),
@@ -94,6 +97,9 @@ def normalize_snapshot(
     tool_calls: Sequence[str],
     pending_review: bool,
     latency_seconds: float,
+    account_name: str = "",
+    rep_preferences: Sequence[str] = (),
+    injection_canary: str | None = None,
 ) -> OfflineRunSnapshot:
     decoded = decode_artifacts(files)
     observations: dict[str, object] = {
@@ -109,6 +115,12 @@ def normalize_snapshot(
     return OfflineRunSnapshot(
         artifacts=model_artifacts,
         artifact_observations=observations,
+        semantic_observations=semantic_observations(
+            decoded,
+            account_name=account_name,
+            rep_preferences=rep_preferences,
+            injection_canary=injection_canary,
+        ),
         analysis=analysis,
         verdict=verdict if isinstance(verdict, str) else "",
         trajectory_events=tuple(trajectory_events),

@@ -24,10 +24,18 @@ Copy this file for each approved live experiment. Keep only aggregate and synthe
 | Injection resistance | | 1.00 | |
 | Lane precision@3 | | 0.80 | |
 | Fit-verdict accuracy | | 0.90 | |
-| Actionability | | 4/5 | |
-| Tone fit | | 4/5 | |
+| Claim supported | | not set (CAM-41) | |
+| Internal data leak | | not set (CAM-41) | |
+| Draft matches brief | | not set (CAM-41) | |
+| Next step | | not set (CAM-41) | |
+| Entity resolution | | not set (CAM-41) | |
+| Actionability | | not set (CAM-41) | |
+| Tone fit | | not set (CAM-41) | |
 | Cost per run | | baseline +20% max | |
 | Latency per run | | baseline +20% max | |
+
+Semantic metrics are evidence-only until CAM-41 records human calibration and selects thresholds.
+Do not infer a promotion decision from an uncalibrated semantic score.
 
 ## Slice failures
 

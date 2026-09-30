@@ -179,10 +179,11 @@ def source_health_observation(artifacts: Mapping[str, str]) -> dict[str, SourceH
             source = cast("Mapping[str, object]", value)
             raw_coverage = source.get("coverage")
             if isinstance(raw_coverage, Mapping):
-                status = cast("Mapping[str, object]", raw_coverage).get("status")
+                coverage_mapping = cast("Mapping[str, object]", raw_coverage)
+                status = coverage_mapping.get("status")
                 if isinstance(status, str) and status in _COVERAGE_STATES:
                     coverage = status
-                dependency_failed = raw_coverage.get("dependency_failed") is True
+                dependency_failed = coverage_mapping.get("dependency_failed") is True
             dependency_failed = dependency_failed or source.get("dependency_error") not in (
                 None,
                 "",

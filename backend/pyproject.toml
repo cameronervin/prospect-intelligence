@@ -20,6 +20,8 @@ dependencies = [
   "pydantic-settings>=2.7,<3",
   "sqlalchemy[asyncio]>=2.0.36,<3",
   "structlog>=24.4,<27",
+  "system-one-adapter[openai]>=0.2.1,<0.3",
+  "typesafe-sdk>=0.7.2,<0.8",
   "uvicorn[standard]>=0.34,<1",
 ]
 

@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
     database_statement_timeout_ms: int = Field(default=5_000, ge=100, le=60_000)
     model_provider: str = Field(default="openai", min_length=1, max_length=32)
-    orchestrator_model: str = Field(default="gpt-6-sol", min_length=1, max_length=128)
-    subagent_model: str = Field(default="gpt-6-luna", min_length=1, max_length=128)
+    orchestrator_model: str = Field(default="gpt-5.6-sol", min_length=1, max_length=128)
+    subagent_model: str = Field(default="gpt-5.6-luna", min_length=1, max_length=128)
     orchestrator_reasoning_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     model_request_timeout_seconds: int = Field(default=60, ge=1, le=300)
     model_retry_attempts: int = Field(default=2, ge=0, le=5)

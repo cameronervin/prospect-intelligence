@@ -47,3 +47,21 @@ The command refuses invalid names and existing targets. Add behavior with a fail
 
 Export `LANGSMITH_API_KEY` only when LangSmith MCP or live experiments are needed. The project config maps it to the `X-Api-Key` request header and never stores the value.
 
+## Semantic evaluator smoke
+
+Repository tests and CI keep model providers offline. To exercise the CAM-39 semantic integration
+against synthetic, sanitized state, run this explicit live smoke from `backend/`:
+
+```sh
+TYPESAFE_API_KEY=... OPENAI_API_KEY=... \
+  uv run python -m evaluation.experiments.semantic_smoke --live
+```
+
+The command requires `--live` and both provider credentials. It uses LangSmith
+`aevaluate(upload_results=False)`, so it neither creates a hosted experiment nor requires
+`LANGSMITH_API_KEY`. It prints sanitized metadata only. Never place credentials in tracked files,
+shell history, committed output, or screenshots.
+
+The smoke proves that the Jev, GPT-5.6 Sol comparison, and failure-explanation provider paths work at
+the time of execution. It does not prove a hosted LangSmith experiment, replace `make verify`, or
+establish semantic promotion thresholds; CAM-41 owns human calibration and threshold selection.

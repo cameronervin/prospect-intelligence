@@ -18,6 +18,8 @@ def test_settings_have_safe_local_defaults(
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.database_url.get_secret_value() == DEVELOPMENT_DATABASE_URL
     assert settings.log_json is False
+    assert settings.orchestrator_model == "gpt-5.6-sol"
+    assert settings.subagent_model == "gpt-5.6-luna"
     assert settings.model_request_timeout_seconds == 60
     assert settings.model_retry_attempts == 2
 

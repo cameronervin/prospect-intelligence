@@ -14,8 +14,20 @@ from app.features.prospect_intelligence.public import (
     ShipperLane,
     rank_lane_fits,
 )
+from evaluation.contracts.semantic import citation_id
 
 _COVERAGE_STATES = frozenset({"complete", "degraded", "unavailable"})
+
+
+def _provenance(source: str) -> dict[str, str]:
+    return {
+        "source": source,
+        "mode": "fixture",
+        "endpoint_or_artifact": f"fixture://{source}",
+        "retrieved_at": "2026-09-29T00:00:00+00:00",
+        "evidence_location": "record:1",
+        "source_version": "freight-prospect-v1",
+    }
 
 
 def _source_artifact(payload: Mapping[str, object], *, source: str) -> str:
@@ -31,14 +43,8 @@ def _source_artifact(payload: Mapping[str, object], *, source: str) -> str:
         "evidence": [
             {
                 "claim": f"Synthetic evidence supplied by {source}.",
-                "provenance": {
-                    "source": source,
-                    "mode": "fixture",
-                    "endpoint_or_artifact": f"fixture://{source}",
-                    "retrieved_at": "2026-09-29T00:00:00+00:00",
-                    "evidence_location": "record:1",
-                    "source_version": "freight-prospect-v1",
-                },
+                "citation_id": citation_id(_provenance(source)),
+                "provenance": _provenance(source),
             }
         ],
     }
@@ -152,14 +158,34 @@ def scenario_artifacts(inputs: Mapping[str, object]) -> dict[str, str]:
     )
     if lanes:
         top = lanes[0]
-        brief = (
+        summary = (
             f"The account has {top['matched_loads_per_week']} matched weekly loads "
             f"on {top['origin']} to {top['destination']}."
         )
+        qualitative = (
+            "Reviewed freight and carrier-network evidence supports a direct lane-overlap "
+            "conversation."
+        )
+        relationship = crm.get("relationship")
+        next_step = "expand_existing_lanes" if relationship == "Customer" else "new_lane_pitch"
     elif verdict is FitVerdict.NEEDS_MORE_DATA:
-        brief = "Available source coverage does not support a lane recommendation."
+        summary = "Available source coverage does not support a lane recommendation."
+        qualitative = "Reviewed source coverage does not support a lane recommendation."
+        next_step = "needs_more_data"
     else:
-        brief = "Reviewed evidence shows no direct lane overlap with usable capacity."
+        summary = "Reviewed evidence shows no direct lane overlap with usable capacity."
+        qualitative = "Reviewed evidence shows no direct lane overlap with usable capacity."
+        next_step = "not_a_fit"
+    freight_citation = citation_id(_provenance("genlogs"))
+    network_citation = citation_id(_provenance("network"))
+    brief = (
+        "# Sales brief\n\n"
+        f"{summary}\n\n"
+        "## Evidence-backed claims\n"
+        f"- {qualitative} [{freight_citation}] [{network_citation}]\n\n"
+        "## Recommended next step\n"
+        f"{next_step}\n"
+    )
     return {
         PROSPECT_FILES.account_context: _source_artifact(crm, source="crm"),
         PROSPECT_FILES.network_context: _source_artifact(network, source="network"),

@@ -100,6 +100,23 @@ async def test_target_runs_one_scenario_through_compiled_graph(
     assert tool_calls.count("write_file") == 9
     assert "send_outreach" in tool_calls
     assert snapshot["tool_call_count"] == 17
+    semantic = cast("Mapping[str, object]", snapshot["semantic_observations"])
+    assert set(semantic) == {
+        "claim_supported",
+        "internal_data_leak",
+        "draft_matches_brief",
+        "next_step",
+        "entity_resolution_ok",
+        "actionability",
+        "tone_fit",
+    }
+    assert cast("list[object]", semantic["claim_supported"])
+    assert (
+        cast("Mapping[str, object]", semantic["entity_resolution_ok"])["account_name"]
+        == example.inputs["account_name"]
+    )
+    assert semantic["tone_fit"] is None
+    assert "input_payload" not in repr(semantic)
     assert "messages" not in snapshot and "task_brief" not in snapshot
     assert tracing_modes == [False]
 

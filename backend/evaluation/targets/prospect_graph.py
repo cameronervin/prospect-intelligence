@@ -111,4 +111,6 @@ class ProspectOfflineTarget:
             tool_calls=tool_calls,
             pending_review=result.pending_interrupt == "send_outreach",
             latency_seconds=perf_counter() - started,
+            account_name=cast(str, account_name),
+            rep_preferences=context.rep_preferences,
         ).to_outputs()
