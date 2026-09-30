@@ -109,6 +109,35 @@ describe("AgentTracker", () => {
     expect(timers[0]).not.toHaveAttribute("aria-hidden");
     expect(timers[0]).toHaveTextContent("0:06");
   });
+
+  it("marks only a running non-review step with reduced-motion-safe activity", () => {
+    const { rerender } = render(<AgentTracker steps={running} />);
+    const tracker = screen.getByRole("region", { name: "Agent progress" });
+    const rows = within(tracker).getAllByRole("listitem", { name: /^Step / });
+    const cues = tracker.querySelectorAll('[data-agent-motion="active-step"]');
+
+    expect(cues).toHaveLength(1);
+    expect(rows[1]!.querySelector('[data-agent-motion="active-step"]')).toBe(cues[0]);
+    expect(cues[0]).toHaveAttribute("aria-hidden", "true");
+    expect(cues[0]).toHaveClass("motion-safe:animate-pulse");
+
+    rerender(
+      <AgentTracker
+        steps={running.map((item) =>
+          item.key === "external-research"
+            ? { ...item, status: "complete", finished_at: T(20) }
+            : item.key === "review"
+              ? { ...item, status: "running", started_at: T(20) }
+              : item,
+        )}
+      />,
+    );
+
+    expect(tracker.querySelector('[data-agent-motion="active-step"]')).toBeNull();
+    expect(
+      screen.getByRole("listitem", { name: /Your review, Waiting on you/ }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("AgentRunSummary", () => {

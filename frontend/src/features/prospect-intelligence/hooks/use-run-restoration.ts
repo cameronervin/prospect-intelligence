@@ -1,13 +1,11 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState } from "react";
 
 import { ProspectApiError, type ProspectClient } from "../api/client";
 import type { Account, ProspectRun } from "../api/schemas";
 import { rememberRun, storedRunId } from "../run/active-run-storage";
 
 type AccountsState =
-  | { kind: "loading" }
-  | { kind: "error" }
-  | { kind: "ready"; accounts: Account[] };
+  { kind: "loading" } | { kind: "error" } | { kind: "ready"; accounts: Account[] };
 
 function shouldRestore(run: ProspectRun) {
   return run.status === "queued" || run.status === "running" || run.status === "awaiting_review";
@@ -17,7 +15,7 @@ type Options = {
   accounts: AccountsState;
   api: ProspectClient;
   show: (run: ProspectRun | undefined) => void;
-  selectAccount: Dispatch<SetStateAction<Account | undefined>>;
+  selectAccount: (account: Account) => void;
 };
 
 /** Restore the tab's durable active run before account or new-run navigation can unlock. */

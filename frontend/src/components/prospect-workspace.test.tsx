@@ -1,10 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  ACTIVE_RUN_STORAGE_KEY,
-  ProspectWorkspace,
-} from "@/components/prospect-workspace";
+import { ACTIVE_RUN_STORAGE_KEY, ProspectWorkspace } from "@/components/prospect-workspace";
 import { ProspectApiError, type ProspectClient, type ProspectRun } from "@/lib/prospect-api";
 
 const account = {
@@ -22,6 +19,16 @@ const secondAccount = {
   industry: "Retail",
   location: "Memphis, TN",
 };
+
+function assignedAccounts(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `assigned-${index + 1}`,
+    name: `Assigned Account ${index + 1}`,
+    relationship: "Prospect" as const,
+    industry: "Distribution",
+    location: "Dallas, TX",
+  }));
+}
 
 const runningRun: ProspectRun = {
   id: "run-1",
@@ -157,6 +164,247 @@ afterEach(() => {
 });
 
 describe("ProspectWorkspace account selection and progress", () => {
+  it("replaces initial account and workspace skeletons when loading completes", async () => {
+    let resolveAccounts: (accounts: (typeof account)[]) => void = () => undefined;
+    const api = client({
+      listAccounts: vi.fn(
+        () =>
+          new Promise<(typeof account)[]>((resolve) => {
+            resolveAccounts = resolve;
+          }),
+      ),
+    });
+    const { container } = render(<ProspectWorkspace client={api} />);
+
+    expect(container.querySelectorAll('[data-skeleton="account-row"]')).toHaveLength(5);
+    expect(container.querySelector('[data-skeleton="workspace"]')).toBeInTheDocument();
+    expect(
+      screen.queryByText("Select an account to run the prospect agent"),
+    ).not.toBeInTheDocument();
+
+    await act(async () => resolveAccounts([account]));
+
+    expect(await screen.findByRole("button", { name: /Atlas Foods/ })).toBeInTheDocument();
+    expect(container.querySelector('[data-skeleton="workspace"]')).not.toBeInTheDocument();
+    expect(screen.getByText("Select an account to run the prospect agent")).toBeInTheDocument();
+  });
+
+  it("shows a run-shaped skeleton while a selected account is starting", async () => {
+    let resolveRun: (run: ProspectRun) => void = () => undefined;
+    const api = client({
+      startRun: vi.fn(
+        () =>
+          new Promise<ProspectRun>((resolve) => {
+            resolveRun = resolve;
+          }),
+      ),
+    });
+    const { container } = render(<ProspectWorkspace client={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Atlas Foods/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Run prospect agent" }));
+
+    expect(container.querySelector('[data-skeleton="run"]')).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Run loading status" })).toHaveTextContent(
+      "Starting agent run…",
+    );
+    expect(
+      screen.queryByText("Select an account to run the prospect agent"),
+    ).not.toBeInTheDocument();
+
+    await act(async () => resolveRun(runningRun));
+    expect(container.querySelector('[data-skeleton="run"]')).not.toBeInTheDocument();
+  });
+
+  it("shows the run skeleton instead of stale terminal output while rerunning", async () => {
+    let resolveRerun: (run: ProspectRun) => void = () => undefined;
+    const startRun = vi
+      .fn()
+      .mockResolvedValueOnce(terminal("no_fit"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ProspectRun>((resolve) => {
+            resolveRerun = resolve;
+          }),
+      );
+    const { container } = render(<ProspectWorkspace client={client({ startRun })} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Atlas Foods/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Run prospect agent" }));
+    expect(await screen.findByText("No network fit", { exact: true })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run prospect agent" }));
+    expect(container.querySelector('[data-skeleton="run"]')).toBeInTheDocument();
+    expect(screen.queryByText("No network fit", { exact: true })).not.toBeInTheDocument();
+
+    await act(async () => resolveRerun(runningRun));
+    expect(container.querySelector('[data-skeleton="run"]')).not.toBeInTheDocument();
+  });
+
+  it("paginates assigned accounts and clears a hidden selection before starting", async () => {
+    const items = assignedAccounts(7);
+    const startRun = vi.fn().mockResolvedValue({
+      ...runningRun,
+      account: { id: items[5]!.id, name: items[5]!.name },
+    });
+    render(
+      <ProspectWorkspace
+        client={client({ listAccounts: vi.fn().mockResolvedValue(items), startRun })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Assigned Account 1/ }));
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /Assigned Account 6/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Run prospect agent" }));
+    await waitFor(() => expect(startRun).toHaveBeenCalledWith(items[5]!.id));
+  });
+
+  it("clears a start error when manual pagination hides the selected account", async () => {
+    const items = assignedAccounts(7);
+    render(
+      <ProspectWorkspace
+        client={client({
+          listAccounts: vi.fn().mockResolvedValue(items),
+          startRun: vi.fn().mockRejectedValue(new Error("offline")),
+        })}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /Assigned Account 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Run prospect agent" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The agent run couldn't be started");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.queryByText("The agent run couldn't be started")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+  });
+
+  it("preserves a still-assigned selection and its page across reload", async () => {
+    const items = assignedAccounts(7);
+    let resolveReload: (accounts: typeof items) => void = () => undefined;
+    const listAccounts = vi
+      .fn()
+      .mockResolvedValueOnce(items)
+      .mockImplementationOnce(
+        () =>
+          new Promise<typeof items>((resolve) => {
+            resolveReload = resolve;
+          }),
+      );
+    const { container } = render(<ProspectWorkspace client={client({ listAccounts })} />);
+
+    await screen.findByRole("button", { name: /Assigned Account 1/ });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Assigned Account 6/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload accounts" }));
+
+    expect(container.querySelectorAll('[data-skeleton="account-row"]')).toHaveLength(5);
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+    await act(async () => resolveReload(items.map((item) => ({ ...item }))));
+
+    const selected = await screen.findByRole("button", { name: /Assigned Account 6/ });
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeEnabled();
+  });
+
+  it("clears a removed selection and clamps the page after reload", async () => {
+    const items = assignedAccounts(7);
+    const listAccounts = vi.fn().mockResolvedValueOnce(items).mockResolvedValueOnce([items[0]!]);
+    render(<ProspectWorkspace client={client({ listAccounts })} />);
+
+    await screen.findByRole("button", { name: /Assigned Account 1/ });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Assigned Account 7/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload accounts" }));
+
+    expect(await screen.findByRole("button", { name: /Assigned Account 1/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.queryByRole("navigation", { name: "Account pages" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+  });
+
+  it("clamps a removed third page to the last remaining multi-account page", async () => {
+    const items = assignedAccounts(12);
+    const listAccounts = vi
+      .fn()
+      .mockResolvedValueOnce(items)
+      .mockResolvedValueOnce(items.slice(0, 7));
+    render(<ProspectWorkspace client={client({ listAccounts })} />);
+
+    await screen.findByRole("button", { name: /Assigned Account 1/ });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: /Assigned Account 12/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Reload accounts" }));
+
+    expect(await screen.findByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getByText("6–7 of 7 assigned")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Assigned Account 6/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+  });
+
+  it("reveals a restored account on its assigned page before unlocking", async () => {
+    const items = assignedAccounts(7);
+    const restoredRun = {
+      ...reviewRun,
+      account: { id: items[6]!.id, name: items[6]!.name },
+    };
+    window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, restoredRun.id);
+    render(
+      <ProspectWorkspace
+        client={client({
+          listAccounts: vi.fn().mockResolvedValue(items),
+          getRun: vi.fn().mockResolvedValue(restoredRun),
+        })}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: /Assigned Account 7/ })).toBeDisabled();
+    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Assigned Account 1/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+  });
+
+  it("uses a run-shaped loading state while restoring the stored run", async () => {
+    let resolveAccounts: (accounts: (typeof account)[]) => void = () => undefined;
+    window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, reviewRun.id);
+    const { container } = render(
+      <ProspectWorkspace
+        client={client({
+          listAccounts: vi.fn(
+            () =>
+              new Promise<(typeof account)[]>((resolve) => {
+                resolveAccounts = resolve;
+              }),
+          ),
+        })}
+      />,
+    );
+
+    expect(container.querySelector('[data-skeleton="run"]')).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Run loading status" })).toHaveTextContent(
+      "Restoring active run…",
+    );
+    expect(
+      screen.queryByText("Select an account to run the prospect agent"),
+    ).not.toBeInTheDocument();
+
+    await act(async () => resolveAccounts([account]));
+    expect(
+      await screen.findByRole("region", { name: /Review the outreach to Atlas Foods/ }),
+    ).toBeInTheDocument();
+    expect(container.querySelector('[data-skeleton="run"]')).not.toBeInTheDocument();
+  });
+
   it("lets keyboard users select an account and start a run", async () => {
     const api = client();
     render(<ProspectWorkspace client={api} pollIntervalMs={1} />);

@@ -944,3 +944,26 @@ include credentials, private customer data, raw traces, or generated result expo
   back by adding approved viewport projects and pinned visual baselines without changing product APIs.
 - **Evidence:** Mocked desktop Playwright scenarios, the isolated Compose full-stack journey, and
   `make test-e2e`; repository verification and Compose validation remain separate required checks.
+
+### 2026-09-30 — Loading, account pagination, and active-run motion
+
+- **Decision:** Known account and workspace layouts use neutral skeletons only while their data or
+  run-start request is pending. Skeleton shapes are decorative, animate only when reduced motion is
+  not requested, and never replace empty, degraded, failed, review, or terminal content. Each
+  loading region exposes one concise status; animation frames are never announced.
+- **Decision:** The account rail paginates the already loaded tenant-scoped account list in groups
+  of five without changing the account API. Pagination appears only for multiple pages, preserves
+  API order, and reports both the visible range and current page. Manual page changes clear the
+  hidden account selection and any start error, move focus to the first newly visible account, and
+  leave a completed or failed run visible.
+  Pagination is locked with account switching during start, restoration, active execution, and
+  human review. Restoration opens the selected account's page; reloads reveal a retained account,
+  clamp a shortened list, or clear an account that disappeared.
+- **Decision:** Queued and running runs show a restrained activity cue, and only non-review running
+  steps pulse. Review and terminal states have no activity animation. Status text, color, and the
+  active-step ring remain the complete static signal for reduced-motion users.
+- **Reasoning:** The console should feel alive only when real work is pending, preserve the human
+  review boundary, and let a rep browse longer assigned-account lists without creating a hidden run
+  target or expanding the MVP API surface.
+- **Evidence:** CAM-49 component/accessibility tests and desktop Playwright coverage for skeleton
+  replacement, pagination, queued/running transitions, review handoff, reduced motion, and overflow.

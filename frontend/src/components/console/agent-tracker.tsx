@@ -73,6 +73,7 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
   const activityId = useId();
   const open = step.activity.length > 0 && (choice ?? step.status === "running");
   const idle = step.status === "pending" || step.status === "skipped";
+  const agentRunning = step.status === "running" && step.key !== "review";
   const label =
     step.key === "review" && step.status === "running"
       ? "Waiting on you"
@@ -86,8 +87,10 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
+          data-agent-motion={agentRunning ? "active-step" : undefined}
           className={cn(
             "grid size-6 place-items-center rounded-full text-xs font-semibold tabular-nums",
+            agentRunning && "motion-safe:animate-pulse",
             step.status === "running"
               ? "bg-white text-slate-950 ring-2 ring-slate-950 ring-inset"
               : step.status === "complete"

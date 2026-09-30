@@ -1,5 +1,6 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 
+import { AccountRailLoading } from "@/components/ui/loading-skeleton";
 import { alertStyle, buttonStyles, linkButton, typeStyles } from "@/components/ui/styles";
 import type { Account } from "@/lib/prospect-api";
 import { cn } from "@/lib/utils";
@@ -7,8 +8,11 @@ import { cn } from "@/lib/utils";
 export type AccountsState =
   { kind: "loading" } | { kind: "error" } | { kind: "ready"; accounts: Account[] };
 
+export const ACCOUNT_PAGE_SIZE = 5;
+
 export function AccountRail({
   state,
+  page,
   selectedId,
   locked,
   starting,
@@ -16,11 +20,13 @@ export function AccountRail({
   startError,
   quiet = false,
   onSelect,
+  onPageChange,
   onStart,
   onRetry,
   onReload,
 }: Readonly<{
   state: AccountsState;
+  page: number;
   selectedId?: string;
   locked: boolean;
   starting: boolean;
@@ -30,11 +36,36 @@ export function AccountRail({
   /** A brief is on screen, so building another is a secondary action. */
   quiet?: boolean;
   onSelect: (account: Account) => void;
+  onPageChange: (page: number) => void;
   onStart: () => void;
   onRetry: () => void;
   onReload: () => void;
 }>) {
   const headingId = useId();
+  const firstVisibleAccountRef = useRef<HTMLButtonElement>(null);
+  const focusPageRef = useRef<number | undefined>(undefined);
+  const totalAccounts = state.kind === "ready" ? state.accounts.length : 0;
+  const totalPages = Math.max(1, Math.ceil(totalAccounts / ACCOUNT_PAGE_SIZE));
+  const visiblePage = Math.min(Math.max(page, 1), totalPages);
+  const firstVisible = (visiblePage - 1) * ACCOUNT_PAGE_SIZE;
+  const visibleAccounts =
+    state.kind === "ready"
+      ? state.accounts.slice(firstVisible, firstVisible + ACCOUNT_PAGE_SIZE)
+      : [];
+  const selectionIsCurrent =
+    state.kind === "ready" && state.accounts.some((account) => account.id === selectedId);
+
+  useEffect(() => {
+    if (focusPageRef.current !== visiblePage) return;
+    firstVisibleAccountRef.current?.focus();
+    focusPageRef.current = undefined;
+  }, [visiblePage]);
+
+  function changePage(nextPage: number) {
+    focusPageRef.current = nextPage;
+    onPageChange(nextPage);
+  }
+
   return (
     <section
       aria-labelledby={headingId}
@@ -55,14 +86,14 @@ export function AccountRail({
         </button>
       </div>
       {state.kind === "ready" ? (
-        <p className={`${typeStyles.utility} px-4 pb-2`}>{`${state.accounts.length} assigned`}</p>
-      ) : null}
-
-      {state.kind === "loading" ? (
-        <p role="status" className={`${typeStyles.utility} px-4 py-2`}>
-          Loading accounts…
+        <p className={`${typeStyles.utility} px-4 pb-2 tabular-nums`}>
+          {totalAccounts > ACCOUNT_PAGE_SIZE
+            ? `${firstVisible + 1}–${Math.min(firstVisible + ACCOUNT_PAGE_SIZE, totalAccounts)} of ${totalAccounts} assigned`
+            : `${totalAccounts} assigned`}
         </p>
       ) : null}
+
+      {state.kind === "loading" ? <AccountRailLoading /> : null}
 
       {state.kind === "error" ? (
         <div className="px-4 pb-2">
@@ -82,11 +113,12 @@ export function AccountRail({
 
       {state.kind === "ready" && state.accounts.length > 0 ? (
         <ul className="flex flex-col gap-0.5 px-2">
-          {state.accounts.map((account) => {
+          {visibleAccounts.map((account, index) => {
             const selected = account.id === selectedId;
             return (
               <li key={account.id}>
                 <button
+                  ref={index === 0 ? firstVisibleAccountRef : undefined}
                   type="button"
                   aria-pressed={selected}
                   disabled={locked}
@@ -110,11 +142,40 @@ export function AccountRail({
         </ul>
       ) : null}
 
+      {state.kind === "ready" && totalAccounts > ACCOUNT_PAGE_SIZE ? (
+        <nav
+          aria-label="Account pages"
+          className="flex items-center justify-between gap-2 px-4 pt-2"
+        >
+          <button
+            type="button"
+            className={linkButton}
+            disabled={locked || visiblePage === 1}
+            onClick={() => changePage(visiblePage - 1)}
+          >
+            Previous
+          </button>
+          <span
+            aria-atomic="true"
+            aria-live="polite"
+            className={`${typeStyles.utility} tabular-nums`}
+          >{`Page ${visiblePage} of ${totalPages}`}</span>
+          <button
+            type="button"
+            className={linkButton}
+            disabled={locked || visiblePage === totalPages}
+            onClick={() => changePage(visiblePage + 1)}
+          >
+            Next
+          </button>
+        </nav>
+      ) : null}
+
       <div className="p-4">
         <button
           type="button"
           className={cn(quiet ? buttonStyles.secondary : buttonStyles.primary, "w-full")}
-          disabled={!selectedId || locked || starting}
+          disabled={!selectionIsCurrent || locked || starting}
           onClick={onStart}
         >
           {starting ? "Starting…" : running ? "Agent running…" : "Run prospect agent"}

@@ -66,15 +66,26 @@ export function RunView({
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className={typeStyles.display}>{run.account.name}</h2>
-          <StatusPill
-            tone={
-              run.status === "completed" && run.verdict !== "fit"
-                ? "neutral"
-                : statusTone[run.status]
-            }
-          >
-            {deciding ? "Awaiting your review" : runStatusLabel[run.status]}
-          </StatusPill>
+          <span className="inline-flex items-center gap-2">
+            {active ? (
+              <span
+                aria-hidden="true"
+                data-agent-motion="run-status"
+                className={`size-2 rounded-full motion-safe:animate-pulse ${
+                  run.status === "running" ? "bg-slate-950" : "bg-slate-400"
+                }`}
+              />
+            ) : null}
+            <StatusPill
+              tone={
+                run.status === "completed" && run.verdict !== "fit"
+                  ? "neutral"
+                  : statusTone[run.status]
+              }
+            >
+              {deciding ? "Awaiting your review" : runStatusLabel[run.status]}
+            </StatusPill>
+          </span>
         </div>
         <p className={typeStyles.utility}>
           <span role="status" aria-label="Run progress" aria-live="polite">

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { expectKeyboardReady, expectNoHorizontalOverflow } from "../support/assertions";
 import {
+  account,
   completedFitRun,
   fitRun,
   installProspectApi,
@@ -10,6 +11,23 @@ import {
   rejectedRun,
   stepsAt,
 } from "../support/prospect-fixtures";
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+const pagedAccounts = [
+  account,
+  ...Array.from({ length: 6 }, (_, index) => ({
+    ...account,
+    id: `account-${index + 2}`,
+    name: `Account ${index + 2}`,
+  })),
+];
 
 async function startRun(page: import("@playwright/test").Page) {
   await page.goto("/");
@@ -171,6 +189,70 @@ test("keeps primary desktop controls keyboard-ready across selection and review"
   await expectNoHorizontalOverflow(page);
 });
 
+test("replaces loading skeletons and paginates accounts without retaining a hidden selection", async ({
+  page,
+}) => {
+  const accountsReady = deferred();
+  const startReady = deferred();
+  let startedAccount: string | undefined;
+  const selected = pagedAccounts[6]!;
+  await installProspectApi(page, {
+    accounts: pagedAccounts,
+    accountsReady: accountsReady.promise,
+    startReady: startReady.promise,
+    startRun: { ...fitRun, account: { id: selected.id, name: selected.name } },
+    onStart: (accountId) => {
+      startedAccount = accountId;
+    },
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("status").filter({ hasText: "Loading accounts" })).toBeVisible();
+  await expect(page.locator('[data-skeleton="account-row"]')).toHaveCount(5);
+  await expect(page.locator('[data-skeleton="workspace"]')).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  accountsReady.resolve();
+  const pagination = page.getByRole("navigation", { name: "Account pages" });
+  await expect(page.getByText("1–5 of 7 assigned")).toBeVisible();
+  await expect(pagination.getByText("Page 1 of 2")).toBeVisible();
+  await expect(pagination.getByRole("button", { name: "Previous" })).toBeDisabled();
+  await page.getByRole("button", { name: /Atlas Foods/ }).click();
+  await expect(page.getByRole("button", { name: "Run prospect agent" })).toBeEnabled();
+
+  const next = pagination.getByRole("button", { name: "Next" });
+  await next.focus();
+  await page.keyboard.press("Enter");
+  await expect(pagination.getByText("Page 2 of 2")).toBeVisible();
+  await expect(page.getByText("6–7 of 7 assigned")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Atlas Foods/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+  await expect(next).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Account 6/ })).toBeFocused();
+
+  const previous = pagination.getByRole("button", { name: "Previous" });
+  await previous.focus();
+  await page.keyboard.press("Enter");
+  await expect(pagination.getByText("Page 1 of 2")).toBeVisible();
+  await expect(page.getByText("1–5 of 7 assigned")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Atlas Foods/ })).toBeFocused();
+  await pagination.getByRole("button", { name: "Next" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(pagination.getByText("Page 2 of 2")).toBeVisible();
+
+  await page.getByRole("button", { name: selected.name }).click();
+  await page.getByRole("button", { name: "Run prospect agent" }).click();
+  await expect(page.locator('[data-skeleton="run"]')).toBeVisible();
+  await expect.poll(() => startedAccount).toBe(selected.id);
+  startReady.resolve();
+
+  await expect(
+    page.getByRole("region", { name: new RegExp(`Review the outreach to ${selected.name}`) }),
+  ).toBeVisible();
+  await expect(pagination.getByRole("button", { name: "Previous" })).toBeDisabled();
+  await expectNoHorizontalOverflow(page);
+});
+
 test("tracks every drafting and quality-review attempt, then hands off to review", async ({
   page,
 }) => {
@@ -183,7 +265,7 @@ test("tracks every drafting and quality-review attempt, then hands off to review
     "Drafting outreach",
     "Quality review",
   ];
-  let phase = 0;
+  let phase = -1;
   const running = {
     ...fitRun,
     status: "running" as const,
@@ -196,23 +278,42 @@ test("tracks every drafting and quality-review attempt, then hands off to review
     steps: stepsAt(0),
   };
   await installProspectApi(page, {
-    startRun: running,
+    startRun: {
+      ...running,
+      status: "queued",
+      stage: "Queued for research",
+      progress_percent: 0,
+      steps: stepsAt(-1),
+    },
     readRun: () =>
-      phase < 7
+      phase < 0
         ? {
             ...running,
-            stage: `${labels[phase]} running`,
-            progress_percent: 20 + 10 * phase,
-            steps: stepsAt(phase),
+            status: "queued",
+            stage: "Queued for research",
+            progress_percent: 0,
+            steps: stepsAt(-1),
           }
-        : { ...fitRun, steps: stepsAt(7) },
+        : phase < 7
+          ? {
+              ...running,
+              stage: `${labels[phase]} running`,
+              progress_percent: 20 + 10 * phase,
+              steps: stepsAt(phase),
+            }
+          : { ...fitRun, steps: stepsAt(7) },
   });
 
   await startRun(page);
+  await expect(page.getByText("Queued", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-agent-motion="run-status"]')).toBeVisible();
+  phase = 0;
   const tracker = page.getByRole("region", { name: "Agent progress" });
   await expect(
     tracker.getByRole("listitem", { name: /Step 1: Account context, Running/ }),
   ).toBeVisible();
+  await expect(page.locator('[data-agent-motion="run-status"]')).toBeVisible();
+  await expect(page.locator('[data-agent-motion="active-step"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "Agent running…" })).toBeDisabled();
   phase = 2;
   await expect(
@@ -246,5 +347,36 @@ test("tracks every drafting and quality-review attempt, then hands off to review
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /Atlas Foods/ })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
+  await expect(page.locator("[data-agent-motion]")).toHaveCount(0);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("keeps active status legible without animation when reduced motion is requested", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const running = {
+    ...fitRun,
+    status: "running" as const,
+    stage: "Account context running",
+    progress_percent: 20,
+    verdict: null,
+    brief: null,
+    outreach: null,
+    pending_review: null,
+    steps: stepsAt(0),
+  };
+  await installProspectApi(page, { startRun: running, readRun: () => running });
+
+  await startRun(page);
+  await expect(
+    page.locator('[data-agent-motion="run-status"]').locator("..").getByText("Running", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  for (const cue of await page.locator("[data-agent-motion]").all()) {
+    await expect(cue).toBeVisible();
+    expect(await cue.evaluate((element) => getComputedStyle(element).animationName)).toBe("none");
+  }
   await expectNoHorizontalOverflow(page);
 });

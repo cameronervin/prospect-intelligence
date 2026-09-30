@@ -156,7 +156,11 @@ type MockResponse = { status?: number; json: unknown };
 export async function installProspectApi(
   page: Page,
   options: {
+    accounts?: Account[];
+    accountsReady?: Promise<void>;
     startRun?: ProspectRun;
+    startReady?: Promise<void>;
+    onStart?: (accountId: string) => void;
     readRun?: () => ProspectRun;
     review?: (payload: ReviewPayload) => MockResponse | Promise<MockResponse>;
   } = {},
@@ -164,12 +168,16 @@ export async function installProspectApi(
   const started = options.startRun ?? fitRun;
 
   await page.route("**/api/v1/accounts", async (route) => {
-    await route.fulfill({ json: { items: [account] } });
+    await options.accountsReady;
+    await route.fulfill({ json: { items: options.accounts ?? [account] } });
   });
   await page.route("**/api/v1/prospect-runs", async (route) => {
     expect(route.request().method()).toBe("POST");
     expect(route.request().headers()["x-tenant-id"]).toBe("tenant-demo");
     expect(route.request().headers()["x-rep-id"]).toBe("maya-chen");
+    const payload = route.request().postDataJSON() as { account_id: string };
+    options.onStart?.(payload.account_id);
+    await options.startReady;
     await route.fulfill({ json: started });
   });
   await page.route("**/api/v1/prospect-runs/*", async (route) => {

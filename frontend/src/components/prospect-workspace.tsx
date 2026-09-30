@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { AccountRail, type AccountsState } from "@/components/console/account-rail";
+import {
+  ACCOUNT_PAGE_SIZE,
+  AccountRail,
+  type AccountsState,
+} from "@/components/console/account-rail";
 import { isActive } from "@/components/console/format";
+import { RunLoading, WorkspaceLoading } from "@/components/ui/loading-skeleton";
 import { alertStyle, buttonStyles, typeStyles } from "@/components/ui/styles";
 import { RunView } from "@/features/prospect-intelligence/components/run-view";
 import { useRunRestoration } from "@/features/prospect-intelligence/hooks/use-run-restoration";
@@ -32,6 +37,7 @@ export function ProspectWorkspace({
     [client],
   );
   const [accounts, setAccounts] = useState<AccountsState>({ kind: "loading" });
+  const [accountPage, setAccountPage] = useState(1);
   const [selected, setSelected] = useState<Account>();
   const [run, setRun] = useState<ProspectRun>();
   const [starting, setStarting] = useState(false);
@@ -64,7 +70,23 @@ export function ProspectWorkspace({
 
   function reloadAccounts() {
     setAccounts({ kind: "loading" });
-    void fetchAccounts().then(setAccounts);
+    void fetchAccounts().then((next) => {
+      setAccounts(next);
+      if (next.kind !== "ready") return;
+      const totalPages = Math.max(1, Math.ceil(next.accounts.length / ACCOUNT_PAGE_SIZE));
+      if (!selected) {
+        setAccountPage((current) => Math.min(current, totalPages));
+        return;
+      }
+      const selectedIndex = next.accounts.findIndex((account) => account.id === selected.id);
+      if (selectedIndex < 0) {
+        setSelected(undefined);
+        setStartError(false);
+        setAccountPage((current) => Math.min(current, totalPages));
+        return;
+      }
+      setAccountPage(Math.floor(selectedIndex / ACCOUNT_PAGE_SIZE) + 1);
+    });
   }
 
   const show = useCallback((next: ProspectRun | undefined) => {
@@ -73,11 +95,21 @@ export function ProspectWorkspace({
     setRun(next);
   }, []);
 
+  const selectRestoredAccount = useCallback(
+    (account: Account) => {
+      setSelected(account);
+      if (accounts.kind !== "ready") return;
+      const index = accounts.accounts.findIndex((item) => item.id === account.id);
+      if (index >= 0) setAccountPage(Math.floor(index / ACCOUNT_PAGE_SIZE) + 1);
+    },
+    [accounts],
+  );
+
   const { restoring, restoreFailed, retryRestore } = useRunRestoration({
     accounts,
     api,
     show,
-    selectAccount: setSelected,
+    selectAccount: selectRestoredAccount,
   });
 
   useEffect(() => {
@@ -158,6 +190,7 @@ export function ProspectWorkspace({
     <div className="flex w-full flex-1 flex-col lg:flex-row">
       <AccountRail
         state={accounts}
+        page={accountPage}
         selectedId={selected?.id}
         locked={locked}
         starting={starting}
@@ -171,6 +204,11 @@ export function ProspectWorkspace({
             resetRunState();
           }
         }}
+        onPageChange={(page) => {
+          setAccountPage(page);
+          setSelected(undefined);
+          setStartError(false);
+        }}
         onStart={() => void startBrief()}
         running={Boolean(run && isActive(run.status))}
         onRetry={reloadAccounts}
@@ -179,7 +217,9 @@ export function ProspectWorkspace({
 
       <section aria-label="Workspace" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-6xl">
-          {run ? (
+          {starting ? (
+            <RunLoading message="Starting agent run…" />
+          ) : run ? (
             <RunView
               run={run}
               pollPaused={pollPaused}
@@ -210,6 +250,10 @@ export function ProspectWorkspace({
                 </button>
               </div>
             </div>
+          ) : restoring ? (
+            <RunLoading message="Restoring active run…" />
+          ) : accounts.kind === "loading" ? (
+            <WorkspaceLoading />
           ) : (
             <div className="max-w-xl rounded border border-dashed border-slate-300 px-4 py-5">
               <p className="text-sm font-semibold">Select an account to run the prospect agent</p>
