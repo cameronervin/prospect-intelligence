@@ -1,5 +1,6 @@
 """Specialist delegation and source calls report sanitized progress to a request-scoped sink."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 from uuid import UUID
@@ -7,7 +8,7 @@ from uuid import UUID
 import pytest
 from langchain.agents.middleware import ToolCallRequest
 from langchain.tools import ToolRuntime
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.errors import GraphInterrupt
 
 from app.features.prospect_intelligence.agents.context import bind_runtime_context, bind_step
@@ -55,11 +56,17 @@ def _runtime(context: ProspectRuntimeContext) -> Any:
     )
 
 
-def _task_request(context: ProspectRuntimeContext, name: str, **args: object) -> ToolCallRequest:
+def _task_request(
+    context: ProspectRuntimeContext,
+    name: str,
+    *,
+    messages: Sequence[object] | None = None,
+    **args: object,
+) -> ToolCallRequest:
     return ToolCallRequest(
         tool_call={"name": name, "args": dict(args), "id": "call-1", "type": "tool_call"},
         tool=None,
-        state={"messages": [], "files": {}},
+        state={"messages": list(messages or []), "files": {}},
         runtime=_runtime(context),
     )
 
@@ -87,6 +94,61 @@ async def test_task_delegation_reports_start_and_completion() -> None:
         ("started", "external-research", False),
         ("finished", "external-research", False),
     ]
+
+
+async def test_draft_and_review_delegations_report_fixed_attempt_keys() -> None:
+    sink = RecordingSink()
+    middleware = ProgressMiddleware(orchestrator_spec().name)
+    history = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "task",
+                    "args": {"subagent_type": "outreach-drafter"},
+                    "id": "draft-1",
+                    "type": "tool_call",
+                },
+                {
+                    "name": "task",
+                    "args": {"subagent_type": "quality-reviewer"},
+                    "id": "review-1",
+                    "type": "tool_call",
+                },
+            ],
+        )
+    ]
+
+    async def handler(_: ToolCallRequest) -> ToolMessage:
+        return ToolMessage(content="done", tool_call_id="call-1")
+
+    await middleware.awrap_tool_call(
+        _task_request(
+            _context(sink),
+            "task",
+            messages=history,
+            subagent_type="outreach-drafter",
+            description="SECRET draft and findings content",
+        ),
+        handler,
+    )
+    await middleware.awrap_tool_call(
+        _task_request(
+            _context(sink),
+            "task",
+            messages=history,
+            subagent_type="quality-reviewer",
+        ),
+        handler,
+    )
+
+    assert sink.events == [
+        ("started", "outreach-drafter:2", False),
+        ("finished", "outreach-drafter:2", False),
+        ("started", "quality-reviewer:2", False),
+        ("finished", "quality-reviewer:2", False),
+    ]
+    assert "SECRET" not in repr(sink.events)
 
 
 async def test_failed_delegation_reports_failure_and_reraises() -> None:

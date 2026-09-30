@@ -5,7 +5,7 @@
 The repository includes a working freight prospect-intelligence agent slice. The Next.js client
 creates and polls runs through FastAPI; PostgreSQL stores run, worker, review, receipt, preference,
 checkpoint, and cross-run memory state. Two durable worker slots share one process-wide runtime: an
-outer LangGraph invokes a root Deep Agent that delegates to four explicit specialist Deep Agents and
+outer LangGraph invokes a root Deep Agent that delegates to five explicit specialist Deep Agents and
 pauses at a named outreach interrupt.
 
 ```text
@@ -37,7 +37,7 @@ The prospect feature keeps each agent concept explicit without single-module pac
 
 ```text
 agents/
-  chains.py       prompts.py      specs.py
+  chains.py       prompts/       specs.py
   graphs.py       compiler.py     state.py
   tools.py        guardrails.py   runtime.py
   context.py      middleware/     skills/
@@ -49,7 +49,7 @@ data; `context.py` provides access to the non-checkpointed LangGraph runtime con
 scoped bridge required by compiled isolated subagents. Middleware and SDK-formatted skills remain
 nested because each is a meaningful multi-file boundary.
 
-The feature owns the four-specialist topology, tools, prompts, filesystem permissions, review
+The feature owns the five-specialist topology, tools, prompts, filesystem permissions, review
 boundary, thread identity, typed runtime, and structured result. The root Deep Agent is the only
 specialist scheduler. The outer graph prepares state, invokes that root, and finalizes completion; it
 never invokes specialists.

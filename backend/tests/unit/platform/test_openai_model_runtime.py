@@ -21,6 +21,7 @@ def _settings(**overrides: object) -> Settings:
         "orchestrator_reasoning_effort": "medium",
         "model_request_timeout_seconds": 17,
         "model_retry_attempts": 1,
+        "openai_base_url": None,
     }
     values.update(overrides)
     return Settings(**values)  # pyright: ignore[reportArgumentType]

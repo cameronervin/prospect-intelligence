@@ -40,7 +40,8 @@ def test_initial_steps_list_every_specialist_then_review_as_pending() -> None:
         ("account-context", "Account context"),
         ("external-research", "External research"),
         ("lane-analyst", "Lane analysis"),
-        ("outreach-drafter", "Drafting outreach"),
+        ("outreach-drafter:1", "Drafting outreach"),
+        ("quality-reviewer:1", "Quality review"),
         ("review", "Your review"),
     ]
     assert set(statuses(steps).values()) == {RunStepStatus.PENDING}
@@ -82,6 +83,7 @@ def test_unknown_steps_and_tools_are_ignored() -> None:
     steps = initial_steps()
 
     assert apply_progress_event(steps, StepStarted("general-purpose", at(1))) == steps
+    assert apply_progress_event(steps, StepStarted("quality-reviewer:4", at(1))) == steps
     assert (
         apply_progress_event(steps, SourceCalled("account-context", "exfiltrate", True, at(1)))
         == steps
@@ -107,6 +109,45 @@ def test_failed_specialist_is_marked_failed() -> None:
     assert statuses(steps)["lane-analyst"] is RunStepStatus.FAILED
 
 
+def test_repeated_review_attempts_append_before_human_review_without_rewriting_history() -> None:
+    steps = apply_progress_event(initial_steps(), StepStarted("outreach-drafter:1", at(1)))
+    steps = apply_progress_event(steps, StepFinished("outreach-drafter:1", at(2), failed=False))
+    steps = apply_progress_event(steps, StepStarted("quality-reviewer:1", at(3)))
+    steps = apply_progress_event(steps, StepFinished("quality-reviewer:1", at(4), failed=False))
+    first_attempt = steps[3:5]
+    percentages = [progress_percent(steps)]
+
+    steps = apply_progress_event(steps, StepStarted("outreach-drafter:2", at(5)))
+    percentages.append(progress_percent(steps))
+    steps = apply_progress_event(steps, StepFinished("outreach-drafter:2", at(6), failed=False))
+    percentages.append(progress_percent(steps))
+    steps = apply_progress_event(steps, StepStarted("quality-reviewer:2", at(7)))
+    percentages.append(progress_percent(steps))
+
+    assert [(step.key, step.label) for step in steps[3:]] == [
+        ("outreach-drafter:1", "Drafting outreach"),
+        ("quality-reviewer:1", "Quality review"),
+        ("outreach-drafter:2", "Drafting outreach"),
+        ("quality-reviewer:2", "Quality review"),
+        ("review", "Your review"),
+    ]
+    assert steps[3:5] == first_attempt
+    assert steps[-1].key == "review"
+    assert percentages == sorted(percentages)
+    assert max(percentages) <= 95
+
+
+def test_restarting_an_existing_attempt_reuses_its_row() -> None:
+    steps = apply_progress_event(initial_steps(), StepStarted("outreach-drafter:2", at(1)))
+    reset = reset_interrupted_steps(steps)
+    restarted = apply_progress_event(reset, StepStarted("outreach-drafter:2", at(2)))
+
+    assert [step.key for step in restarted].count("outreach-drafter:2") == 1
+    attempt = next(step for step in restarted if step.key == "outreach-drafter:2")
+    assert attempt.status is RunStepStatus.RUNNING
+    assert attempt.started_at == at(2)
+
+
 def test_finishing_a_fit_opens_review_and_skips_specialists_that_never_ran() -> None:
     steps = apply_progress_event(initial_steps(), StepStarted("account-context", at(1)))
 
@@ -116,7 +157,8 @@ def test_finishing_a_fit_opens_review_and_skips_specialists_that_never_ran() -> 
         "account-context": RunStepStatus.COMPLETE,
         "external-research": RunStepStatus.SKIPPED,
         "lane-analyst": RunStepStatus.SKIPPED,
-        "outreach-drafter": RunStepStatus.SKIPPED,
+        "outreach-drafter:1": RunStepStatus.SKIPPED,
+        "quality-reviewer:1": RunStepStatus.SKIPPED,
         "review": RunStepStatus.RUNNING,
     }
     assert finished[0].finished_at == at(9)

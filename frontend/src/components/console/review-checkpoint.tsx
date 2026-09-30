@@ -2,82 +2,17 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
-import { ProspectApiError, type RunReview } from "@/lib/prospect-api";
+import {
+  describeReviewFailure,
+  refreshFailure,
+  type ReviewFailure,
+  type ReviewFocusTarget,
+} from "@/features/prospect-intelligence/review/failure-policy";
+import type { RunReview } from "@/lib/prospect-api";
 
 type Draft = { subject: string; body: string };
-type FocusTarget = "subject" | "retry" | "refresh" | "alert";
-
-export type Failure = {
-  title: string;
-  message: string;
-  focus: FocusTarget;
-  retry?: RunReview;
-  refresh?: boolean;
-  restore?: boolean;
-  final?: boolean;
-};
-
-/** Map typed API failures to actionable copy; server messages are never shown verbatim. */
-export function describeReviewFailure(error: unknown, review: RunReview): Failure {
-  const code = error instanceof ProspectApiError ? error.code : undefined;
-  if (code === "conflict" && review.decision === "edit") {
-    // A 409 on an edit is usually unsafe copy, but can also mean the run was decided elsewhere.
-    return {
-      title: "This edit can't be sent",
-      message:
-        "Customer copy must match an approved template and can't include internal numbers or sources. Your draft is kept below. If this run was already decided elsewhere, refresh it.",
-      focus: "subject",
-      restore: true,
-      refresh: true,
-    };
-  }
-  if (code === "conflict") {
-    return {
-      title: "This run already has a different decision",
-      message: "Refresh to see its current state. Nothing new was sent.",
-      focus: "refresh",
-      refresh: true,
-    };
-  }
-  if (code === "validation_error" && review.decision === "edit") {
-    return {
-      title: "Check the subject and message",
-      message: "Both are required and must stay within the length limit. Your draft is kept below.",
-      focus: "subject",
-      restore: true,
-    };
-  }
-  if (code === "not_found") {
-    return {
-      title: "This run is no longer available",
-      message: "It may have been removed or belongs to another rep. Nothing was sent.",
-      focus: "alert",
-      final: true,
-    };
-  }
-  if (code === "validation_error") {
-    return {
-      title: "This decision couldn't be recorded",
-      message: "Refresh the run and try again. Nothing was sent.",
-      focus: "refresh",
-      refresh: true,
-    };
-  }
-  return {
-    title: "Your decision wasn't recorded",
-    message:
-      "The review service is temporarily unavailable. Nothing was sent, and your draft is unchanged.",
-    focus: "retry",
-    retry: review,
-  };
-}
-
-const refreshFailure: Failure = {
-  title: "The run couldn't be refreshed",
-  message: "Check your connection and try again. Nothing was sent.",
-  focus: "refresh",
-  refresh: true,
-};
+export { describeReviewFailure };
+export type Failure = ReviewFailure;
 
 /**
  * The human-review checkpoint: the page's primary task while a decision is pending.
@@ -101,8 +36,8 @@ export function ReviewCheckpoint({
   const [draft, setDraft] = useState<Draft>(outreach);
   const [pending, setPending] = useState(false);
   const [confirmingReject, setConfirmingReject] = useState(false);
-  const [failure, setFailure] = useState<Failure>();
-  const focusTarget = useRef<FocusTarget | "reject" | "confirm">(undefined);
+  const [failure, setFailure] = useState<ReviewFailure>();
+  const focusTarget = useRef<ReviewFocusTarget | "reject" | "confirm">(undefined);
   const inFlight = useRef(false);
   const subjectRef = useRef<HTMLInputElement>(null);
   const retryRef = useRef<HTMLButtonElement>(null);
@@ -137,7 +72,7 @@ export function ReviewCheckpoint({
   /** Busy work keeps the alert mounted so focus stays on its (now busy) control. */
   async function run(
     work: () => Promise<void>,
-    onError: (error: unknown) => Failure,
+    onError: (error: unknown) => ReviewFailure,
     keep = false,
   ) {
     if (inFlight.current) return;

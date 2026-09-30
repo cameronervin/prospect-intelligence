@@ -242,3 +242,18 @@ def test_run_steps_round_trip_and_legacy_rows_decode_empty() -> None:
     assert deserialize_steps(serialize_steps(steps)) == steps
     assert deserialize_steps(None) == ()
     assert deserialize_steps([]) == ()
+
+
+def test_legacy_unqualified_drafter_progress_is_normalized_at_the_repository_boundary() -> None:
+    legacy: list[dict[str, object]] = [
+        {
+            "key": "outreach-drafter",
+            "label": "Drafting outreach",
+            "status": "complete",
+            "started_at": None,
+            "finished_at": None,
+            "activity": [],
+        }
+    ]
+
+    assert deserialize_steps(legacy)[0].key == "outreach-drafter:1"

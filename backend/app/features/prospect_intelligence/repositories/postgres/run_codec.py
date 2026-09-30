@@ -153,7 +153,9 @@ def deserialize_steps(raw: Sequence[Mapping[str, Any]] | None) -> tuple[RunStep,
         return ()
     return tuple(
         RunStep(
-            key=str(item["key"]),
+            key=(
+                "outreach-drafter:1" if str(item["key"]) == "outreach-drafter" else str(item["key"])
+            ),
             label=str(item["label"]),
             status=RunStepStatus(item["status"]),
             started_at=_parse_time(item.get("started_at")),

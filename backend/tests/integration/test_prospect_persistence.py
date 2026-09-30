@@ -850,7 +850,8 @@ def test_specialist_progress_persists_under_claim_and_fails_open_steps(
         "account-context": RunStepStatus.SKIPPED,
         "external-research": RunStepStatus.FAILED,
         "lane-analyst": RunStepStatus.SKIPPED,
-        "outreach-drafter": RunStepStatus.SKIPPED,
+        "outreach-drafter:1": RunStepStatus.SKIPPED,
+        "quality-reviewer:1": RunStepStatus.SKIPPED,
         "review": RunStepStatus.SKIPPED,
     }
     late_write = replace(failed, steps=(), stage="External research running")

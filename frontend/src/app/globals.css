@@ -21,51 +21,50 @@
   --color-danger-soft: var(--danger-soft);
 }
 
-/* Dispatch console: white and cool-neutral surfaces, graphite text, one safety accent
-   reserved for the human-review checkpoint. */
+/* Dispatch console: warm manifest paper, freight green, and a rust safety accent. */
 :root {
-  --background: #ffffff;
-  --surface: #f4f6f8;
-  --foreground: #182028;
-  --foreground-soft: #3d4852;
-  --foreground-faint: #56616d;
-  --line: #e1e5ea;
-  --line-strong: #c7ced6;
-  --accent: #c2410c;
-  --accent-strong: #9a3412;
-  --accent-soft: #fff3eb;
-  --accent-line: #f3b58f;
-  --ready: #0b6e4f;
-  --ready-soft: #e8f5ef;
-  --degraded: #7c5a00;
-  --degraded-soft: #fdf5dc;
-  --danger: #b42318;
-  --danger-soft: #fdecea;
+  --background: #f2f0e9;
+  --surface: #e8e4da;
+  --foreground: #15231f;
+  --foreground-soft: #3f5149;
+  --foreground-faint: #65716b;
+  --line: #d7d4ca;
+  --line-strong: #b9b5aa;
+  --accent: #b34725;
+  --accent-strong: #8f341c;
+  --accent-soft: #f8e5dc;
+  --accent-line: #d99c84;
+  --ready: #08734e;
+  --ready-soft: #dff2e8;
+  --degraded: #8a5a00;
+  --degraded-soft: #f7edcf;
+  --danger: #a43125;
+  --danger-soft: #f8e1dc;
   --on-accent: #ffffff;
   --field-line: #8b95a0;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #12161b;
-    --surface: #1a2027;
-    --foreground: #e8edf2;
-    --foreground-soft: #c3ccd5;
-    --foreground-faint: #9aa6b2;
-    --line: #2a323b;
-    --line-strong: #3b4550;
+    --background: #121714;
+    --surface: #1a211d;
+    --foreground: #f4f1e9;
+    --foreground-soft: #cbd2cd;
+    --foreground-faint: #aeb9b2;
+    --line: #343e38;
+    --line-strong: #526058;
     --accent: #f08a4b;
     --accent-strong: #f6a878;
-    --accent-soft: #2e1d13;
-    --accent-line: #6b3a1c;
+    --accent-soft: #352117;
+    --accent-line: #8c4d30;
     --ready: #6fd3a8;
     --ready-soft: #13291f;
     --degraded: #e8c46a;
     --degraded-soft: #2b2412;
     --danger: #f59a90;
     --danger-soft: #331816;
-    --on-accent: #12161b;
-    --field-line: #6b7682;
+    --on-accent: #121714;
+    --field-line: #748078;
   }
 }
 
@@ -243,11 +242,11 @@
     background: var(--line);
   }
   .meter::-webkit-progress-value {
-    background: var(--foreground);
+    background: var(--ready);
     transition: width 300ms ease-out;
   }
   .meter::-moz-progress-bar {
-    background: var(--foreground);
+    background: var(--ready);
   }
 }
 
@@ -262,6 +261,11 @@
     color: var(--foreground);
     font-family: var(--font-sans);
     text-rendering: optimizeLegibility;
+    background-image:
+      radial-gradient(circle at 7% 3%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 24rem),
+      linear-gradient(color-mix(in srgb, var(--foreground) 2.5%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--foreground) 2.5%, transparent) 1px, transparent 1px);
+    background-size: auto, 32px 32px, 32px 32px;
   }
 
   :focus-visible {

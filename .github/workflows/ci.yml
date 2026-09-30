@@ -29,6 +29,9 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install secret-scan dependencies
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep
+
       - name: Install project dependencies
         run: sh scripts/setup.sh
 
@@ -54,4 +57,3 @@ jobs:
           docker compose --env-file deploy/envs/.env.local.example -f deploy/compose/compose.yml up --build --detach --wait
           curl --fail --silent --show-error http://127.0.0.1:8000/health/ready
           curl --fail --silent --show-error http://127.0.0.1:3000/
-

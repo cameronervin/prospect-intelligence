@@ -438,6 +438,54 @@ def test_runs_record_specialist_progress_from_queue_to_review() -> None:
     assert _step_statuses(reviewed)["review"] is RunStepStatus.COMPLETE
 
 
+def test_runs_append_each_draft_review_attempt_before_human_review() -> None:
+    service = build_service()
+    account = service.list_accounts("tenant-demo")[0]
+    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    service.start_run(run.id)
+
+    for key in (
+        "outreach-drafter:1",
+        "quality-reviewer:1",
+        "outreach-drafter:2",
+        "quality-reviewer:2",
+    ):
+        service.progress.record(run.id, StepStarted(key, NOW))
+        progressed = service.progress.record(run.id, StepFinished(key, NOW, failed=False))
+
+    assert [step.key for step in progressed.steps] == [
+        "account-context",
+        "external-research",
+        "lane-analyst",
+        "outreach-drafter:1",
+        "quality-reviewer:1",
+        "outreach-drafter:2",
+        "quality-reviewer:2",
+        "review",
+    ]
+    assert [step.label for step in progressed.steps[3:7]] == [
+        "Drafting outreach",
+        "Quality review",
+        "Drafting outreach",
+        "Quality review",
+    ]
+    assert progressed.progress_percent == 80
+
+
+def test_retrying_a_failed_attempt_never_regresses_progress_percent() -> None:
+    service = build_service()
+    account = service.list_accounts("tenant-demo")[0]
+    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    service.start_run(run.id)
+
+    service.progress.record(run.id, StepStarted("outreach-drafter:1", NOW))
+    failed = service.progress.record(run.id, StepFinished("outreach-drafter:1", NOW, failed=True))
+    retried = service.progress.record(run.id, StepStarted("outreach-drafter:1", NOW))
+
+    assert failed.progress_percent == 35
+    assert retried.progress_percent == failed.progress_percent
+
+
 def test_progress_outside_a_running_run_is_ignored() -> None:
     service = build_service()
     account = service.list_accounts("tenant-demo")[0]

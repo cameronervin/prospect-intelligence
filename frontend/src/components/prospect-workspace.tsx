@@ -1,21 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AccountRail, type AccountsState } from "@/components/console/account-rail";
-import { AgentRunSummary, AgentTracker } from "@/components/console/agent-tracker";
-import { BriefPanel, ModelAssumptions, WhySummary } from "@/components/console/brief-panel";
+import { isActive } from "@/components/console/format";
+import { RunView } from "@/features/prospect-intelligence/components/run-view";
+import { useRunRestoration } from "@/features/prospect-intelligence/hooks/use-run-restoration";
+import { rememberRun } from "@/features/prospect-intelligence/run/active-run-storage";
 import {
-  briefDate,
-  formatRetrievedDate,
-  isActive,
-  runStatusLabel,
-} from "@/components/console/format";
-import { LaneTable } from "@/components/console/lane-table";
-import { ReviewCheckpoint } from "@/components/console/review-checkpoint";
-import { ReviewOutcome } from "@/components/console/review-pane";
-import { SourceCoverage } from "@/components/console/source-coverage";
-import { StatusPill, type StatusTone } from "@/components/console/status-pill";
+  ACTIVE_RUN_STORAGE_KEY,
+  MAX_POLL_RETRIES,
+} from "@/features/prospect-intelligence/run/constants";
 import { DEMO_REP_ID, DEMO_TENANT_ID } from "@/lib/demo-identity";
 import {
   createProspectClient,
@@ -25,147 +20,7 @@ import {
   type RunReview,
 } from "@/lib/prospect-api";
 
-/** Automatic poll retries after a failure, with exponential backoff, before pausing. */
-export const MAX_POLL_RETRIES = 3;
-
-const statusTone: Record<ProspectRun["status"], StatusTone> = {
-  queued: "neutral",
-  running: "active",
-  awaiting_review: "review",
-  completed: "ready",
-  rejected: "neutral",
-  failed: "danger",
-};
-
-function awaitingDecision(run: ProspectRun) {
-  return (
-    run.status === "awaiting_review" &&
-    Boolean(run.pending_review) &&
-    Boolean(run.outreach) &&
-    run.verdict === "fit"
-  );
-}
-
-function RunView({
-  run,
-  pollPaused,
-  decided,
-  onResume,
-  onDecision,
-  onRefresh,
-}: Readonly<{
-  run: ProspectRun;
-  pollPaused: boolean;
-  decided: boolean;
-  onResume: () => void;
-  onDecision: (review: RunReview) => Promise<void>;
-  onRefresh: () => Promise<void>;
-}>) {
-  const active = isActive(run.status);
-  const dated = run.brief ? briefDate(run.brief) : undefined;
-  const evidenceId = useId();
-  const evidenceHeadingId = useId();
-  const deciding = awaitingDecision(run);
-  const hasLanes = Boolean(run.brief && run.brief.lanes.length > 0);
-  const steps = run.steps ?? [];
-
-  return (
-    <div className="flex flex-col gap-7">
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h2 className="type-display">{run.account.name}</h2>
-          <StatusPill
-            tone={
-              run.status === "completed" && run.verdict !== "fit"
-                ? "neutral"
-                : statusTone[run.status]
-            }
-          >
-            {deciding ? "Awaiting your review" : runStatusLabel[run.status]}
-          </StatusPill>
-        </div>
-        <p className="type-utility">
-          <span role="status" aria-label="Run progress" aria-live="polite">
-            {run.stage}
-          </span>
-          {active ? <span aria-hidden="true">{` · ${run.progress_percent}%`}</span> : null}
-          {!active && dated ? ` · Evidence as of ${formatRetrievedDate(dated)}` : ""}
-        </p>
-        {active ? (
-          <progress
-            className="meter"
-            max={100}
-            value={run.progress_percent}
-            aria-label="Research progress"
-          />
-        ) : null}
-        {!active ? <AgentRunSummary steps={steps} /> : null}
-      </header>
-
-      {active && steps.length > 0 ? <AgentTracker steps={steps} /> : null}
-
-      {pollPaused ? (
-        <div role="alert" className="alert">
-          <p className="font-semibold">Progress updates paused</p>
-          <p className="type-utility text-foreground-soft">
-            We couldn&apos;t reach the service after {MAX_POLL_RETRIES} retries. Research continues
-            on the server.
-          </p>
-          <div className="mt-1.5">
-            <button type="button" className="btn-secondary" onClick={onResume}>
-              Resume updates
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {run.status === "failed" ? (
-        <div role="alert" className="alert">
-          <p className="font-semibold">Research could not be completed</p>
-          <p className="type-utility text-foreground-soft">
-            No customer-facing output was produced. Run the prospect agent again to retry.
-          </p>
-        </div>
-      ) : null}
-
-      {deciding && run.outreach && run.pending_review && run.brief && run.verdict ? (
-        <ReviewCheckpoint
-          key={run.id}
-          accountName={run.account.name}
-          outreach={run.outreach}
-          toolCallId={run.pending_review.tool_call_id}
-          onDecision={onDecision}
-          onRefresh={onRefresh}
-          rationale={<WhySummary brief={run.brief} verdict={run.verdict} evidenceId={evidenceId} />}
-        />
-      ) : null}
-
-      {!deciding ? <ReviewOutcome run={run} decided={decided} /> : null}
-
-      {!deciding && run.brief && run.verdict ? (
-        <BriefPanel brief={run.brief} verdict={run.verdict} />
-      ) : null}
-
-      <section
-        id={evidenceId}
-        aria-labelledby={hasLanes ? evidenceHeadingId : undefined}
-        aria-label={hasLanes ? undefined : "Research evidence"}
-        className="flex scroll-mt-4 flex-col gap-4"
-      >
-        {hasLanes ? (
-          <div className="flex flex-wrap items-center gap-x-4">
-            <h2 id={evidenceHeadingId} className="type-title">
-              Supporting evidence
-            </h2>
-            <ModelAssumptions />
-          </div>
-        ) : null}
-        {run.brief && hasLanes ? <LaneTable lanes={run.brief.lanes} /> : null}
-        <SourceCoverage coverage={run.source_coverage} />
-      </section>
-    </div>
-  );
-}
+export { ACTIVE_RUN_STORAGE_KEY };
 
 export function ProspectWorkspace({
   client,
@@ -211,10 +66,18 @@ export function ProspectWorkspace({
     void fetchAccounts().then(setAccounts);
   }
 
-  function show(next: ProspectRun | undefined) {
+  const show = useCallback((next: ProspectRun | undefined) => {
     currentRunId.current = next?.id;
+    rememberRun(next);
     setRun(next);
-  }
+  }, []);
+
+  const { restoring, restoreFailed, retryRestore } = useRunRestoration({
+    accounts,
+    api,
+    show,
+    selectAccount: setSelected,
+  });
 
   useEffect(() => {
     if (!run || !isActive(run.status) || pollPaused) return;
@@ -225,7 +88,7 @@ export function ProspectWorkspace({
           const next = await api.getRun(run.id);
           if (cancelled) return;
           setPollFailures(0);
-          setRun(next);
+          show(next);
         } catch {
           if (cancelled) return;
           if (pollFailures >= MAX_POLL_RETRIES) setPollPaused(true);
@@ -238,7 +101,7 @@ export function ProspectWorkspace({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [api, run, pollFailures, pollPaused, pollIntervalMs]);
+  }, [api, run, pollFailures, pollPaused, pollIntervalMs, show]);
 
   function resetRunState() {
     setPollFailures(0);
@@ -268,7 +131,7 @@ export function ProspectWorkspace({
       const next = await api.reviewRun(runId, review);
       if (currentRunId.current !== runId) return;
       setDecided(true);
-      setRun(next);
+      show(next);
     } finally {
       setDeciding(false);
     }
@@ -280,10 +143,15 @@ export function ProspectWorkspace({
     const next = await api.getRun(runId);
     if (currentRunId.current !== runId) return;
     setDecided(true);
-    setRun(next);
+    show(next);
   }
 
-  const locked = starting || deciding || Boolean(run && isActive(run.status));
+  const locked =
+    starting ||
+    deciding ||
+    restoring ||
+    restoreFailed ||
+    Boolean(run && (isActive(run.status) || run.status === "awaiting_review"));
 
   return (
     <div className="grid min-h-[calc(100dvh-3rem)] grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -322,13 +190,32 @@ export function ProspectWorkspace({
               onDecision={decide}
               onRefresh={refresh}
             />
+          ) : restoreFailed ? (
+            <div role="alert" className="alert max-w-xl">
+              <p className="font-semibold">Your active run could not be restored</p>
+              <p className="type-utility text-foreground-soft">
+                Account switching and new runs remain locked so a pending review is not orphaned.
+              </p>
+              <div className="mt-1.5">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    retryRestore();
+                    if (accounts.kind === "error") reloadAccounts();
+                  }}
+                >
+                  Retry restoring run
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="border-line-strong max-w-xl rounded border border-dashed px-4 py-5">
               <p className="text-sm font-semibold">Select an account to run the prospect agent</p>
               <p className="type-utility mt-1">
-                Four specialist agents research the account, score lanes against your network, and
-                draft outreach. You watch each step here and review the message before anything is
-                sent.
+                Agents research the account, score lanes against your network, draft outreach, and
+                check its quality. You watch each attempt here and review the message before
+                anything is sent.
               </p>
             </div>
           )}

@@ -117,6 +117,29 @@ def test_send_outreach_requires_a_passing_review_of_the_current_drafts() -> None
         validate_delegation("send_outreach", {}, files, messages=reviewed)
 
 
+def test_send_outreach_rejects_stale_pass_when_a_later_reviewer_omits_findings() -> None:
+    files = completed_files()
+    files[_FINDINGS] = file_data(review_findings(round_number=1, verdict="pass"))
+    messages = [
+        _task("outreach-drafter", "d1"),
+        _task("quality-reviewer", "r1"),
+        _task("outreach-drafter", "d2"),
+        _task("quality-reviewer", "r2"),
+    ]
+
+    with pytest.raises(ValueError, match="current quality review round"):
+        validate_delegation("send_outreach", {}, files, messages=messages)
+
+
+def test_send_outreach_rejects_future_review_artifact() -> None:
+    files = completed_files()
+    files[_FINDINGS] = file_data(review_findings(round_number=2, verdict="pass"))
+    messages = [_task("outreach-drafter", "d1"), _task("quality-reviewer", "r1")]
+
+    with pytest.raises(ValueError, match="current quality review round"):
+        validate_delegation("send_outreach", {}, files, messages=messages)
+
+
 @pytest.mark.parametrize(
     "after_review",
     [
@@ -153,6 +176,27 @@ def test_outreach_redraft_requires_outreach_findings_from_a_later_review() -> No
         validate_delegation("task", {"subagent_type": "outreach-drafter"}, files, messages=reviewed)
 
 
+@pytest.mark.parametrize("artifact_round", [1, 3])
+def test_outreach_redraft_rejects_stale_or_future_review_artifact(artifact_round: int) -> None:
+    files = completed_files()
+    files[_FINDINGS] = file_data(
+        review_findings(
+            round_number=artifact_round,
+            verdict="revise",
+            findings=[_outreach_finding()],
+        )
+    )
+    messages = [
+        _task("outreach-drafter", "d1"),
+        _task("quality-reviewer", "r1"),
+        _write_brief("w2"),
+        _task("quality-reviewer", "r2"),
+    ]
+
+    with pytest.raises(ValueError, match="redraft requires outreach findings"):
+        validate_delegation("task", {"subagent_type": "outreach-drafter"}, files, messages=messages)
+
+
 def test_a_fourth_review_is_refused() -> None:
     messages = [_task("quality-reviewer", f"r{index}") for index in range(3)]
 
@@ -172,6 +216,36 @@ def test_a_fourth_review_is_refused() -> None:
         messages=[*messages[:2], _task("quality-reviewer", "r2")],
         current_call_id="r2",
     )
+
+
+@pytest.mark.parametrize("subagent", ["outreach-drafter", "quality-reviewer"])
+def test_repeatable_specialists_cannot_be_delegated_twice_in_one_turn(subagent: str) -> None:
+    message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "task",
+                "args": {"subagent_type": subagent, "description": "first"},
+                "id": "first",
+                "type": "tool_call",
+            },
+            {
+                "name": "task",
+                "args": {"subagent_type": subagent, "description": "second"},
+                "id": "second",
+                "type": "tool_call",
+            },
+        ],
+    )
+
+    with pytest.raises(ValueError, match="only once per orchestration turn"):
+        validate_delegation(
+            "task",
+            {"subagent_type": subagent},
+            completed_files(),
+            messages=[message],
+            current_call_id="first",
+        )
 
 
 # --- the gate no longer judges draft content -----------------------------------------------

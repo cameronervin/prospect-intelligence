@@ -9,7 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
-from sqlalchemy import func, insert, inspect, select
+from sqlalchemy import func, insert, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -87,6 +87,25 @@ def _insert_run(store: PostgresProspectStore) -> None:
                 error=None,
                 quality_metadata={},
             )
+        )
+
+
+def _insert_run_before_steps_migration(store: PostgresProspectStore) -> None:
+    with Session(store.engine) as session, session.begin():
+        session.execute(
+            text(
+                """
+                INSERT INTO prospect_runs (
+                    id, tenant_id, rep_id, thread_id, account_id, status, stage,
+                    progress_percent, created_at, updated_at, quality_metadata
+                ) VALUES (
+                    :id, 'tenant-demo', 'rep-demo',
+                    'prospect_intelligence:v1:tenant-demo:rep-demo:run-1',
+                    'acme-foods', 'queued', 'Queued', 0, :now, :now, '{}'::jsonb
+                )
+                """
+            ),
+            {"id": RUN_ID, "now": NOW},
         )
 
 
@@ -185,4 +204,37 @@ def test_migration_keeps_newest_preference_and_downgrade_removes_constraints(
         constraint["name"] == "uq_rep_preferences_scope"
         for constraint in database_inspector.get_unique_constraints("prospect_rep_preferences")
     )
+    store.close()
+
+
+@pytest.mark.postgresql
+def test_run_steps_migration_round_trip_preserves_quality_outbox(postgres_url: str) -> None:
+    settings = Settings(database_url=SecretStr(postgres_url))
+    store = PostgresProspectStore.from_settings(settings)
+    config = Config("alembic.ini")
+    command.downgrade(config, "20260929_0002")
+    _insert_run_before_steps_migration(store)
+    event = _event(
+        QualityEventType.RUN_CREATED,
+        event_id=UUID("00000000-0000-0000-0000-000000000021"),
+    )
+    PostgresQualityEventOutbox(store).enqueue(event)
+
+    command.upgrade(config, "head")
+    assert "steps" in {
+        column["name"] for column in inspect(store.engine).get_columns("prospect_runs")
+    }
+
+    command.downgrade(config, "20260929_0002")
+    assert "steps" not in {
+        column["name"] for column in inspect(store.engine).get_columns("prospect_runs")
+    }
+    assert PostgresQualityEventOutbox(store).list_pending(10) == (event,)
+
+    command.upgrade(config, "head")
+    with Session(store.engine) as session:
+        run = session.get(ProspectRunRecord, RUN_ID)
+        assert run is not None
+        assert run.steps == []
+    assert PostgresQualityEventOutbox(store).list_pending(10) == (event,)
     store.close()

@@ -29,7 +29,8 @@ const running: RunStep[] = [
     ],
   }),
   step("lane-analyst", "Lane analysis", "pending"),
-  step("outreach-drafter", "Drafting outreach", "pending"),
+  step("outreach-drafter:1", "Drafting outreach", "pending"),
+  step("quality-reviewer:1", "Quality review", "pending"),
   step("review", "Your review", "pending"),
 ];
 
@@ -50,7 +51,8 @@ describe("AgentTracker", () => {
       "Step 2: External research, Running",
       "Step 3: Lane analysis, Pending",
       "Step 4: Drafting outreach, Pending",
-      "Step 5: Your review, Pending",
+      "Step 5: Quality review, Pending",
+      "Step 6: Your review, Pending",
     ]);
     expect(within(rows[0]!).getByText("0:06")).toBeInTheDocument();
     expect(within(rows[1]!).getByText("0:14")).toBeInTheDocument();
@@ -77,14 +79,15 @@ describe("AgentTracker", () => {
     expect(tracker.getByText("CRM account record")).toBeInTheDocument();
   });
 
-  it("shows parallel specialists running together and failed or skipped steps", () => {
+  it("shows parallel agents running together and failed or skipped steps", () => {
     render(
       <AgentTracker
         steps={[
           step("account-context", "Account context", "running", { started_at: T(0) }),
           step("external-research", "External research", "running", { started_at: T(0) }),
           step("lane-analyst", "Lane analysis", "failed", { started_at: T(1), finished_at: T(2) }),
-          step("outreach-drafter", "Drafting outreach", "skipped"),
+          step("outreach-drafter:1", "Drafting outreach", "skipped"),
+          step("quality-reviewer:1", "Quality review", "skipped"),
           step("review", "Your review", "skipped"),
         ]}
       />,
@@ -93,7 +96,7 @@ describe("AgentTracker", () => {
     const tracker = within(screen.getByRole("region", { name: "Agent progress" }));
     expect(tracker.getAllByText("Running")).toHaveLength(2);
     expect(tracker.getByText("Failed")).toBeInTheDocument();
-    expect(tracker.getAllByText("Skipped")).toHaveLength(2);
+    expect(tracker.getAllByText("Skipped")).toHaveLength(3);
   });
 
   it("keeps the ticking timer out of screen reader announcements", () => {
@@ -117,7 +120,7 @@ describe("AgentRunSummary", () => {
     );
     render(<AgentRunSummary steps={finished} />);
 
-    expect(screen.getByText("Agent run · 4 steps · 0:40")).toBeInTheDocument();
+    expect(screen.getByText("Agent run · 5 steps · 0:40")).toBeInTheDocument();
     const view = screen.getByRole("button", { name: "View steps" });
     fireEvent.click(view);
     expect(screen.getByRole("region", { name: "Agent progress" })).toBeInTheDocument();
@@ -159,6 +162,55 @@ describe("AgentTracker expansion", () => {
 });
 
 describe("AgentRunSummary outcomes", () => {
+  it("preserves every drafting and quality-review attempt in order", () => {
+    const attempts = [
+      step("account-context", "Account context", "complete", {
+        started_at: T(0),
+        finished_at: T(3),
+      }),
+      step("external-research", "External research", "complete", {
+        started_at: T(0),
+        finished_at: T(5),
+      }),
+      step("lane-analyst", "Lane analysis", "complete", {
+        started_at: T(5),
+        finished_at: T(8),
+      }),
+      step("outreach-drafter:1", "Drafting outreach", "complete", {
+        started_at: T(8),
+        finished_at: T(10),
+      }),
+      step("quality-reviewer:1", "Quality review", "complete", {
+        started_at: T(10),
+        finished_at: T(12),
+      }),
+      step("outreach-drafter:2", "Drafting outreach", "complete", {
+        started_at: T(12),
+        finished_at: T(14),
+      }),
+      step("quality-reviewer:2", "Quality review", "complete", {
+        started_at: T(14),
+        finished_at: T(16),
+      }),
+      step("review", "Your review", "running", { started_at: T(16) }),
+    ];
+    render(<AgentRunSummary steps={attempts} />);
+
+    expect(screen.getByText("Agent run · 7 steps · 0:16")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View steps" }));
+    const rows = screen.getAllByRole("listitem", { name: /^Step / });
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Step 1: Account context, Done",
+      "Step 2: External research, Done",
+      "Step 3: Lane analysis, Done",
+      "Step 4: Drafting outreach, Done",
+      "Step 5: Quality review, Done",
+      "Step 6: Drafting outreach, Done",
+      "Step 7: Quality review, Done",
+      "Step 8: Your review, Waiting on you",
+    ]);
+  });
+
   it("reports partial and failed runs honestly", () => {
     render(
       <AgentRunSummary
@@ -172,12 +224,13 @@ describe("AgentRunSummary outcomes", () => {
             finished_at: T(5),
           }),
           step("lane-analyst", "Lane analysis", "skipped"),
-          step("outreach-drafter", "Drafting outreach", "skipped"),
+          step("outreach-drafter:1", "Drafting outreach", "skipped"),
+          step("quality-reviewer:1", "Quality review", "skipped"),
           step("review", "Your review", "skipped"),
         ]}
       />,
     );
 
-    expect(screen.getByText("Agent run · 1 of 4 steps · 1 failed · 0:05")).toBeInTheDocument();
+    expect(screen.getByText("Agent run · 1 of 5 steps · 1 failed · 0:05")).toBeInTheDocument();
   });
 });

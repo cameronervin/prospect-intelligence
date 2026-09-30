@@ -58,7 +58,8 @@ def test_runs_expose_sanitized_specialist_steps_for_polling() -> None:
         "account-context",
         "external-research",
         "lane-analyst",
-        "outreach-drafter",
+        "outreach-drafter:1",
+        "quality-reviewer:1",
         "review",
     ]
     research = body["steps"][1]

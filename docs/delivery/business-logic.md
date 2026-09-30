@@ -31,12 +31,13 @@ include credentials, private customer data, raw traces, or generated result expo
   behavior from depending directly on LangSmith.
 - **Evidence:** Architecture dependency tests and feature contract tests.
 
-### 2026-09-29 — Agent workflow: four specialists with role-based models
+### 2026-09-29 — Agent workflow: five specialists with role-based models
 
 - **Decision:** Use Settings-selected GPT-5.6 Sol at medium reasoning for orchestration and GPT-5.6 Luna
-  for account context, external research, lane analysis, and outreach drafting through the OpenAI
-  Responses API. Context and research are concurrently eligible; their exact scheduling remains
-  model-directed. Analysis, brief synthesis, and drafting run after their required inputs exist.
+  for account context, external research, lane analysis, outreach drafting, and read-only quality
+  review through the OpenAI Responses API. Context and research are concurrently eligible; their
+  exact scheduling remains model-directed. Analysis, brief synthesis, drafting, and review run after
+  their required inputs exist.
   Missing model credentials fail startup rather than selecting a deterministic pipeline or a
   different model.
 - **Decision:** QuickJS programmatic tool calls are limited to read-only filesystem and domain tools.
@@ -44,7 +45,7 @@ include credentials, private customer data, raw traces, or generated result expo
   the graph records those paths in `/INDEX.md`. `send_outreach` is a named interrupt and is never
   available to QuickJS.
 - **Alternatives considered:** Six thin specialists; one dynamic worker pool; a single model for every role.
-- **Reasoning:** Four visible specialists preserve meaningful delegation and control boundaries while
+- **Reasoning:** Five visible specialists preserve meaningful delegation and control boundaries while
   keeping artifacts and evaluation trajectories understandable.
 - **Consequences:** Model construction is injected and provider-neutral, but OpenAI is the supported
   initial provider. Bootstrap owns and closes model transports separately from the shared SEC/Tavily/
@@ -58,17 +59,18 @@ include credentials, private customer data, raw traces, or generated result expo
 
 - **Decision:** This entry supersedes the outer-graph scheduling portion of the preceding agent-workflow
   decision. One root Deep Agent reads the task, manifest, and allowed rep memory and delegates through
-  `task` to exactly four explicit subagents: account context, external research, lane analysis, and
-  outreach drafting. Account and external research are concurrently eligible; middleware requires
-  both contracts before lane analysis, the analysis before the orchestrator's brief, and the brief
-  before outreach drafting. The outer LangGraph prepares durable state, invokes the root agent, and
-  finalizes the run but never calls specialists itself.
+  `task` to exactly five explicit subagents: account context, external research, lane analysis,
+  outreach drafting, and quality review. Account and external research are concurrently eligible;
+  middleware requires both contracts before lane analysis, the analysis before the orchestrator's
+  brief, the brief before outreach drafting, and both drafts before quality review. The outer
+  LangGraph prepares durable state, invokes the root agent, and finalizes the run but never calls
+  specialists itself.
 - **Decision:** Feature-owned LangChain middleware is the context-engineering boundary. It projects
   allowlisted context, enforces model/tool budgets and delegation prerequisites, treats source text
   as untrusted data, and validates role-owned artifacts. Platform trace privacy hides inputs,
-  outputs, and metadata for every nested run. Checkpointed
-  LangGraph state and non-checkpointed runtime context remain distinct. Human review is the named
-  `send_outreach` approve/edit/reject interrupt; no model reviewer or CRM mutation is present.
+  outputs, and metadata for every nested run. Checkpointed LangGraph state and non-checkpointed
+  runtime context remain distinct. The quality reviewer must pass current drafts before the named
+  `send_outreach` approve/edit/reject human interrupt; no CRM mutation is present.
 - **Decision:** Specialist tasks use isolated message mode; canonical shared files merge through the
   task result, but parent conversation and rep-memory text cannot bypass a specialist's context
   projection. Reviewed preference summaries remain product records and are materialized into the
@@ -528,18 +530,21 @@ include credentials, private customer data, raw traces, or generated result expo
 ### 2026-09-30 — Operations: sanitized run-failure logging and portable env files
 
 - **Decision:** When a run's handler raises, the worker logs `prospect_run_execution_failed` with
-  `run_id`, `worker_id`, `error_code`, and the exception class name only, never its message. Env
-  example values that contain whitespace are double-quoted, and a test checks that every example
-  parses strictly, uses known `TAKEHOME_` keys, and loads into `Settings`.
+  `run_id`, `worker_id`, `error_code`, and the exception class name only, never its message. The SEC
+  identity uses separate space-free `TAKEHOME_SEC_APP_NAME` and `TAKEHOME_SEC_CONTACT_EMAIL`
+  settings; bootstrap composes the required `<app> <email>` header in code. Env examples contain no
+  whitespace or quotes, and tests check that every example parses strictly, uses known
+  `TAKEHOME_` keys, and loads into `Settings`.
 - **Alternatives considered:** Log the exception message or traceback; rely on LangSmith traces
   alone.
 - **Reasoning:** The first live failure left no local signal; the cause could only be recovered
   from checkpoint internals. Exception text can contain model output or source data, so the class
-  name is the safe minimum. Unquoted spaced values are accepted by python-dotenv but make `uv
-  --env-file` stop parsing and silently drop later keys such as `OPENAI_API_KEY`.
+  name is the safe minimum. Spaced values accepted by python-dotenv can make `uv --env-file` stop
+  parsing and silently drop later keys such as `OPENAI_API_KEY`; composing the SEC identity in code
+  avoids parser-specific quoting behavior.
 - **Consequences:** Operators can distinguish guardrail (`ValueError`) from provider or transport
-  failures without exposing payloads. Existing local `.env` files with unquoted spaced values still
-  work in the app but should be quoted.
+  failures without exposing payloads. Existing local `.env` files must replace
+  `TAKEHOME_SEC_USER_AGENT` with the two new settings.
 - **Evidence:** `tests/unit/prospect_intelligence/test_persistence_runtime.py`,
   `tests/unit/test_settings.py::test_env_examples_are_portable_and_load_into_settings`,
   `make docker-config`.
@@ -581,13 +586,15 @@ include credentials, private customer data, raw traces, or generated result expo
     without `send_outreach`, which fails closed.
 - **Gate:** `send_outreach` requires all of the following:
   - a review happened;
+  - the findings artifact's `round` exactly matches the current quality-review delegation ordinal,
+    so an earlier pass or a future-numbered artifact cannot authorize changed drafts;
   - no brief write/edit or outreach redraft occurred after the last review, derived from the root's
     tool-call history (calls issued in the same turn as `send_outreach` do not count as a review);
   - the latest findings are `pass`;
   - every artifact data contract validates.
 
-  An outreach redraft is allowed only when the latest review is `revise` with an outreach finding
-  and no redraft has followed it.
+  An outreach redraft is allowed only when the current-round review is `revise` with an outreach
+  finding and no redraft has followed it.
 - **What changed at the gate:** the regex numeric-grounding and keyword/format outreach checks no
   longer gate `send_outreach`. Draft content is judged by the reviewer. The reviewer counts
   semantic equivalents as supported (0.8 = 80%, 582400 = $582.4K) and provenance dates are fine.
@@ -703,7 +710,8 @@ include credentials, private customer data, raw traces, or generated result expo
     decision" that resends the identical request and token. The stored retry is discarded as soon
     as the rep edits the draft, so it can never send stale text.
   - **Stale responses:** decision and refresh responses for a run that is no longer on screen are
-    dropped, and the account rail is locked while a decision is in flight.
+    dropped. The account rail and new-run action remain locked for the full `awaiting_review` state,
+    not only while a decision request is in flight, because the MVP has no run-history/resume view.
   - **Failed runs:** fixed copy is shown ("No customer-facing output was produced") instead of the
     stored error message.
 - **Decision:** Reject requires an inline confirmation ("Reject draft" / "Keep reviewing"). A
@@ -723,20 +731,25 @@ include credentials, private customer data, raw traces, or generated result expo
   - Backend router tests for score components and coverage mode.
   - Playwright desktop and Pixel 7 flow covering the `409` path.
 
-### 2026-09-30 — Live agent progress: real specialist steps for the demo
+### 2026-09-30 — Live agent progress: real specialist attempts for the demo
 
-- **Decision:** A run exposes five fixed steps: Account context, External research, Lane analysis,
-  Drafting outreach, and Your review. They come from real execution, not an estimated timeline:
+- **Decision:** A run begins with Account context, External research, Lane analysis, Drafting
+  outreach, Quality review, and Your review. They come from real execution, not an estimated
+  timeline:
   - The orchestrator's `ProgressMiddleware` records start, done or failed for every `task`
     delegation, keyed by `subagent_type`.
   - The shared source-tool boundary records each source call against the active specialist.
   - Account context and External research may show as running at the same time.
+  - Each later drafter/reviewer cycle appends another fixed-label attempt before human review, up to
+    three quality-review attempts. Retries reuse an unfinished attempt rather than duplicating it.
   - Unknown specialists and tools are ignored, not stored.
-- **Decision:** Only fixed step keys, fixed source labels (for example "SEC EDGAR filings"),
+- **Decision:** Only fixed step labels, bounded attempt keys, fixed source labels (for example
+  "SEC EDGAR filings"),
   `ok`/`unavailable` outcomes and timestamps are persisted. Each step keeps at most 12 activity
   entries. Tool arguments, results and model text never enter progress state.
-- **Decision:** While running, progress is `20 + 15 × finished specialists` percent and the stage
-  reads "{specialist} running". When analysis commits:
+- **Decision:** The percentage reflects completed agent attempts, is capped below completion while
+  work is running, and never decreases or overflows during revisions. The stage reads
+  "{specialist} running". When analysis commits:
   - Specialists that never ran are marked skipped.
   - Review opens for a fit, or is skipped for no-fit and needs-more-data.
   - A decision completes review.

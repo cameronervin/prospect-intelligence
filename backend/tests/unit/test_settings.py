@@ -24,6 +24,9 @@ def test_settings_have_safe_local_defaults(
     assert settings.model_request_timeout_seconds == 60
     assert settings.model_retry_attempts == 2
     assert settings.openai_base_url is None
+    assert settings.sec_app_name == "freight-prospect-takehome"
+    assert settings.sec_contact_email == "contact@example.invalid"
+    assert settings.sec_declared_user_agent == ("freight-prospect-takehome contact@example.invalid")
 
 
 def test_openai_base_url_is_read_from_the_application_prefix(
@@ -86,6 +89,32 @@ def test_settings_reject_invalid_model_runtime_limits(
         Settings(**{field: value})  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("sec_app_name", "freight prospect"),
+        ("sec_app_name", '"freight-prospect"'),
+        ("sec_app_name", "freight-prospect🚚"),
+        ("sec_app_name", "freight-prospect\x7f"),
+        ("sec_contact_email", "research @example.com"),
+        ("sec_contact_email", '"research@example.com"'),
+        ("sec_contact_email", "not-an-email"),
+        ("sec_contact_email", "research🚚@example.com"),
+        ("sec_contact_email", "research@example.com\x7f"),
+    ),
+)
+def test_sec_identity_tokens_reject_whitespace_quotes_and_invalid_email(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValidationError):
+        Settings(**{field: value})  # type: ignore[arg-type]
+
+
 def test_provider_managed_langsmith_environment_does_not_extend_app_settings(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -138,12 +167,15 @@ def test_env_examples_are_portable_and_load_into_settings(
             continue
         key, separator, value = line.partition("=")
         assert separator and re.fullmatch(r"[A-Z][A-Z0-9_]*", key), line
-        # uv and other strict dotenv parsers stop at unquoted whitespace and drop later keys.
-        assert not re.search(r"\s", value) or re.fullmatch(r'"[^"]*"', value), key
+        # Keep examples portable across strict dotenv and Compose parsers.
+        assert not re.search(r"\s", value), key
+        assert '"' not in value and "'" not in value, key
         if key.startswith("TAKEHOME_"):
             assert key in fields, key
 
     settings = Settings(_env_file=path)  # pyright: ignore[reportCallIssue]
 
-    assert settings.openai_base_url is None
-    assert settings.sec_user_agent == "freight-prospect-takehome contact@example.invalid"
+    assert settings.openai_base_url == "https://us.api.openai.com/v1"
+    assert settings.sec_app_name == "freight-prospect-takehome"
+    assert settings.sec_contact_email == "contact@example.invalid"
+    assert settings.sec_declared_user_agent == ("freight-prospect-takehome contact@example.invalid")

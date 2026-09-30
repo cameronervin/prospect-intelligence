@@ -77,6 +77,9 @@ test.beforeEach(async ({ page }) => {
     expect(request.headers()["x-rep-id"]).toBe("maya-chen");
     await route.fulfill({ json: run });
   });
+  await page.route("**/api/v1/prospect-runs/run-browser-1", async (route) => {
+    await route.fulfill({ json: run });
+  });
   let reviews = 0;
   await page.route("**/api/v1/prospect-runs/*/review", async (route) => {
     reviews += 1;
@@ -135,6 +138,9 @@ test("builds an evidence-backed brief and requires rep approval", async ({ page 
 
   const review = page.getByRole("region", { name: /Review the outreach to Atlas Foods/ });
   await expect(review).toBeVisible();
+  await page.reload();
+  await expect(review).toBeVisible();
+  await expect(page.getByRole("button", { name: /Atlas Foods/ })).toBeDisabled();
   await expect(page.getByRole("region", { name: "Why this account" })).toContainText("Network fit");
   await expectNoHorizontalOverflow(page);
 
@@ -174,18 +180,27 @@ type Step = {
 
 function stepsAt(phase: number): Step[] {
   const at = (s: number) => new Date(Date.UTC(2026, 8, 30, 14, 2, s)).toISOString();
-  const base: Step[] = [
+  const attempts: Step[] = [
+    { key: "outreach-drafter:1", label: "Drafting outreach", status: "pending", activity: [] },
+    { key: "quality-reviewer:1", label: "Quality review", status: "pending", activity: [] },
+  ];
+  if (phase >= 5) {
+    attempts.push(
+      { key: "outreach-drafter:2", label: "Drafting outreach", status: "pending", activity: [] },
+      { key: "quality-reviewer:2", label: "Quality review", status: "pending", activity: [] },
+    );
+  }
+  const work: Step[] = [
     { key: "account-context", label: "Account context", status: "pending", activity: [] },
     { key: "external-research", label: "External research", status: "pending", activity: [] },
     { key: "lane-analyst", label: "Lane analysis", status: "pending", activity: [] },
-    { key: "outreach-drafter", label: "Drafting outreach", status: "pending", activity: [] },
-    { key: "review", label: "Your review", status: "pending", activity: [] },
+    ...attempts,
   ];
-  return base.map((step, index) => {
-    if (index < 4 && index < phase) {
+  const steps = work.map((step, index) => {
+    if (index < phase) {
       return { ...step, status: "complete", started_at: at(index), finished_at: at(index + 5) };
     }
-    if (index < 4 && index === phase) {
+    if (index === phase) {
       return {
         ...step,
         status: "running",
@@ -193,13 +208,32 @@ function stepsAt(phase: number): Step[] {
         activity: [{ at: at(index + 1), source: "SEC EDGAR filings", outcome: "unavailable" }],
       };
     }
-    if (index === 4 && phase >= 4) return { ...step, status: "running", started_at: at(9) };
     return step;
   });
+  return [
+    ...steps,
+    {
+      key: "review",
+      label: "Your review",
+      status: phase >= work.length ? "running" : "pending",
+      started_at: phase >= work.length ? at(12) : null,
+      activity: [],
+    },
+  ];
 }
 
-test("tracks each specialist live, then hands off to review", async ({ page }) => {
-  const labels = ["Account context", "External research", "Lane analysis", "Drafting outreach"];
+test("tracks every drafting and quality-review attempt, then hands off to review", async ({
+  page,
+}) => {
+  const labels = [
+    "Account context",
+    "External research",
+    "Lane analysis",
+    "Drafting outreach",
+    "Quality review",
+    "Drafting outreach",
+    "Quality review",
+  ];
   let phase = 0;
   await page.route("**/api/v1/prospect-runs", async (route) => {
     await route.fulfill({
@@ -219,19 +253,19 @@ test("tracks each specialist live, then hands off to review", async ({ page }) =
   await page.route("**/api/v1/prospect-runs/run-browser-1", async (route) => {
     await route.fulfill({
       json:
-        phase < 4
+        phase < 7
           ? {
               ...run,
               status: "running",
               stage: `${labels[phase]} running`,
-              progress_percent: 20 + 15 * phase,
+              progress_percent: 20 + 10 * phase,
               verdict: null,
               brief: null,
               outreach: null,
               pending_review: null,
               steps: stepsAt(phase),
             }
-          : { ...run, steps: stepsAt(4) },
+          : { ...run, steps: stepsAt(7) },
     });
   });
 
@@ -253,13 +287,28 @@ test("tracks each specialist live, then hands off to review", async ({ page }) =
 
   phase = 4;
   await expect(
+    tracker.getByRole("listitem", { name: /Step 5: Quality review, Running/ }),
+  ).toBeVisible();
+  await expect(tracker.getByText("Drafting outreach")).toHaveCount(1);
+
+  phase = 5;
+  await expect(
+    tracker.getByRole("listitem", { name: /Step 6: Drafting outreach, Running/ }),
+  ).toBeVisible();
+  await expect(tracker.getByText("Drafting outreach")).toHaveCount(2);
+  await expect(tracker.getByText("Quality review")).toHaveCount(2);
+
+  phase = 7;
+  await expect(
     page.getByRole("region", { name: /Review the outreach to Atlas Foods/ }),
   ).toBeVisible();
   await expect(tracker).toBeHidden();
-  await expect(page.getByText(/Agent run · 4 steps/)).toBeVisible();
+  await expect(page.getByText(/Agent run · 7 steps/)).toBeVisible();
   await page.getByRole("button", { name: "View steps" }).click();
   await expect(
-    page.getByRole("listitem", { name: /Step 5: Your review, Waiting on you/ }),
+    page.getByRole("listitem", { name: /Step 8: Your review, Waiting on you/ }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: /Atlas Foods/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
   await expectNoHorizontalOverflow(page);
 });

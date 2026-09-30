@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createProspectClient, ProspectApiError } from "@/lib/prospect-api";
 
+const reviewBrief = {
+  summary: "A supported lane fit.",
+  recommended_next_step: "Discuss the lane.",
+  recommended_next_step_code: "new_lane_pitch",
+  modeled_annual_revenue: 1000,
+  deadhead_miles_avoided: 100,
+  lanes: [],
+};
+
 describe("prospect API boundary", () => {
   it("sends the synthetic identity headers when a run is created", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
@@ -72,6 +81,7 @@ describe("prospect API boundary", () => {
         progress_percent: 100,
         source_coverage: [],
         verdict: "fit",
+        brief: reviewBrief,
         outreach: { subject: "Freight conversation", body: "Could we discuss your freight needs?" },
         pending_review: {
           name: "send_outreach",
@@ -101,8 +111,33 @@ describe("prospect API boundary", () => {
         progress_percent: 100,
         source_coverage: [],
         verdict: "fit",
+        brief: reviewBrief,
         outreach: { subject: "Freight conversation", body: "Could we discuss your freight needs?" },
         pending_review: null,
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
+  });
+
+  it("rejects a durable review capability without its renderable brief and outreach", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "awaiting_review",
+        stage: "Ready for review",
+        progress_percent: 100,
+        source_coverage: [],
+        verdict: "fit",
+        brief: null,
+        outreach: null,
+        pending_review: {
+          name: "send_outreach",
+          allowed_decisions: ["approve", "edit", "reject"],
+          tool_call_id: "review-run-1",
+        },
       }),
     );
     const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
@@ -201,6 +236,154 @@ describe("prospect API boundary", () => {
       density: 0.6,
       equipment_match: 0.6,
     });
+  });
+
+  it("parses repeated drafting and quality-review attempts as actual history", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "awaiting_review",
+        stage: "Ready for review",
+        progress_percent: 100,
+        source_coverage: [],
+        verdict: "fit",
+        brief: reviewBrief,
+        outreach: { subject: "Freight conversation", body: "Could we discuss freight needs?" },
+        pending_review: {
+          name: "send_outreach",
+          allowed_decisions: ["approve", "edit", "reject"],
+          tool_call_id: "review-run-1",
+        },
+        steps: [
+          {
+            key: "outreach-drafter:1",
+            label: "Drafting outreach",
+            status: "complete",
+            activity: [],
+          },
+          {
+            key: "quality-reviewer:1",
+            label: "Quality review",
+            status: "complete",
+            activity: [],
+          },
+          {
+            key: "outreach-drafter:2",
+            label: "Drafting outreach",
+            status: "complete",
+            activity: [],
+          },
+          {
+            key: "quality-reviewer:2",
+            label: "Quality review",
+            status: "complete",
+            activity: [],
+          },
+          {
+            key: "outreach-drafter:3",
+            label: "Drafting outreach",
+            status: "complete",
+            activity: [],
+          },
+          {
+            key: "quality-reviewer:3",
+            label: "Quality review",
+            status: "complete",
+            activity: [],
+          },
+          { key: "review", label: "Your review", status: "running", activity: [] },
+        ],
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    const response = await client.getRun("run-1");
+
+    expect(response.steps?.map(({ key, label }) => [key, label])).toEqual([
+      ["outreach-drafter:1", "Drafting outreach"],
+      ["quality-reviewer:1", "Quality review"],
+      ["outreach-drafter:2", "Drafting outreach"],
+      ["quality-reviewer:2", "Quality review"],
+      ["outreach-drafter:3", "Drafting outreach"],
+      ["quality-reviewer:3", "Quality review"],
+      ["review", "Your review"],
+    ]);
+  });
+
+  it("rejects progress attempts whose fixed label could expose internal content", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "running",
+        stage: "Reviewing",
+        progress_percent: 80,
+        source_coverage: [],
+        steps: [
+          {
+            key: "quality-reviewer:1",
+            label: "Revise the unsupported revenue claim",
+            status: "running",
+            activity: [],
+          },
+        ],
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
+  });
+
+  it("rejects unknown progress keys at the API boundary", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "running",
+        stage: "Reviewing",
+        progress_percent: 80,
+        source_coverage: [],
+        steps: [
+          {
+            key: "quality-reviewer:4",
+            label: "Quality review",
+            status: "running",
+            activity: [],
+          },
+        ],
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
+  });
+
+  it.each([
+    [{ at: "not-a-date", source: "SEC EDGAR filings", outcome: "ok" }],
+    [{ at: "2026-09-30T14:02:02Z", source: "Raw prompt content", outcome: "ok" }],
+  ])("rejects unsafe or malformed progress activity", async (activity) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "running",
+        stage: "Researching",
+        progress_percent: 20,
+        source_coverage: [],
+        steps: [
+          {
+            key: "external-research",
+            label: "External research",
+            status: "running",
+            activity,
+          },
+        ],
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
 
   it("rejects an unknown source coverage mode at the boundary", async () => {

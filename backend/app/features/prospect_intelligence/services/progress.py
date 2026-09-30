@@ -50,7 +50,7 @@ class RunProgressRecorder:
         updated = replace(
             run,
             stage=running_stage(steps),
-            progress_percent=progress_percent(steps),
+            progress_percent=max(run.progress_percent, progress_percent(steps)),
             steps=steps,
             updated_at=self.clock(),
         )
@@ -69,7 +69,7 @@ class RunProgressRecorder:
                     run,
                     steps=steps,
                     stage=running_stage(steps),
-                    progress_percent=progress_percent(steps),
+                    progress_percent=max(run.progress_percent, progress_percent(steps)),
                     updated_at=self.clock(),
                 ),
                 claim_token,

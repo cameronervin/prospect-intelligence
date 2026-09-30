@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ProspectWorkspace } from "@/components/prospect-workspace";
+import {
+  ACTIVE_RUN_STORAGE_KEY,
+  ProspectWorkspace,
+} from "@/components/prospect-workspace";
 import { ProspectApiError, type ProspectClient, type ProspectRun } from "@/lib/prospect-api";
 
 const account = {
@@ -10,6 +13,14 @@ const account = {
   relationship: "Prospect" as const,
   industry: "Food distribution",
   location: "Dallas, TX",
+};
+
+const secondAccount = {
+  id: "harbor-goods",
+  name: "Harbor Goods",
+  relationship: "Prospect" as const,
+  industry: "Retail",
+  location: "Memphis, TN",
 };
 
 const runningRun: ProspectRun = {
@@ -142,6 +153,7 @@ async function reviewCheckpoint() {
 
 afterEach(() => {
   vi.useRealTimers();
+  window.sessionStorage.clear();
 });
 
 describe("ProspectWorkspace account selection and progress", () => {
@@ -300,6 +312,58 @@ describe("ProspectWorkspace brief and evidence", () => {
 });
 
 describe("ProspectWorkspace outreach review", () => {
+  it("restores and locks a pending review after a browser reload", async () => {
+    window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, reviewRun.id);
+    const api = client({ getRun: vi.fn().mockResolvedValue(reviewRun) });
+
+    render(<ProspectWorkspace client={api} pollIntervalMs={1} />);
+
+    expect(
+      await screen.findByRole("region", { name: /Review the outreach to Atlas Foods/ }),
+    ).toBeInTheDocument();
+    expect(api.getRun).toHaveBeenCalledWith(reviewRun.id);
+    expect(screen.getByRole("button", { name: /Atlas Foods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+  });
+
+  it("keeps account, reload, and new-run controls locked until review reaches a terminal result", async () => {
+    let resolve: (run: ProspectRun) => void = () => undefined;
+    const api = client({
+      listAccounts: vi.fn().mockResolvedValue([account, secondAccount]),
+      reviewRun: vi.fn(
+        () =>
+          new Promise<ProspectRun>((done) => {
+            resolve = done;
+          }),
+      ),
+    });
+    await startBrief(api);
+    const review = await reviewCheckpoint();
+
+    expect(screen.getByRole("button", { name: /Atlas Foods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Harbor Goods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
+
+    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    expect(screen.getByRole("button", { name: /Harbor Goods/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
+
+    await act(async () => {
+      resolve({
+        ...reviewRun,
+        status: "completed",
+        stage: "Simulated send complete",
+        pending_review: null,
+      });
+    });
+
+    expect(await screen.findByRole("button", { name: /Harbor Goods/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reload accounts" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeEnabled();
+  });
+
   it("keeps internal-only details out of the outreach editor", async () => {
     await startBrief(client());
     const review = await reviewCheckpoint();
@@ -586,7 +650,8 @@ describe("ProspectWorkspace agent progress", () => {
       ],
     },
     { key: "lane-analyst", label: "Lane analysis", status: "pending", activity: [] },
-    { key: "outreach-drafter", label: "Drafting outreach", status: "pending", activity: [] },
+    { key: "outreach-drafter:1", label: "Drafting outreach", status: "pending", activity: [] },
+    { key: "quality-reviewer:1", label: "Quality review", status: "pending", activity: [] },
     { key: "review", label: "Your review", status: "pending", activity: [] },
   ];
 
@@ -601,7 +666,7 @@ describe("ProspectWorkspace agent progress", () => {
     expect(await screen.findByRole("button", { name: /Atlas Foods/ })).toBeInTheDocument();
   });
 
-  it("tracks specialists live and collapses the tracker once review opens", async () => {
+  it("tracks agents live and collapses the tracker once review opens", async () => {
     const tracked = { ...runningRun, stage: "External research running", steps: trackedSteps };
     const getRun = vi
       .fn()
@@ -630,6 +695,6 @@ describe("ProspectWorkspace agent progress", () => {
 
     await reviewCheckpoint();
     expect(screen.queryByRole("region", { name: "Agent progress" })).not.toBeInTheDocument();
-    expect(screen.getByText("Agent run · 4 steps · 0:40")).toBeInTheDocument();
+    expect(screen.getByText("Agent run · 5 steps · 0:40")).toBeInTheDocument();
   });
 });

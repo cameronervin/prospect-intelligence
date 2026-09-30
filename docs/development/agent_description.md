@@ -139,7 +139,7 @@ on rep edits. LangGraph state contains checkpointed workflow data only, while
 tenant, rep, source handlers, and other request-scoped dependencies use runtime context.
 Platform trace privacy hides all run inputs, outputs, and metadata by default.
 
-The code layout keeps those concepts visible as `chains.py`, `prompts.py`, `specs.py`, `graphs.py`,
+The code layout keeps those concepts visible as `chains.py`, `prompts/`, `specs.py`, `graphs.py`,
 `compiler.py`, `state.py`, `tools.py`, `guardrails.py`, `runtime.py`, and `context.py`.
 `middleware/` and SDK-formatted `skills/` remain directories. `ProspectRuntimeContext` stays in the
 feature contracts, while `agents/context.py` exposes it to the main graph and compiled subagents
@@ -352,7 +352,7 @@ Jev operating rules:
 
 **Reviewable MVP in this repository**
 
-- Compiled orchestrator plus four specialists, middleware-enforced filesystem contract, and a
+- Compiled orchestrator plus five specialists, middleware-enforced filesystem contract, and a
   role-scoped `lane_fit_v1` skill.
 - Durable HITL on outreach with no direct review fallback.
 - Deterministic CRM, GenLogs-shaped, and network sources; packaged FAF data; optional live SEC,

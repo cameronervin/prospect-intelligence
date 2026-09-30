@@ -59,7 +59,7 @@ def build_source_bundle(
         sec=SecEdgarSource(
             client=source_http_transport,
             live_enabled=settings.external_live_enabled,
-            user_agent=settings.sec_user_agent,
+            user_agent=settings.sec_declared_user_agent,
             timeout_seconds=timeout,
             retry_attempts=retries,
         ),

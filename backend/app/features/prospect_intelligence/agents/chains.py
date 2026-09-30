@@ -1,4 +1,4 @@
-"""Create four specialist chains and the root orchestrator Deep Agent."""
+"""Create five specialist chains and the root orchestrator Deep Agent."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass

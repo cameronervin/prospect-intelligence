@@ -100,3 +100,8 @@ those tables intentionally survive the feature downgrade. The in-process Postgre
 for the local MVP, not horizontally scaled production delivery. Review serialization is likewise
 process-local; a multi-replica deployment needs a durable reservation spanning graph resume and the
 product-state commit before it can safely accept concurrent review decisions.
+
+The integrated `20260930_0001` migration is based on `20260929_0002`. A disposable development
+database stamped by the unmerged CAM-35 branch's earlier migration ancestry must be recreated before
+running this history; retained or production data must not be reset to reconcile unpublished branch
+history.

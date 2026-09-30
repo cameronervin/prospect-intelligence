@@ -85,7 +85,11 @@ def validate_delegation(
 ) -> None:
     history = review_history(messages, current_call_id=current_call_id)
     if tool_name == "task":
-        _validate_task(arguments.get("subagent_type"), files, history)
+        subagent = arguments.get("subagent_type")
+        _reject_parallel_repeatable_delegation(
+            subagent, messages=messages, current_call_id=current_call_id
+        )
+        _validate_task(subagent, files, history)
     elif tool_name == "send_outreach":
         if history.reviews == 0:
             raise ValueError("send_outreach requires a quality review of the drafts")
@@ -94,7 +98,32 @@ def validate_delegation(
         review = _latest_review(files)
         if review is None or review.verdict is not ReviewVerdict.PASS:
             raise ValueError("send_outreach requires a passing quality review")
+        if review.round != history.reviews:
+            raise ValueError(
+                "send_outreach requires findings from the current quality review round"
+            )
         validate_workflow_artifacts(files, allowed_memory_path=allowed_memory_path)
+
+
+def _reject_parallel_repeatable_delegation(
+    subagent: object,
+    *,
+    messages: Sequence[object],
+    current_call_id: str | None,
+) -> None:
+    """Keep attempt ordinals unambiguous when the model emits parallel task calls."""
+
+    if subagent not in {"outreach-drafter", "quality-reviewer"} or current_call_id is None:
+        return
+    for message in messages:
+        if not isinstance(message, AIMessage):
+            continue
+        if not any(call["id"] == current_call_id for call in message.tool_calls):
+            continue
+        same_role = sum(_subagent(call) == subagent for call in message.tool_calls)
+        if same_role > 1:
+            raise ValueError(f"{subagent} may be delegated only once per orchestration turn")
+        return
 
 
 def _validate_task(subagent: object, files: Mapping[str, FileData], history: ReviewHistory) -> None:
@@ -128,6 +157,7 @@ def _outreach_revision_requested(files: Mapping[str, FileData], history: ReviewH
         history.reviews > 0
         and not history.outreach_drafted_since_review
         and review is not None
+        and review.round == history.reviews
         and review.verdict is ReviewVerdict.REVISE
         and any(finding.file == "outreach" for finding in review.findings)
     )

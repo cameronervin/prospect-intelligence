@@ -11,8 +11,8 @@ for repeated scanning and review. The visual grammar should draw from route mani
 work rather than a generic SaaS marketing page:
 
 - compact, left-aligned hierarchy that exposes the working experience in the first viewport;
-- flat true-white and cool-neutral surfaces, graphite text, thin dividers, and one restrained safety
-  accent rather than decorative gradients or glows;
+- warm manifest-paper and freight-green surfaces, thin dividers, and a restrained rust safety
+  accent, with subtle route-grid texture rather than decorative application chrome;
 - small semantic radii, with pill geometry reserved for genuine status values;
 - dense account, lane, evidence, and coverage rows instead of nested or repeated cards;
 - explicit display, body, utility, and tabular-number typography roles;
@@ -79,9 +79,9 @@ expanded full-stack browser coverage after that direction is accepted.
   receipt, neutral outcomes and progress take the same top slot. The first design had a third,
   narrow review column; user review found the call to action unclear, so it was replaced.
 - **System:** tokens live in `frontend/src/app/globals.css`:
-  - white and `#f4f6f8` surfaces, graphite text, thin `#e1e5ea` dividers;
+  - warm `#f2f0e9` and `#e8e4da` surfaces, freight-green text, thin neutral dividers;
   - separate ready, degraded and danger colors;
-  - one safety accent (`#c2410c`), used only on the review frame and its primary action.
+  - one rust safety accent (`#b34725`), strongest on the review frame and its primary action.
 - **Type roles:** self-hosted Archivo provides the `type-display`, `type-title`, `type-lead`,
   `type-section`, `type-body`, `type-utility` and `type-figure` roles. Tabular numerals are used for
   every figure.
@@ -92,4 +92,3 @@ expanded full-stack browser coverage after that direction is accepted.
   sources are always visible.
 - **Reference:** the design canvas used for review (system, desktop, states and mobile boards) is a
   private claude.ai artifact. It is not a committed baseline; CAM-37 owns visual baselines.
-

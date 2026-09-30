@@ -19,13 +19,14 @@ business behavior.
 
 ## Decision
 
-- The prospect feature keeps explicit flat modules for `chains`, `prompts`, `specs`, `graphs`,
+- The prospect feature keeps explicit modules for `chains`, `prompts/`, `specs`, `graphs`,
   `compiler`, `state`, `tools`, `guardrails`, `runtime`, and `context`. Only `middleware/` and
   SDK-formatted `skills/` remain nested multi-file boundaries. The compiler is the sole composition
   entry point and compiles the complete runtime once after persistence starts.
-- A root Deep Agent owns delegation to exactly four explicit subagents: account context, external
-  research, lane analysis, and outreach drafting. The outer LangGraph prepares the run, invokes the
-  root agent, and finalizes it; it never schedules those specialists itself.
+- A root Deep Agent owns delegation to exactly five explicit subagents: account context, external
+  research, lane analysis, outreach drafting, and read-only quality review. The outer LangGraph
+  prepares the run, invokes the root agent, and finalizes it; it never schedules those specialists
+  itself.
 - Agent middleware projects context, enforces budgets and delegation prerequisites, guards tool
   calls, and validates specialist artifacts. Platform trace privacy hides nested run payloads and
   metadata. Pure guardrail functions remain reusable at graph and persistence
@@ -38,10 +39,11 @@ business behavior.
   and the typed runtime.
 - The packaged `lane_fit_v1` skill is mounted read-only at `/skills/` and supplied only to the lane
   analyst. No other specialist can discover or read it.
-- Human review is the named `send_outreach` interrupt. There is no model reviewer. The runtime owns
-  execute, checkpoint inspection, and `Command(resume=...)` adaptation for approve, edit, and reject.
-  Review never falls back to direct service mutation; an unavailable graph review handler produces a
-  retryable `503 service_unavailable` response.
+- The quality reviewer checks the internal brief and outreach against evidence before the named
+  `send_outreach` human interrupt. The runtime owns execute, checkpoint inspection, and
+  `Command(resume=...)` adaptation for approve, edit, and reject. Human review never falls back to
+  direct service mutation; an unavailable graph review handler produces a retryable
+  `503 service_unavailable` response.
 - `platform/llm` owns OpenAI Responses clients and HTTP transports. Bootstrap constructs platform
   resources and calls the feature compiler but contains no prospect-agent implementation.
 - `app/main.py` owns the FastAPI factory and ASGI entrypoint. Bootstrap groups the prospect runtime,

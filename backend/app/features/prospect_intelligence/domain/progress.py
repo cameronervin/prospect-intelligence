@@ -10,6 +10,7 @@ from datetime import datetime
 
 from ..contracts.models import FitVerdict, RunStatus
 from ..contracts.progress import RunStep, RunStepStatus, StepActivity, StepActivityOutcome
+from ..contracts.review import MAX_REVIEW_ROUNDS
 
 MAX_STEP_ACTIVITY = 12
 REVIEW_STEP_KEY = "review"
@@ -18,9 +19,14 @@ AGENT_STEPS: tuple[tuple[str, str], ...] = (
     ("account-context", "Account context"),
     ("external-research", "External research"),
     ("lane-analyst", "Lane analysis"),
-    ("outreach-drafter", "Drafting outreach"),
+    ("outreach-drafter:1", "Drafting outreach"),
+    ("quality-reviewer:1", "Quality review"),
 )
 _STEP_LABELS = dict(AGENT_STEPS)
+_REPEATED_STEP_LABELS = {
+    "outreach-drafter": "Drafting outreach",
+    "quality-reviewer": "Quality review",
+}
 
 SOURCE_LABELS: dict[str, str] = {
     "get_crm_account": "CRM account record",
@@ -78,12 +84,42 @@ def _update(
     return tuple(change(step) if step.key == key else step for step in steps)
 
 
+def _step_label(key: str) -> str | None:
+    if key in _STEP_LABELS:
+        return _STEP_LABELS[key]
+    role, separator, raw_attempt = key.partition(":")
+    if separator and role in _REPEATED_STEP_LABELS:
+        try:
+            attempt = int(raw_attempt)
+        except ValueError:
+            return None
+        if 1 <= attempt <= MAX_REVIEW_ROUNDS:
+            return _REPEATED_STEP_LABELS[role]
+    return None
+
+
+def _ensure_attempt_step(steps: tuple[RunStep, ...], key: str) -> tuple[RunStep, ...]:
+    """Append a known repeated attempt immediately before the human-review boundary."""
+
+    if not steps or any(step.key == key for step in steps):
+        return steps
+    label = _step_label(key)
+    if label is None:
+        return steps
+    new_step = RunStep(key=key, label=label, status=RunStepStatus.PENDING)
+    review_index = next(
+        (index for index, step in enumerate(steps) if step.key == REVIEW_STEP_KEY), len(steps)
+    )
+    return (*steps[:review_index], new_step, *steps[review_index:])
+
+
 def apply_progress_event(steps: tuple[RunStep, ...], event: ProgressEvent) -> tuple[RunStep, ...]:
     """Apply one event; unknown specialists and tools are ignored rather than stored."""
 
     if isinstance(event, StepStarted):
-        if event.key not in _STEP_LABELS:
+        if _step_label(event.key) is None:
             return steps
+        steps = _ensure_attempt_step(steps, event.key)
         return _update(
             steps,
             event.key,
@@ -92,8 +128,9 @@ def apply_progress_event(steps: tuple[RunStep, ...], event: ProgressEvent) -> tu
             ),
         )
     if isinstance(event, StepFinished):
-        if event.key not in _STEP_LABELS:
+        if _step_label(event.key) is None:
             return steps
+        steps = _ensure_attempt_step(steps, event.key)
         status = RunStepStatus.FAILED if event.failed else RunStepStatus.COMPLETE
         return _update(
             steps,
@@ -106,7 +143,7 @@ def apply_progress_event(steps: tuple[RunStep, ...], event: ProgressEvent) -> tu
             ),
         )
     label = SOURCE_LABELS.get(event.tool_name)
-    if label is None or event.step_key not in _STEP_LABELS:
+    if label is None or _step_label(event.step_key) is None:
         return steps
     activity = StepActivity(
         at=event.at,
@@ -138,7 +175,7 @@ def progress_percent(steps: tuple[RunStep, ...]) -> int:
         if step.key != REVIEW_STEP_KEY
         and step.status in {RunStepStatus.COMPLETE, RunStepStatus.FAILED}
     )
-    return _BASE_PERCENT + _PERCENT_PER_STEP * finished
+    return min(95, _BASE_PERCENT + _PERCENT_PER_STEP * finished)
 
 
 def finish_analysis(

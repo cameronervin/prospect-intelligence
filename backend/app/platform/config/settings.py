@@ -52,10 +52,17 @@ class Settings(BaseSettings):
     external_live_enabled: bool = False
     external_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
     external_retry_attempts: int = Field(default=2, ge=0, le=5)
-    sec_user_agent: str = Field(
-        default="freight-prospect-takehome contact@example.invalid",
-        min_length=8,
-        max_length=256,
+    sec_app_name: str = Field(
+        default="freight-prospect-takehome",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[^\s\"']+$",
+    )
+    sec_contact_email: str = Field(
+        default="contact@example.invalid",
+        min_length=3,
+        max_length=254,
+        pattern=r"^[^@\s\"']+@[^@\s\"']+\.[^@\s\"']+$",
     )
     openai_api_key: SecretStr | None = Field(
         default=None,
@@ -96,3 +103,20 @@ class Settings(BaseSettings):
         ):
             raise ValueError("openai_base_url must be a credential-free https URL")
         return parts.geturl().rstrip("/")
+
+    @field_validator("sec_app_name", "sec_contact_email")
+    @classmethod
+    def _validate_sec_header_token(cls, value: str) -> str:
+        """Reject values that cannot be serialized safely as an HTTP header."""
+
+        if not value.isascii() or any(
+            ord(character) < 33 or ord(character) > 126 for character in value
+        ):
+            raise ValueError("SEC identity tokens must contain visible ASCII characters only")
+        return value
+
+    @property
+    def sec_declared_user_agent(self) -> str:
+        """Compose the SEC-declared identity from individually portable environment tokens."""
+
+        return f"{self.sec_app_name} {self.sec_contact_email}"

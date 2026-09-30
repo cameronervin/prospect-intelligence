@@ -152,7 +152,7 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
   );
 }
 
-/** Live specialist progress: which agent is working and what it has looked at so far. */
+/** Live agent progress: which attempt is running and what it has looked at so far. */
 export function AgentTracker({ steps }: Readonly<{ steps: RunStep[] }>) {
   const headingId = useId();
   const now = useNow(steps.some((step) => step.status === "running"));
@@ -166,7 +166,7 @@ export function AgentTracker({ steps }: Readonly<{ steps: RunStep[] }>) {
           Agent progress
         </h2>
         <p className="type-utility">
-          The orchestrator delegates to four specialists, then pauses for your review.
+          The orchestrator records each agent attempt, then pauses for your review.
         </p>
       </div>
       <ol>
