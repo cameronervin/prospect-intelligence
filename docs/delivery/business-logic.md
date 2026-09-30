@@ -615,7 +615,10 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Evidence:** `tests/unit/prospect_intelligence/test_quality_review.py` (contract, ordering,
   freshness, round cap, and compiled revise-then-pass and exhausted trajectories),
   `test_specialist_artifact_contract.py` (prompt structure, path drift, shared template),
-  `tests/unit/evaluation/test_trajectory.py`.
+  `tests/unit/evaluation/test_trajectory.py`. Live: `acme-foods` run `9c58a67e` (commit `387e958`)
+  reached `awaiting_review` (`fit`, top lane PHX→LAX, route-template outreach) after one review
+  round with no findings; the brief matched the template and `lane_fit.json` figures. This is a
+  single live run, not a LangSmith experiment, and it did not exercise a revise round.
 
 ### 2026-09-30 — Deferred: Jev (System One) runtime guardrail before rep review
 
