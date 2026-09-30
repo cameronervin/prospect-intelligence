@@ -10,12 +10,14 @@ from .policy import (
     ToolVisibilityMiddleware,
     validate_delegation,
 )
+from .progress import ProgressMiddleware
 
 __all__ = [
     "ArtifactValidationMiddleware",
     "ContextProjectionMiddleware",
     "DelegationPolicyMiddleware",
     "ModelToolBudgetMiddleware",
+    "ProgressMiddleware",
     "SafeToolErrorMiddleware",
     "ToolVisibilityMiddleware",
     "middleware_for_agent",

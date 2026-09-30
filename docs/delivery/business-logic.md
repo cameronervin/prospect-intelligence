@@ -358,3 +358,131 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Reasoning:** Explicit source modes preserve user trust and make degraded evidence visible, while
   narrow replaceable contracts allow post-MVP private integrations without changing agent behavior.
 - **Evidence:** CAM-30 contract, adapter, retry, cache-isolation, provenance, and redaction tests.
+
+### 2026-09-29 — Review console: operational-first workspace and disclosure rules
+
+- **Decision:** The product is presented as **Prospect Intelligence**. The workspace opens directly
+  in the first viewport, with an accounts rail and a single decision-first workspace.
+- **Decision:** While outreach awaits review, the review is the page's primary task and comes
+  first:
+  - The status reads "Awaiting your review".
+  - One accent-framed checkpoint ("Review the outreach to {account}") holds the subject/body
+    editor and large Approve / Reject actions.
+  - A "Why this account" rationale sits beside the editor: verdict, action, modeled totals and the
+    lead lane, with a link to the evidence.
+  - Lanes, model assumptions and sources follow under "Supporting evidence".
+
+  The outcome receipt, neutral outcomes and progress take the same top slot. "Run prospect agent"
+  (formerly "Build brief") becomes
+  a secondary action once a brief is on screen.
+
+  The marketing hero and the invented "Northstar" brand are removed, since that name collided with
+  the Northstar Retail demo account.
+- **Decision:** The brief leads with the fit verdict, then the recommended action (label plus the
+  backend's readable text), then the summary. Modeled revenue and modeled deadhead avoided come
+  next, labeled "Modeled … / yr" and paired with an "Internal model · Model assumptions"
+  disclosure. That disclosure states they are internal estimates, not booked revenue, and gives
+  the revenue, deadhead and `lane_fit_v1` formulas. Totals are shown compactly (for example
+  `$1.25M`); exact values stay in the element title and in each lane row.
+- **Decision:** The API adds two fields:
+  - Lane score components (`backhaul_fill`, `density`, `equipment_match`), so the UI can show why a
+    lane scored as it did.
+  - An optional coverage `mode` (`live | snapshot | fixture`), stamped by each source adapter and
+    persisted with the analysis.
+
+  Both changes are additive; older persisted rows decode with `mode = null`, shown as "Mode not
+  reported". Mode labels are Live, Snapshot and Synthetic fixture.
+- **Decision:** Degraded and unavailable sources are always listed with their mode and detail.
+  Complete sources collapse behind "Show all N sources". Each evidence item shows:
+  - its claim;
+  - the source, mode and UTC retrieval date;
+  - its version, location and artifact.
+
+  The brief is dated by its most recent evidence retrieval.
+- **Decision:** `no_fit` and `needs_more_data` are neutral outcomes:
+  - neutral pills, including the run's Completed pill;
+  - no alert;
+  - no editor;
+  - "No outreach was drafted for this outcome."
+- **Decision:** Polling runs every 1.2 s while a run is queued or running and stops at review or
+  terminal states. A failed poll retries up to 3 times with exponential backoff (2.4 s, 4.8 s,
+  9.6 s). After that, updates pause with an announced alert and a manual "Resume updates"; research
+  continues on the server. Progress is announced through one polite live region.
+- **Decision:** The outreach editor holds only the customer-facing subject and body. Scores,
+  modeled figures, sources and evidence never appear in the review column. The primary action
+  reads "Approve simulated send" for an unchanged draft and "Submit edit" once the draft differs.
+  All review buttons are disabled while a decision is in flight, and duplicate submissions are
+  ignored.
+- **Decision:** Review failures are announced inline with `role="alert"` inside the checkpoint,
+  the draft is always preserved, and server messages are never rendered verbatim:
+  - **`409` on an edit:** "This edit can't be sent". Focus moves to Subject, with "Restore original
+    draft" and "Refresh run". The backend uses one `conflict` code for unsafe copy and for a run
+    already decided elsewhere, so both recoveries are offered.
+  - **`409` on approve or reject:** "This run already has a different decision", with a focused
+    "Refresh run".
+  - **`422` on an edit:** "Check the subject and message", with focus on Subject. A `422` on any
+    other decision asks for a refresh.
+  - **`404`:** "This run is no longer available". The alert takes focus and the checkpoint locks.
+  - **`503` or an unreachable backend:** "Your decision wasn't recorded", with a focused "Retry
+    decision" that resends the identical request and token. The stored retry is discarded as soon
+    as the rep edits the draft, so it can never send stale text.
+  - **Stale responses:** decision and refresh responses for a run that is no longer on screen are
+    dropped, and the account rail is locked while a decision is in flight.
+  - **Failed runs:** fixed copy is shown ("No customer-facing output was produced") instead of the
+    stored error message.
+- **Decision:** Reject requires an inline confirmation ("Reject draft" / "Keep reviewing"). A
+  successful decision moves focus to the outcome heading:
+  - "Simulated send recorded … No real email or CRM write occurred."
+  - "Draft rejected. No message was sent."
+- **Decision:** The same-origin proxy returns the typed retryable `service_unavailable` envelope
+  when the backend is unreachable, so the UI treats it like any other retryable 503. It rejects `.`
+  and `..` path segments with a typed `400`, so requests cannot escape the backend's `/api/v1`
+  surface. It never sends a body for GET or HEAD.
+- **Decision:** Server and provider text is rendered only as React text nodes, never as HTML.
+- **Reasoning:** Reps must be able to trust and verify each number quickly without scanning a wall
+  of text, and approval is the safety boundary, so it gets the only accent and explicit failure
+  recovery.
+- **Evidence:**
+  - CAM-35/CAM-36 Vitest component and boundary tests, plus the proxy test.
+  - Backend router tests for score components and coverage mode.
+  - Playwright desktop and Pixel 7 flow covering the `409` path.
+
+### 2026-09-30 — Live agent progress: real specialist steps for the demo
+
+- **Decision:** A run exposes five fixed steps: Account context, External research, Lane analysis,
+  Drafting outreach, and Your review. They come from real execution, not an estimated timeline:
+  - The orchestrator's `ProgressMiddleware` records start, done or failed for every `task`
+    delegation, keyed by `subagent_type`.
+  - The shared source-tool boundary records each source call against the active specialist.
+  - Account context and External research may show as running at the same time.
+  - Unknown specialists and tools are ignored, not stored.
+- **Decision:** Only fixed step keys, fixed source labels (for example "SEC EDGAR filings"),
+  `ok`/`unavailable` outcomes and timestamps are persisted. Each step keeps at most 12 activity
+  entries. Tool arguments, results and model text never enter progress state.
+- **Decision:** While running, progress is `20 + 15 × finished specialists` percent and the stage
+  reads "{specialist} running". When analysis commits:
+  - Specialists that never ran are marked skipped.
+  - Review opens for a fit, or is skipped for no-fit and needs-more-data.
+  - A decision completes review.
+  - A terminal job failure marks the running step failed and the rest skipped.
+- **Decision:** Progress writes are best-effort. They pass through the worker's lease guard, are
+  serialized per run, and ignore stale claims and non-running runs. Failures are logged and never
+  fail or retry the run. Rows written before this change have no steps, and the UI falls back to the
+  stage line.
+- **Decision:** While the agent works, the workspace leads with an "Agent progress" tracker:
+  - Each step shows its status and elapsed time. The timer ticks client-side, and only while a step
+    is running.
+  - The running step's source log is open by default; finished steps can be opened.
+  - Only stage changes are announced, never the timer.
+  - Once review opens or the run ends, the tracker collapses to "Agent run · N steps · m:ss" with
+    "View steps".
+- **Decision:** Accounts still load automatically. A "Reload" control and an "N assigned" count sit
+  in the rail. The kickoff reads "Run prospect agent" and shows "Agent running…" while busy.
+- **Reasoning:** The demo narrates a real multi-agent run. Progress must be truthful so it holds up
+  to stakeholder questions and matches the LangSmith trace. Polling richer GET data avoids a new
+  streaming transport.
+- **Evidence:**
+  - Backend: progress domain, service, middleware, source-hook, worker, router and PostgreSQL tests.
+  - Frontend: tracker and workspace Vitest tests.
+  - Playwright tracker scenario on desktop and Pixel 7.
+

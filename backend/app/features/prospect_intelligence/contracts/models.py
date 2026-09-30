@@ -7,6 +7,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from ..domain.models import LaneFitResult
+from .progress import RunStep
 
 
 class SourceMode(StrEnum):
@@ -94,6 +95,7 @@ class SourceCoverage:
     source: str
     status: SourceCoverageStatus
     detail: str | None = None
+    mode: SourceMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +152,7 @@ class ProspectRun:
     error: RunError | None = None
     quality_metadata: dict[str, str] = field(default_factory=lambda: dict[str, str]())
     thread_id: str = ""
+    steps: tuple[RunStep, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,5 +1,6 @@
 """Validated request and response schemas."""
 
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -14,6 +15,10 @@ from app.features.prospect_intelligence.contracts.models import (
     RunStatus,
     SourceCoverageStatus,
     SourceMode,
+)
+from app.features.prospect_intelligence.contracts.progress import (
+    RunStepStatus,
+    StepActivityOutcome,
 )
 
 ScopeId = Annotated[
@@ -69,6 +74,7 @@ class SourceCoverageResponse(BaseModel):
     source: str
     status: SourceCoverageStatus
     detail: str | None = None
+    mode: SourceMode | None = None
 
 
 class EvidenceResponse(BaseModel):
@@ -87,6 +93,9 @@ class LaneResponse(BaseModel):
     shipper_loads_per_week: int
     matched_loads_per_week: int
     fit_score: float
+    backhaul_fill: float
+    density: float
+    equipment_match: float
     modeled_annual_revenue: float
     deadhead_miles_avoided: int
     evidence: list[EvidenceResponse]
@@ -120,12 +129,28 @@ class PendingReviewResponse(BaseModel):
     tool_call_id: str
 
 
+class StepActivityResponse(BaseModel):
+    at: datetime
+    source: str
+    outcome: StepActivityOutcome
+
+
+class RunStepResponse(BaseModel):
+    key: str
+    label: str
+    status: RunStepStatus
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    activity: list[StepActivityResponse]
+
+
 class ProspectRunResponse(BaseModel):
     id: UUID
     account: AccountSummary
     status: RunStatus
     stage: str
     progress_percent: int = Field(ge=0, le=100)
+    steps: list[RunStepResponse] = Field(default_factory=lambda: list[RunStepResponse]())
     source_coverage: list[SourceCoverageResponse]
     verdict: FitVerdict | None = None
     brief: BriefResponse | None = None

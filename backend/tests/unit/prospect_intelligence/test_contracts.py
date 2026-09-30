@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 
 import pytest
 
@@ -23,6 +24,12 @@ from app.features.prospect_intelligence.contracts.models import (
     SourceMode,
 )
 from app.features.prospect_intelligence.domain.models import LaneFitResult
+from app.features.prospect_intelligence.domain.progress import (
+    SourceCalled,
+    StepStarted,
+    apply_progress_event,
+    initial_steps,
+)
 from app.features.prospect_intelligence.repositories.postgres.analysis_codec import (
     deserialize_analysis_output,
     serialize_analysis_output,
@@ -30,8 +37,10 @@ from app.features.prospect_intelligence.repositories.postgres.analysis_codec imp
 from app.features.prospect_intelligence.repositories.postgres.run_codec import (
     deserialize_outreach,
     deserialize_run_error,
+    deserialize_steps,
     serialize_outreach,
     serialize_run_error,
+    serialize_steps,
 )
 
 
@@ -84,14 +93,25 @@ def test_analysis_output_uses_distinct_typed_business_contracts() -> None:
                 source="GenLogs",
                 status=SourceCoverageStatus.DEGRADED,
                 detail="Fixture mode",
+                mode=SourceMode.FIXTURE,
             ),
+            SourceCoverage(source="SEC EDGAR", status=SourceCoverageStatus.UNAVAILABLE),
         ),
     )
 
     assert output.verdict is FitVerdict.FIT
     assert output.brief.recommended_next_step is RecommendedNextStep.NEW_LANE_PITCH
     assert output.brief.lanes[0].evidence[0].provenance == provenance
-    assert deserialize_analysis_output(serialize_analysis_output(output)) == output
+    serialized = serialize_analysis_output(output)
+    assert serialized is not None
+    assert deserialize_analysis_output(serialized) == output
+    legacy_coverage = [
+        {key: value for key, value in item.items() if key != "mode"}
+        for item in cast(list[dict[str, object]], serialized["source_coverage"])
+    ]
+    legacy = deserialize_analysis_output({**serialized, "source_coverage": legacy_coverage})
+    assert legacy is not None
+    assert [item.mode for item in legacy.source_coverage] == [None, None]
     assert deserialize_outreach(serialize_outreach(output.outreach)) == output.outreach
     run_error = RunError(code="source_unavailable", message="Source unavailable", retryable=True)
     assert deserialize_run_error(serialize_run_error(run_error)) == run_error
@@ -212,3 +232,13 @@ def test_filesystem_contract_is_canonical_and_rejects_unsafe_memory_scopes() -> 
 
     with pytest.raises(ValueError, match="scope identifier"):
         PROSPECT_FILES.rep_memory("../tenant", "rep-demo")
+
+
+def test_run_steps_round_trip_and_legacy_rows_decode_empty() -> None:
+    at = datetime(2026, 9, 30, 12, tzinfo=UTC)
+    steps = apply_progress_event(initial_steps(), StepStarted("external-research", at))
+    steps = apply_progress_event(steps, SourceCalled("external-research", "search_sec", False, at))
+
+    assert deserialize_steps(serialize_steps(steps)) == steps
+    assert deserialize_steps(None) == ()
+    assert deserialize_steps([]) == ()

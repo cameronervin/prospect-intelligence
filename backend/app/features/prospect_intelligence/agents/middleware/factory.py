@@ -10,6 +10,7 @@ from .policy import (
     SafeToolErrorMiddleware,
     ToolVisibilityMiddleware,
 )
+from .progress import ProgressMiddleware
 
 
 def middleware_for_agent(spec: AgentSpec) -> tuple[ProspectMiddleware, ...]:
@@ -22,4 +23,6 @@ def middleware_for_agent(spec: AgentSpec) -> tuple[ProspectMiddleware, ...]:
     ]
     if spec.subagent_names:
         stack.append(DelegationPolicyMiddleware(spec.name))
+        # Innermost, so a delegation rejected by policy never shows as started.
+        stack.append(ProgressMiddleware(spec.name))
     return tuple(stack)

@@ -21,6 +21,10 @@ class RunRepository(Protocol):
 
     def save_claimed(self, run: ProspectRun, claim_token: UUID) -> bool: ...
 
+    def save_progress(self, run: ProspectRun, claim_token: UUID | None) -> bool:
+        """Write only progress columns, and only while the stored run is still running."""
+        ...
+
 
 class SendReceiptRepository(Protocol):
     def get(self, run_id: UUID, tool_call_id: str) -> SendReceipt | None: ...

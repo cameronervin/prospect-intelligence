@@ -49,6 +49,7 @@ def serialize_analysis_output(output: AnalysisOutput | None) -> dict[str, object
                 "source": coverage.source,
                 "status": coverage.status.value,
                 "detail": coverage.detail,
+                "mode": coverage.mode.value if coverage.mode is not None else None,
             }
             for coverage in output.source_coverage
         ],
@@ -88,6 +89,7 @@ def deserialize_analysis_output(raw: Mapping[str, Any] | None) -> AnalysisOutput
                 source=str(item["source"]),
                 status=SourceCoverageStatus(item["status"]),
                 detail=_optional_str(item.get("detail")),
+                mode=_optional_source_mode(item.get("mode")),
             )
             for item in raw["source_coverage"]
         ),
@@ -157,3 +159,7 @@ def _deserialize_evidence(raw: Mapping[str, Any]) -> Evidence:
 
 def _optional_str(value: object) -> str | None:
     return str(value) if value is not None else None
+
+
+def _optional_source_mode(value: object) -> SourceMode | None:
+    return SourceMode(str(value)) if value is not None else None

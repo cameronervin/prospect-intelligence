@@ -9,27 +9,19 @@ from fastapi import APIRouter, Header, HTTPException, Response, status
 
 from app.platform.api.errors import ErrorResponse
 
-from ..contracts.models import FitVerdict, OutreachDraft, ProspectRun, ReviewAction, RunStatus
-from ..contracts.workflow import review_tool_call_id
+from ..contracts.models import OutreachDraft, ReviewAction
 from ..domain.errors import InvalidRunTransitionError, UnsafeOutreachError
 from ..schemas.api import (
     AccountResponse,
     AccountsResponse,
-    AccountSummary,
-    BriefResponse,
-    EvidenceResponse,
-    LaneResponse,
-    OutreachResponse,
-    PendingReviewResponse,
     ProspectRunResponse,
     ReviewRunRequest,
-    RunErrorResponse,
     ScopeId,
-    SourceCoverageResponse,
     StartRunRequest,
 )
 from ..services.agent_reviews import ProspectAgentReviewHandler
 from ..services.runs import ProspectRunService
+from .serializers import run_response
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     404: {"model": ErrorResponse},
@@ -87,7 +79,7 @@ def build_router(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
             ) from error
-        response = _run_response(run)
+        response = run_response(run)
         return response
 
     @router.get("/prospect-runs/{run_id}", response_model=ProspectRunResponse)
@@ -102,7 +94,7 @@ def build_router(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
             ) from error
-        return _run_response(run)
+        return run_response(run)
 
     @router.post("/prospect-runs/{run_id}/review", response_model=ProspectRunResponse)
     async def review_run(
@@ -145,103 +137,6 @@ def build_router(
         except (InvalidRunTransitionError, UnsafeOutreachError) as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         response.status_code = status.HTTP_200_OK
-        return _run_response(run)
+        return run_response(run)
 
     return router
-
-
-def _run_response(run: ProspectRun) -> ProspectRunResponse:
-    account = run.account
-    output = run.output
-    coverage = (
-        [
-            SourceCoverageResponse(
-                source=source.source,
-                status=source.status,
-                detail=source.detail,
-            )
-            for source in output.source_coverage
-        ]
-        if output is not None
-        else []
-    )
-
-    brief: BriefResponse | None = None
-    outreach: OutreachResponse | None = None
-    verdict = None
-    if output is not None:
-        verdict = output.verdict
-        lanes: list[LaneResponse] = []
-        for scored_lane in output.brief.lanes:
-            lane = scored_lane.score
-            lanes.append(
-                LaneResponse(
-                    origin=lane.origin,
-                    destination=lane.destination,
-                    shipper_loads_per_week=lane.shipper_loads_per_week,
-                    matched_loads_per_week=lane.matched_loads_per_week,
-                    fit_score=float(lane.fit_score),
-                    modeled_annual_revenue=float(lane.modeled_annual_revenue),
-                    deadhead_miles_avoided=lane.deadhead_miles_avoided,
-                    evidence=[
-                        EvidenceResponse(
-                            claim=item.claim,
-                            source=item.provenance.source,
-                            mode=item.provenance.mode,
-                            endpoint_or_artifact=item.provenance.endpoint_or_artifact,
-                            retrieved_at=item.provenance.retrieved_at.isoformat(),
-                            evidence_location=item.provenance.evidence_location,
-                            source_version=item.provenance.source_version,
-                        )
-                        for item in scored_lane.evidence
-                    ],
-                )
-            )
-        brief = BriefResponse(
-            summary=output.brief.summary,
-            recommended_next_step=output.brief.recommendation,
-            recommended_next_step_code=output.brief.recommended_next_step,
-            modeled_annual_revenue=sum(lane.modeled_annual_revenue for lane in lanes),
-            deadhead_miles_avoided=sum(lane.deadhead_miles_avoided for lane in lanes),
-            lanes=lanes,
-        )
-        reviewed_outreach = run.reviewed_outreach or output.outreach
-        if reviewed_outreach is not None and verdict is FitVerdict.FIT:
-            outreach = OutreachResponse(
-                subject=reviewed_outreach.subject,
-                body=reviewed_outreach.body,
-            )
-
-    return ProspectRunResponse(
-        id=run.id,
-        account=AccountSummary(id=account.id, name=account.name),
-        status=run.status,
-        stage=run.stage,
-        progress_percent=run.progress_percent,
-        source_coverage=coverage,
-        verdict=verdict,
-        brief=brief,
-        outreach=outreach,
-        pending_review=(
-            PendingReviewResponse(
-                name="send_outreach",
-                allowed_decisions=[
-                    ReviewAction.APPROVE,
-                    ReviewAction.EDIT,
-                    ReviewAction.REJECT,
-                ],
-                tool_call_id=review_tool_call_id(run.id),
-            )
-            if run.status is RunStatus.AWAITING_REVIEW
-            else None
-        ),
-        error=(
-            RunErrorResponse(
-                code=run.error.code,
-                message=run.error.message,
-                retryable=run.error.retryable,
-            )
-            if run.error is not None
-            else None
-        ),
-    )

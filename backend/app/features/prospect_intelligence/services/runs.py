@@ -9,7 +9,6 @@ from ..contracts import repositories
 from ..contracts.models import (
     Account,
     AnalysisOutput,
-    FitVerdict,
     OutreachDraft,
     ProspectRun,
     RepPreference,
@@ -20,6 +19,8 @@ from ..contracts.models import (
 from ..contracts.workflow import checkpoint_thread_id, review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
 from ..domain.outreach import validate_customer_outreach
+from ..domain.progress import analysis_outcome, complete_review, finish_analysis, initial_steps
+from .progress import RunProgressRecorder
 
 
 class ProspectRunService:
@@ -41,6 +42,10 @@ class ProspectRunService:
         self._clock = clock
         self._id_factory = id_factory
         self._workflows = workflows
+
+    @property
+    def progress(self) -> RunProgressRecorder:
+        return RunProgressRecorder(runs=self._runs, clock=self._clock)
 
     def list_accounts(self, tenant_id: str) -> tuple[Account, ...]:
         return self._accounts.list_for_tenant(tenant_id)
@@ -69,6 +74,7 @@ class ProspectRunService:
                 "prompt_version": "v1",
             },
             thread_id=checkpoint_thread_id(tenant_id, rep_id, run_id),
+            steps=initial_steps(),
         )
         if self._workflows is not None:
             self._workflows.create_run(run)
@@ -112,25 +118,18 @@ class ProspectRunService:
         self._require(run, RunStatus.RUNNING)
         if output.outreach is not None:
             validate_customer_outreach(output.outreach)
-        status = (
-            RunStatus.COMPLETED
-            if output.verdict in {FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA}
-            else RunStatus.AWAITING_REVIEW
-        )
-        stage = (
-            "Ready for your review"
-            if status is RunStatus.AWAITING_REVIEW
-            else "More freight evidence needed"
-            if output.verdict is FitVerdict.NEEDS_MORE_DATA
-            else "No network fit found"
-        )
+        status, stage = analysis_outcome(output.verdict)
+        now = self._clock()
         updated = replace(
             run,
             status=status,
             stage=stage,
             progress_percent=100,
             output=output,
-            updated_at=self._clock(),
+            updated_at=now,
+            steps=finish_analysis(
+                run.steps, now, awaiting_review=status is RunStatus.AWAITING_REVIEW
+            ),
         )
         self._save_execution_state(updated, claim_token)
         return updated
@@ -166,6 +165,7 @@ class ProspectRunService:
                 progress_percent=100,
                 review_action=action,
                 updated_at=self._clock(),
+                steps=complete_review(run.steps, self._clock()),
             )
             if self._workflows is not None:
                 return self._workflows.commit_review(
@@ -213,6 +213,7 @@ class ProspectRunService:
             review_action=action,
             send_receipt_id=receipt.id,
             updated_at=now,
+            steps=complete_review(run.steps, now),
         )
         if self._workflows is not None:
             return self._workflows.commit_review(

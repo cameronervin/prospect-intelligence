@@ -81,6 +81,18 @@ constructs the durable review handler and two-slot worker supervisor, and only t
 component ready. `GET /health/ready` requires both database health and that fully started component
 when prospect routes are enabled. Shutdown closes resources in reverse dependency order.
 
+Specialist progress flows in five hops:
+
+1. The orchestrator's `ProgressMiddleware` observes each `task` delegation. The source-tool boundary
+   in `agents/tools.py` observes each source call.
+2. Both emit sanitized `ProgressSignal`s to a request-scoped sink on `ProspectRuntimeContext`.
+3. The worker's `RunProgressSink` (in `services/progress.py`) serializes those signals into
+   lease-guarded writes.
+4. The writes land in the `prospect_runs.steps` JSONB column.
+5. The browser reads the steps through the existing `GET /prospect-runs/{id}` poll.
+
+Progress writes are best-effort and never fail a run.
+
 ## Source-adapter boundary
 
 CAM-30 uses source-specific contracts rather than a universal integration superclass. Services and
@@ -113,4 +125,4 @@ capacity owned by the carrier; the latter is public FMCSA identity, authority, a
 
 ## Frontend boundary
 
-The frontend uses App Router server components. `BACKEND_BASE_URL` remains server-only. The current page exposes a sanitized ready/degraded result rather than transport exceptions or dependency details.
+The frontend uses App Router; the review console is one client component tree behind a same-origin `/api/v1` proxy. `BACKEND_BASE_URL` remains server-only. When the backend is unreachable the proxy returns the typed `service_unavailable` envelope, so the browser never sees transport exceptions or dependency details.

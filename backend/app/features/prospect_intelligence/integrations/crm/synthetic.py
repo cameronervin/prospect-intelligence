@@ -31,6 +31,7 @@ class SyntheticCrmSource:
             result = SourceResult[Account](
                 value=None,
                 coverage=SourceCoverage(
+                    mode=SourceMode.FIXTURE,
                     source="CRM fixture",
                     status=SourceCoverageStatus.UNAVAILABLE,
                     detail="No reviewed synthetic CRM record exists for this account.",

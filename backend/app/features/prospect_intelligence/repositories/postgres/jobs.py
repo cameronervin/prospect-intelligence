@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from ...contracts.jobs import ClaimedJob
 from ...contracts.models import RunError, RunStatus
+from ...domain.progress import fail_open_steps
 from ...models.records import ProspectRunRecord, WorkerJobRecord
-from .run_codec import serialize_run_error
+from .run_codec import deserialize_steps, serialize_run_error, serialize_steps
 from .store import PostgresProspectStore
 
 
@@ -156,6 +157,7 @@ def _mark_terminal_failure(
         run.status = RunStatus.FAILED.value
         run.stage = "Execution failed"
         run.updated_at = now
+        run.steps = serialize_steps(fail_open_steps(deserialize_steps(run.steps), now))
         run.error = serialize_run_error(
             RunError(
                 code=error_code,
