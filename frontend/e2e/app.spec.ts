@@ -15,8 +15,13 @@ const run = {
   stage: "Ready for your review",
   progress_percent: 100,
   source_coverage: [
-    { source: "CRM", status: "complete" },
-    { source: "SEC", status: "degraded", detail: "Using disclosed fixture snapshot" },
+    { source: "CRM fixture", status: "complete", mode: "fixture" },
+    {
+      source: "SEC EDGAR",
+      status: "degraded",
+      mode: "live",
+      detail: "Some provider filings were invalid",
+    },
   ],
   verdict: "fit",
   brief: {
@@ -32,6 +37,9 @@ const run = {
         shipper_loads_per_week: 12,
         matched_loads_per_week: 8,
         fit_score: 0.91,
+        backhaul_fill: 0.95,
+        density: 0.88,
+        equipment_match: 0.86,
         modeled_annual_revenue: 624000,
         deadhead_miles_avoided: 18400,
         evidence: [
@@ -49,8 +57,8 @@ const run = {
     ],
   },
   outreach: {
-    subject: "Atlanta to Dallas capacity",
-    body: "We have reliable capacity aligned to your Atlanta to Dallas freight.",
+    subject: "ATL to DAL freight conversation",
+    body: "Would you be open to comparing notes on your ATL-to-DAL freight needs?",
   },
   pending_review: {
     name: "send_outreach",
@@ -69,11 +77,29 @@ test.beforeEach(async ({ page }) => {
     expect(request.headers()["x-rep-id"]).toBe("maya-chen");
     await route.fulfill({ json: run });
   });
+  let reviews = 0;
   await page.route("**/api/v1/prospect-runs/*/review", async (route) => {
+    reviews += 1;
     const review = route.request().postDataJSON() as { decision: string; body: string };
+    if (reviews === 1) {
+      expect(review).toMatchObject({ decision: "edit", body: "We model $624k a year here." });
+      await route.fulfill({
+        status: 409,
+        json: {
+          error: {
+            code: "conflict",
+            message: "customer outreach contains internal-only information",
+            retryable: false,
+            issues: [],
+          },
+        },
+      });
+      return;
+    }
     expect(review).toMatchObject({
       decision: "edit",
-      body: "Rep-approved lane message.",
+      subject: "Freight conversation",
+      body: "Could we compare freight needs?",
       tool_call_id: "review-run-browser-1",
     });
     await route.fulfill({
@@ -82,38 +108,158 @@ test.beforeEach(async ({ page }) => {
         status: "completed",
         stage: "Simulated send complete",
         pending_review: null,
+        outreach: { subject: "Freight conversation", body: "Could we compare freight needs?" },
       },
     });
   });
 });
 
+async function expectNoHorizontalOverflow(page: import("@playwright/test").Page) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  expect(overflow).toBe(false);
+}
+
 test("builds an evidence-backed brief and requires rep approval", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(
-    "Turn empty miles into qualified conversations.",
-  );
-  await page.getByRole("button", { name: /Atlas Foods/ }).click();
-  await page.getByRole("button", { name: "Build prospect brief" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Prospect Intelligence");
+  const account = page.getByRole("button", { name: /Atlas Foods/ });
+  await account.focus();
+  await page.keyboard.press("Enter");
+  await expect(account).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Run prospect agent" })).toBeFocused();
+  await page.keyboard.press("Enter");
 
-  await expect(page.getByRole("heading", { name: "Network-fit brief" })).toBeVisible();
-  await expect(page.getByText("Atlanta, GA → Dallas, TX")).toBeVisible();
-  await expect(page.getByText("Modeled gross revenue", { exact: true })).toBeVisible();
-  await expect(page.getByText("Modeled deadhead avoided", { exact: true })).toBeVisible();
-  await page.getByText("Model assumptions").click();
+  const review = page.getByRole("region", { name: /Review the outreach to Atlas Foods/ });
+  await expect(review).toBeVisible();
+  await expect(page.getByRole("region", { name: "Why this account" })).toContainText("Network fit");
+  await expectNoHorizontalOverflow(page);
+
+  const lanes = page.getByRole("table", { name: "Top lanes" });
+  await expect(lanes.getByText("Atlanta, GA → Dallas, TX")).toBeVisible();
+  await expect(lanes.getByText("12 observed loads per week")).toBeVisible();
+  await expect(lanes.getByText(/Retrieved Sep 29, 2026/)).toBeVisible();
+  await expect(page.getByText("Modeled gross revenue / yr")).toBeVisible();
+  await page.getByRole("button", { name: "Model assumptions" }).click();
   await expect(page.getByText(/estimated rate per load × 52 weeks/)).toBeVisible();
-  await expect(page.getByText(/full origin-to-destination lane distance × 52 weeks/)).toBeVisible();
-  await expect(page.getByText("Using disclosed fixture snapshot")).toBeVisible();
-  await page.getByText(/Inspect evidence/).click();
-  await expect(page.getByText("12 observed loads per week")).toBeVisible();
+  await expect(page.getByText("Some provider filings were invalid")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
 
-  await page.getByLabel("Message").fill("Rep-approved lane message.");
-  await page.getByRole("button", { name: "Approve simulated send" }).click();
-  await expect(page.getByText("Simulated send recorded")).toBeVisible();
+  await review.getByLabel("Message").fill("We model $624k a year here.");
+  await review.getByRole("button", { name: "Submit edit" }).click();
+  await expect(review.getByRole("alert")).toContainText("This edit can't be sent");
+  await expect(review.getByLabel("Message")).toHaveValue("We model $624k a year here.");
+  await expect(review.getByLabel("Subject")).toBeFocused();
+  await expectNoHorizontalOverflow(page);
+
+  await review.getByLabel("Subject").fill("Freight conversation");
+  await review.getByLabel("Message").fill("Could we compare freight needs?");
+  await review.getByRole("button", { name: "Submit edit" }).click();
+  await expect(page.getByRole("heading", { name: "Simulated send recorded" })).toBeFocused();
   await expect(page.getByText("No real email or CRM write occurred.")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
 
-  const hasHorizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > window.innerWidth,
-  );
-  expect(hasHorizontalOverflow).toBe(false);
+type Step = {
+  key: string;
+  label: string;
+  status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  activity: { at: string; source: string; outcome: string }[];
+};
+
+function stepsAt(phase: number): Step[] {
+  const at = (s: number) => new Date(Date.UTC(2026, 8, 30, 14, 2, s)).toISOString();
+  const base: Step[] = [
+    { key: "account-context", label: "Account context", status: "pending", activity: [] },
+    { key: "external-research", label: "External research", status: "pending", activity: [] },
+    { key: "lane-analyst", label: "Lane analysis", status: "pending", activity: [] },
+    { key: "outreach-drafter", label: "Drafting outreach", status: "pending", activity: [] },
+    { key: "review", label: "Your review", status: "pending", activity: [] },
+  ];
+  return base.map((step, index) => {
+    if (index < 4 && index < phase) {
+      return { ...step, status: "complete", started_at: at(index), finished_at: at(index + 5) };
+    }
+    if (index < 4 && index === phase) {
+      return {
+        ...step,
+        status: "running",
+        started_at: at(index),
+        activity: [{ at: at(index + 1), source: "SEC EDGAR filings", outcome: "unavailable" }],
+      };
+    }
+    if (index === 4 && phase >= 4) return { ...step, status: "running", started_at: at(9) };
+    return step;
+  });
+}
+
+test("tracks each specialist live, then hands off to review", async ({ page }) => {
+  const labels = ["Account context", "External research", "Lane analysis", "Drafting outreach"];
+  let phase = 0;
+  await page.route("**/api/v1/prospect-runs", async (route) => {
+    await route.fulfill({
+      json: {
+        ...run,
+        status: "running",
+        stage: "Account context running",
+        progress_percent: 20,
+        verdict: null,
+        brief: null,
+        outreach: null,
+        pending_review: null,
+        steps: stepsAt(0),
+      },
+    });
+  });
+  await page.route("**/api/v1/prospect-runs/run-browser-1", async (route) => {
+    await route.fulfill({
+      json:
+        phase < 4
+          ? {
+              ...run,
+              status: "running",
+              stage: `${labels[phase]} running`,
+              progress_percent: 20 + 15 * phase,
+              verdict: null,
+              brief: null,
+              outreach: null,
+              pending_review: null,
+              steps: stepsAt(phase),
+            }
+          : { ...run, steps: stepsAt(4) },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Atlas Foods/ }).click();
+  await page.getByRole("button", { name: "Run prospect agent" }).click();
+
+  const tracker = page.getByRole("region", { name: "Agent progress" });
+  await expect(
+    tracker.getByRole("listitem", { name: /Step 1: Account context, Running/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Agent running…" })).toBeDisabled();
+  phase = 2;
+  await expect(
+    tracker.getByRole("listitem", { name: /Step 3: Lane analysis, Running/ }),
+  ).toBeVisible();
+  await expect(tracker.getByText("SEC EDGAR filings")).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  phase = 4;
+  await expect(
+    page.getByRole("region", { name: /Review the outreach to Atlas Foods/ }),
+  ).toBeVisible();
+  await expect(tracker).toBeHidden();
+  await expect(page.getByText(/Agent run · 4 steps/)).toBeVisible();
+  await page.getByRole("button", { name: "View steps" }).click();
+  await expect(
+    page.getByRole("listitem", { name: /Step 5: Your review, Waiting on you/ }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
 });

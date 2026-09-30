@@ -153,4 +153,69 @@ describe("prospect API boundary", () => {
       retryable: true,
     });
   });
+
+  it("parses lane score components and coverage source modes", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "completed",
+        stage: "No network fit found",
+        progress_percent: 100,
+        source_coverage: [
+          { source: "FAF5.7.1 snapshot", status: "complete", detail: null, mode: "snapshot" },
+          { source: "Legacy source", status: "degraded" },
+        ],
+        verdict: "no_fit",
+        brief: {
+          summary: "No fit.",
+          recommended_next_step: "Do not pursue.",
+          recommended_next_step_code: "not_a_fit",
+          modeled_annual_revenue: 0,
+          deadhead_miles_avoided: 0,
+          lanes: [
+            {
+              origin: "Atlanta, GA",
+              destination: "Dallas, TX",
+              shipper_loads_per_week: 4,
+              matched_loads_per_week: 1,
+              fit_score: 0.5,
+              backhaul_fill: 0.4,
+              density: 0.6,
+              equipment_match: 0.6,
+              modeled_annual_revenue: 1000,
+              deadhead_miles_avoided: 100,
+              evidence: [],
+            },
+          ],
+        },
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    const run = await client.getRun("run-1");
+
+    expect(run.source_coverage.map((item) => item.mode ?? null)).toEqual(["snapshot", null]);
+    expect(run.brief?.lanes[0]).toMatchObject({
+      backhaul_fill: 0.4,
+      density: 0.6,
+      equipment_match: 0.6,
+    });
+  });
+
+  it("rejects an unknown source coverage mode at the boundary", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        id: "run-1",
+        account: { id: "acct-1", name: "Atlas Foods" },
+        status: "running",
+        stage: "Researching",
+        progress_percent: 20,
+        source_coverage: [{ source: "CRM", status: "complete", mode: "scraped" }],
+      }),
+    );
+    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+
+    await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
+  });
 });

@@ -82,6 +82,7 @@ def normalize_filings(
         return SourceResult(
             value=None,
             coverage=SourceCoverage(
+                mode=SourceMode.LIVE,
                 source=_SOURCE,
                 status=SourceCoverageStatus.UNAVAILABLE,
                 detail="provider response contained no valid filings",
@@ -91,6 +92,7 @@ def normalize_filings(
     return SourceResult(
         value=tuple(signals),
         coverage=SourceCoverage(
+            mode=SourceMode.LIVE,
             source=_SOURCE,
             status=(
                 SourceCoverageStatus.DEGRADED if invalid_rows else SourceCoverageStatus.COMPLETE

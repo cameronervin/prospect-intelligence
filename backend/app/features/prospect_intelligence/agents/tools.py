@@ -16,9 +16,9 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
 
-from ..contracts.agent_runtime import ProspectRuntimeContext
+from ..contracts.agent_runtime import ProgressSignal, ProspectRuntimeContext
 from ..contracts.filesystem import PROSPECT_FILES
-from .context import current_runtime_context
+from .context import current_runtime_context, current_step
 from .guardrails import validate_workflow_artifacts
 from .state import ProspectDeepAgentState
 
@@ -55,12 +55,17 @@ async def _invoke_source(
     handler = context.tool_handlers.get(name)
     if handler is None:
         raise RuntimeError(f"tool handler is unavailable: {name}")
+    step = current_step()
     try:
         result = await asyncio.to_thread(handler, payload)
     except Exception:
+        if context.progress is not None and step is not None:
+            await context.progress(ProgressSignal("source", step, failed=True, tool_name=name))
         raise RuntimeError(
             "The read-only source is unavailable; record degraded coverage."
         ) from None
+    if context.progress is not None and step is not None:
+        await context.progress(ProgressSignal("source", step, tool_name=name))
     return json.dumps(_json_safe(result), sort_keys=True, separators=(",", ":"))
 
 

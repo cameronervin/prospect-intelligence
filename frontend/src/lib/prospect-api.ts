@@ -8,16 +8,19 @@ const AccountSchema = z.object({
   location: z.string().min(1).nullable().optional(),
 });
 
+const SourceModeSchema = z.enum(["live", "fixture", "snapshot"]);
+
 const SourceCoverageSchema = z.object({
   source: z.string().min(1),
   status: z.enum(["complete", "degraded", "unavailable"]),
   detail: z.string().nullable().optional(),
+  mode: SourceModeSchema.nullable().optional(),
 });
 
 const EvidenceSchema = z.object({
   claim: z.string().min(1),
   source: z.string().min(1),
-  mode: z.enum(["live", "fixture", "snapshot"]),
+  mode: SourceModeSchema,
   endpoint_or_artifact: z.string().min(1),
   retrieved_at: z.string().min(1),
   source_version: z.string().min(1),
@@ -30,6 +33,9 @@ const LaneSchema = z.object({
   shipper_loads_per_week: z.number().nonnegative(),
   matched_loads_per_week: z.number().nonnegative(),
   fit_score: z.number().min(0).max(1),
+  backhaul_fill: z.number().min(0).max(1),
+  density: z.number().min(0).max(1),
+  equipment_match: z.number().min(0).max(1),
   modeled_annual_revenue: z.number().nonnegative(),
   deadhead_miles_avoided: z.number().nonnegative(),
   evidence: z.array(EvidenceSchema),
@@ -47,6 +53,21 @@ const BriefSchema = z.object({
   modeled_annual_revenue: z.number().nonnegative(),
   deadhead_miles_avoided: z.number().nonnegative(),
   lanes: z.array(LaneSchema),
+});
+
+const StepActivitySchema = z.object({
+  at: z.string().min(1),
+  source: z.string().min(1),
+  outcome: z.enum(["ok", "unavailable"]),
+});
+
+const RunStepSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  status: z.enum(["pending", "running", "complete", "failed", "skipped"]),
+  started_at: z.string().nullable().optional(),
+  finished_at: z.string().nullable().optional(),
+  activity: z.array(StepActivitySchema),
 });
 
 const OutreachSchema = z.object({
@@ -94,6 +115,7 @@ const RunSchema = z
     status: z.enum(["queued", "running", "awaiting_review", "completed", "rejected", "failed"]),
     stage: z.string().min(1),
     progress_percent: z.number().min(0).max(100),
+    steps: z.array(RunStepSchema).optional(),
     source_coverage: z.array(SourceCoverageSchema),
     verdict: z.enum(["fit", "no_fit", "needs_more_data"]).nullable().optional(),
     brief: BriefSchema.nullable().optional(),
@@ -110,6 +132,12 @@ const AccountsSchema = z.object({ items: z.array(AccountSchema) });
 
 export type Account = z.infer<typeof AccountSchema>;
 export type ProspectRun = z.infer<typeof RunSchema>;
+export type Brief = z.infer<typeof BriefSchema>;
+export type Lane = z.infer<typeof LaneSchema>;
+export type Evidence = z.infer<typeof EvidenceSchema>;
+export type SourceCoverage = z.infer<typeof SourceCoverageSchema>;
+export type SourceMode = z.infer<typeof SourceModeSchema>;
+export type RunStep = z.infer<typeof RunStepSchema>;
 export type ProspectApiErrorCode = z.infer<typeof ErrorResponseSchema>["error"]["code"];
 export type RunReview = {
   decision: "approve" | "edit" | "reject";

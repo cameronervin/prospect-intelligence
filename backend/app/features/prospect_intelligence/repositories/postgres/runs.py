@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
 
-from ...contracts.models import ProspectRun
+from ...contracts.models import ProspectRun, RunStatus
 from ...models.records import AccountRecord, ProspectRunRecord, WorkerJobRecord
 from .accounts import account_from_record
-from .run_codec import run_from_record, run_record_values
+from .run_codec import run_from_record, run_record_values, serialize_steps
 from .store import PostgresProspectStore
 
 
@@ -42,6 +42,39 @@ class PostgresRunRepository:
                 .where(ProspectRunRecord.id == run.id)
                 .values(**run_record_values(run))
             )
+
+    def save_progress(self, run: ProspectRun, claim_token: UUID | None) -> bool:
+        """Update progress columns only, fenced by the worker claim and running status."""
+
+        with Session(self._engine) as session, session.begin():
+            if claim_token is not None:
+                job = session.scalars(
+                    select(WorkerJobRecord)
+                    .where(
+                        WorkerJobRecord.run_id == run.id,
+                        WorkerJobRecord.status == "running",
+                        WorkerJobRecord.claim_token == claim_token,
+                        WorkerJobRecord.lease_expires_at > run.updated_at,
+                    )
+                    .with_for_update()
+                ).one_or_none()
+                if job is None:
+                    return False
+            result = session.execute(
+                update(ProspectRunRecord)
+                .where(
+                    ProspectRunRecord.id == run.id,
+                    ProspectRunRecord.status == RunStatus.RUNNING.value,
+                )
+                .values(
+                    steps=serialize_steps(run.steps),
+                    stage=run.stage,
+                    progress_percent=run.progress_percent,
+                    updated_at=run.updated_at,
+                )
+                .returning(ProspectRunRecord.id)
+            )
+            return result.first() is not None
 
     def save_claimed(self, run: ProspectRun, claim_token: UUID) -> bool:
         """Persist only while this worker still owns an unexpired fenced claim."""

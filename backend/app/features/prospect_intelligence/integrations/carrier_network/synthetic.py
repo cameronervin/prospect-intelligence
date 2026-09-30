@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from ...contracts.models import SourceCoverage, SourceCoverageStatus
+from ...contracts.models import SourceCoverage, SourceCoverageStatus, SourceMode
 from ...contracts.sources import CarrierNetwork, SourceCallContext, SourceResult
 from ...fixtures.synthetic.catalog import SyntheticSourceCatalog
 
@@ -20,6 +20,7 @@ class SyntheticCarrierNetworkSource:
         result = SourceResult(
             value=CarrierNetwork(lanes=self._catalog.network_lanes()),
             coverage=SourceCoverage(
+                mode=SourceMode.FIXTURE,
                 source="Carrier network fixture",
                 status=SourceCoverageStatus.COMPLETE,
                 detail="Tenant-scoped reviewed synthetic carrier network.",

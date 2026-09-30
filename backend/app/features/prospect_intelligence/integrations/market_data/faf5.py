@@ -94,6 +94,7 @@ class Faf5MarketDataSource:
             result = SourceResult[MarketLane](
                 value=None,
                 coverage=SourceCoverage(
+                    mode=SourceMode.SNAPSHOT,
                     source="FAF5.7.1 snapshot",
                     status=SourceCoverageStatus.UNAVAILABLE,
                     detail="lane is not present in the reviewed FAF snapshot",
@@ -115,7 +116,9 @@ class Faf5MarketDataSource:
                 estimate_label=derived.estimate_label,
             ),
             coverage=SourceCoverage(
-                source="FAF5.7.1 snapshot", status=SourceCoverageStatus.COMPLETE
+                mode=SourceMode.SNAPSHOT,
+                source="FAF5.7.1 snapshot",
+                status=SourceCoverageStatus.COMPLETE,
             ),
             evidence=(
                 Evidence(

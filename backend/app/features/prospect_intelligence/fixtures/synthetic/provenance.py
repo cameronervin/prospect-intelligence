@@ -99,8 +99,20 @@ def source_coverage(
     detail: str | None = None,
 ) -> tuple[SourceCoverage, ...]:
     return (
-        SourceCoverage(source="CRM fixture", status=SourceCoverageStatus.COMPLETE),
-        SourceCoverage(source="GenLogs fixture", status=freight_status, detail=detail),
-        SourceCoverage(source="Carrier network fixture", status=SourceCoverageStatus.COMPLETE),
-        SourceCoverage(source="FAF5.7.1 snapshot", status=SourceCoverageStatus.COMPLETE),
+        SourceCoverage(
+            mode=SourceMode.FIXTURE, source="CRM fixture", status=SourceCoverageStatus.COMPLETE
+        ),
+        SourceCoverage(
+            mode=SourceMode.FIXTURE, source="GenLogs fixture", status=freight_status, detail=detail
+        ),
+        SourceCoverage(
+            mode=SourceMode.FIXTURE,
+            source="Carrier network fixture",
+            status=SourceCoverageStatus.COMPLETE,
+        ),
+        SourceCoverage(
+            mode=SourceMode.SNAPSHOT,
+            source="FAF5.7.1 snapshot",
+            status=SourceCoverageStatus.COMPLETE,
+        ),
     )

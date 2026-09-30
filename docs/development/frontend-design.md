@@ -67,3 +67,29 @@ CAM-36 owns the integrated visual cleanup for the brief, evidence, lane-fit, and
 experience. It should preserve CAM-35 behavior while replacing the current marketing and repeated-
 card scaffold with the dispatch-console direction above. CAM-37 owns committed visual baselines and
 expanded full-stack browser coverage after that direction is accepted.
+
+### CAM-36 outcome
+
+- **Thesis:** a dispatch manifest for one account. Every number sits beside its source, and nothing
+  leaves without the rep's decision.
+- **Layout:** decision-first. There are two panes on desktop, an accounts rail and one workspace,
+  and a single column on mobile. While a decision is pending, the page leads with one accent-framed
+  checkpoint: the outreach editor with large Approve / Reject actions beside a compact "Why this
+  account" rationale. Lanes, assumptions and sources follow as supporting evidence. The outcome
+  receipt, neutral outcomes and progress take the same top slot. The first design had a third,
+  narrow review column; user review found the call to action unclear, so it was replaced.
+- **System:** tokens live in `frontend/src/app/globals.css`:
+  - white and `#f4f6f8` surfaces, graphite text, thin `#e1e5ea` dividers;
+  - separate ready, degraded and danger colors;
+  - one safety accent (`#c2410c`), used only on the review frame and its primary action.
+- **Type roles:** self-hosted Archivo provides the `type-display`, `type-title`, `type-lead`,
+  `type-section`, `type-body`, `type-utility` and `type-figure` roles. Tabular numerals are used for
+  every figure.
+- **Signature:** the lane manifest row (route, fit, matched loads, modeled revenue). Score
+  components, volumes, deadhead and evidence open beneath the row instead of in a separate card.
+- **Hierarchy:** verdict and recommended action lead, followed by two modeled totals. Assumptions,
+  complete sources and non-lead lane details stay behind disclosures. Degraded and unavailable
+  sources are always visible.
+- **Reference:** the design canvas used for review (system, desktop, states and mobile boards) is a
+  private claude.ai artifact. It is not a committed baseline; CAM-37 owns visual baselines.
+

@@ -9,6 +9,7 @@ from ..contracts.agent_runtime import ProspectRuntimeContext
 _current_context: ContextVar[ProspectRuntimeContext | None] = ContextVar(
     "prospect_agent_runtime_context", default=None
 )
+_current_step: ContextVar[str | None] = ContextVar("prospect_agent_current_step", default=None)
 
 
 @contextmanager
@@ -27,3 +28,18 @@ def current_runtime_context(
     if context is None:
         raise RuntimeError("prospect runtime context is unavailable")
     return context
+
+
+@contextmanager
+def bind_step(key: str) -> Generator[None]:
+    """Attribute nested source calls to the specialist the orchestrator delegated to."""
+
+    token = _current_step.set(key)
+    try:
+        yield
+    finally:
+        _current_step.reset(token)
+
+
+def current_step() -> str | None:
+    return _current_step.get()
