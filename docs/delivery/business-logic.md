@@ -460,3 +460,175 @@ include credentials, private customer data, raw traces, or generated result expo
 - **Evidence:** Projection/citation, answer-validation, option-permutation, retry, fail-closed,
   LangSmith result, and credential-gated synthetic smoke tests. Live smoke output is recorded only as
   sanitized execution evidence.
+
+### 2026-09-30 — Model transport: optional regional OpenAI endpoint
+
+- **Decision:** `TAKEHOME_OPENAI_BASE_URL` optionally routes both the orchestrator and specialist
+  OpenAI models to one endpoint. It defaults to unset (SDK default host); a blank value also means
+  unset. Only credential-free `https` URLs without query or fragment are accepted, trailing slashes
+  are normalized, and settings validation errors never echo rejected input.
+- **Alternatives considered:** Rely on the SDK's ambient `OPENAI_BASE_URL`; allow plain `http` for
+  local proxies; configure orchestrator and specialist endpoints separately.
+- **Reasoning:** The project key is bound to `https://us.api.openai.com/v1` and returns
+  `401 incorrect_hostname` elsewhere. A typed application setting is explicit, validated, and visible
+  in the env examples. Plain HTTP or URL-embedded credentials would expose the API key or a secret.
+- **Consequences:** Local HTTP proxies are unsupported. The evaluation-only live smoke
+  (`evaluation/experiments/semantic_smoke.py`) and judges build their own OpenAI clients and do not
+  read this setting yet.
+- **Evidence:** `tests/unit/test_settings.py`,
+  `tests/unit/platform/test_openai_model_runtime.py` (mock transport asserts both models call
+  `us.api.openai.com/v1/responses`).
+
+### 2026-09-30 — Agent workflow: explicit artifact contract and one bounded write reminder
+
+- **Decision:** Every agent's system prompt now lists each required artifact path (with media type)
+  and states that only `write_file` creates it. Source-artifact agents also get the `coverage`,
+  `evidence`, `claim`, and six-field `provenance` schema enforced by the guardrail. `account-context`
+  maps `get_crm_account` to `/context/account.json` and `get_network_lanes` to
+  `/context/our_network.json`. If an agent's final answer has no tool calls while required artifacts
+  are missing, `ArtifactValidationMiddleware` injects exactly one reminder naming the missing paths
+  and returns to the model. A second omission still fails closed at `after_agent`.
+- **Alternatives considered:** Rely on the orchestrator's delegation text to name paths; write the
+  artifacts deterministically from tool results outside the model; retry without limit; relax the
+  guardrail.
+- **Reasoning:** Deep Agents 0.7.19 intentionally emits no filesystem tool guidance, and the
+  specialist only receives the orchestrator's free-text task, so a live model had no way to learn the
+  paths or schema. Deriving the contract from `AgentSpec.required_artifacts` keeps the prompt and
+  the validator from drifting. One reminder recovers the common "summarized instead of writing"
+  failure without masking a model that cannot follow the contract.
+- **Consequences:** Prompts are slightly longer but remain static and cache-friendly. At most one
+  extra model call per agent, still bounded by the existing model/tool budgets. The reminder is
+  stored in checkpointed messages with a fixed ID. Unavailable sources still fail validation because
+  evidence must be non-empty. That is unchanged, deliberate fail-closed behavior.
+- **Evidence:** `tests/unit/prospect_intelligence/test_specialist_artifact_contract.py` (a fake model
+  that writes only the paths it can parse from its own system prompt reproduces the live failure on
+  the prior prompt, and covers the reminder and bounded fail-closed paths). The existing root
+  trajectory tests keep their exact call counts. A live `acme-foods` run is still pending.
+
+### 2026-09-30 — Lane analysis: the scoring tool returns the canonical artifact
+
+- **Decision:** `score_lane_fit_v1` now returns the exact `LaneAnalysisArtifact` JSON
+  (`method_version`, `verdict`, `top_lanes`). The lane analyst is instructed to write it verbatim
+  to `/analysis/lane_fit.json` and explain it in `/analysis/lane_fit.md`. The tool and the final run
+  output share `services/lane_analysis.py::analyze_lanes`: `needs_more_data` unless freight and network coverage are
+  both complete and freight lanes exist, otherwise `fit` when a direct lane ranks, else `no_fit`.
+- **Alternatives considered:** Keep returning a bare ranked list and have the model assemble the
+  strict JSON; relax the strict parser; write the JSON outside the agent.
+- **Reasoning:** A live `acme-foods` run failed because the analyst invented its own schema. The
+  artifact is deterministic, so the model should transcribe it, not construct it. Previously the tool
+  ranked lanes even when coverage was degraded, which could contradict the authoritative
+  `needs_more_data` output. Sharing one helper removes that divergence.
+- **Consequences:** With degraded coverage, the tool now reports `needs_more_data` with no lanes
+  rather than a ranking. The agent can still write prose, but it cannot change the verdict or scores
+  without failing validation.
+- **Evidence:** `tests/unit/prospect_intelligence/test_agent_job_handler.py` (the tool result passes
+  `LaneAnalysisArtifact.from_json` and equals the committed output lanes);
+  `test_specialist_artifact_contract.py` (the prompt maps the tool verbatim to the file).
+
+### 2026-09-30 — Operations: sanitized run-failure logging and portable env files
+
+- **Decision:** When a run's handler raises, the worker logs `prospect_run_execution_failed` with
+  `run_id`, `worker_id`, `error_code`, and the exception class name only, never its message. Env
+  example values that contain whitespace are double-quoted, and a test checks that every example
+  parses strictly, uses known `TAKEHOME_` keys, and loads into `Settings`.
+- **Alternatives considered:** Log the exception message or traceback; rely on LangSmith traces
+  alone.
+- **Reasoning:** The first live failure left no local signal; the cause could only be recovered
+  from checkpoint internals. Exception text can contain model output or source data, so the class
+  name is the safe minimum. Unquoted spaced values are accepted by python-dotenv but make `uv
+  --env-file` stop parsing and silently drop later keys such as `OPENAI_API_KEY`.
+- **Consequences:** Operators can distinguish guardrail (`ValueError`) from provider or transport
+  failures without exposing payloads. Existing local `.env` files with unquoted spaced values still
+  work in the app but should be quoted.
+- **Evidence:** `tests/unit/prospect_intelligence/test_persistence_runtime.py`,
+  `tests/unit/test_settings.py::test_env_examples_are_portable_and_load_into_settings`,
+  `make docker-config`.
+
+### 2026-09-30 — Numeric grounding: internal briefs may cite exact evidence dates
+
+> **Superseded** later on 2026-09-30 by "Agent workflow: judgment-based quality review before
+> send_outreach": the regex grounding check no longer gates the brief.
+
+- **Decision:** In `/output/brief.md` a full `YYYY-MM-DD` date is grounded only when that exact
+  date appears in a string value of the `/context/`, `/research/`, or `/analysis/` JSON (for example,
+  a provenance `retrieved_at`). Bare years, unmatched dates, and every other number still must equal a
+  numeric JSON value. Customer outreach gets no date exemption and remains under the customer-safe
+  allowlist. The brief and outreach prompt contracts now state these rules.
+- **Alternatives considered:** Tell the model never to cite dates; extract every numeric token
+  from all evidence strings; drop grounding for the internal brief.
+- **Reasoning:** A live `acme-foods` run produced all 11 artifacts but failed at `send_outreach`
+  because the brief cited source retrieval dates, which is desirable provenance practice. Pulling
+  every numeric token from strings would ground arbitrary small numbers via timestamp parts; exact
+  full-date matching keeps the boundary narrow.
+- **Consequences:** A brief can cite when evidence was retrieved. A "prepared" date or any date not
+  present in evidence still fails closed, and the prompt tells the orchestrator to leave it out.
+- **Evidence:** `tests/unit/prospect_intelligence/test_agent_security.py`
+  (`test_brief_may_cite_exact_evidence_dates_only`, `test_outreach_may_not_cite_evidence_dates`),
+  `test_specialist_artifact_contract.py`.
+
+### 2026-09-30 — Agent workflow: judgment-based quality review before send_outreach
+
+- **Decision:** A read-only `quality-reviewer` subagent reviews `/output/brief.md` and
+  `/output/outreach_draft.md` against all evidence, `/analysis/lane_fit.json`, rep preferences, and
+  the shared brief template before `send_outreach`.
+  - **Output:** it writes `/review/findings.json`, a strict `QualityReviewArtifact` with `round`
+    1–3, verdict `pass`|`revise`, blocking/advisory findings, and `resolved_prior`. `pass` holds
+    exactly when no finding is blocking.
+  - **Revisions:** the orchestrator, which authored the brief, applies brief findings.
+    `outreach-drafter`, which authored the outreach, applies outreach findings. There is no separate
+    reviser, and each file keeps one author.
+  - **Round cap:** at most three reviews (two revision rounds). Unresolved findings end the run
+    without `send_outreach`, which fails closed.
+- **Gate:** `send_outreach` requires all of the following:
+  - a review happened;
+  - no brief write/edit or outreach redraft occurred after the last review, derived from the root's
+    tool-call history (calls issued in the same turn as `send_outreach` do not count as a review);
+  - the latest findings are `pass`;
+  - every artifact data contract validates.
+
+  An outreach redraft is allowed only when the latest review is `revise` with an outreach finding
+  and no redraft has followed it.
+- **What changed at the gate:** the regex numeric-grounding and keyword/format outreach checks no
+  longer gate `send_outreach`. Draft content is judged by the reviewer. The reviewer counts
+  semantic equivalents as supported (0.8 = 80%, 582400 = $582.4K) and provenance dates are fine.
+- **Unchanged boundaries:**
+  - the domain v1 outreach template allowlist (`validate_customer_outreach`) is still enforced when
+    the analysis is committed and on rep edits;
+  - rep edits at approval still run the deterministic outreach checks;
+  - offline code evaluators still measure grounding and safety.
+- **Prompts:** each agent has an ALL-CAPS triple-quoted prompt in `agents/prompts/` using the same
+  sections (Role, Business context, Where you sit in the workflow, Inputs, Task, Rules, Finished
+  when). The generated artifact contract is appended. The orchestrator and reviewer share one brief
+  template, and the drafter and reviewer both state the v1 outreach templates.
+- **Budgets:** orchestrator 30 model / 48 tool calls (was 20/32); reviewer 10/16.
+- **Alternatives considered:** Keep the regex checks as a hard gate or expose them to the reviewer
+  as tools; a dedicated revision agent; letting the orchestrator revise the outreach; comparing
+  drafts across rounds.
+- **Reasoning:** Two live `acme-foods` runs produced complete artifacts but crashed on token-level
+  checks that rejected legitimate writing, with no feedback to the agent. A reviewer that reads the
+  evidence can judge meaning and formatting, and its findings give the authors actionable fixes.
+  Single ownership keeps accountability clear.
+- **Consequences:** Brief and outreach content safety now rests on one model's judgment, backed by
+  the domain template allowlist and the rep's approval. Worst-case cost rises by up to three
+  reviews and two redrafts. The trajectory evaluator now requires a review before
+  `review.requested`, permits redrafts only between reviews, and flags more than three reviews.
+- **Evidence:** `tests/unit/prospect_intelligence/test_quality_review.py` (contract, ordering,
+  freshness, round cap, and compiled revise-then-pass and exhausted trajectories),
+  `test_specialist_artifact_contract.py` (prompt structure, path drift, shared template),
+  `tests/unit/evaluation/test_trajectory.py`.
+
+### 2026-09-30 — Deferred: Jev (System One) runtime guardrail before rep review
+
+- **Decision:** Do not add a Jev guardrail on the final pre-review step yet.
+- **Reasoning:**
+  - TypeSafe offers no zero data retention, so runtime judging of CRM-derived drafts needs a
+    redaction design.
+  - Jev lives in offline `backend/evaluation`, which the app must not import; a runtime adapter
+    belongs in `agent_quality`.
+  - It adds a 30 s external dependency with an unsettled outage policy (fail-open vs fail-closed).
+  - Adding it together with the new reviewer would confound diagnosis.
+- **Staged path:**
+  1. Measure how often Jev's offline semantic metrics and reviewer verdicts disagree.
+  2. Add Jev as a non-blocking online evaluator (score and alert) behind redaction.
+  3. Promote it to a blocking gate only when disagreement, redaction, latency, and outage policy
+     are settled.

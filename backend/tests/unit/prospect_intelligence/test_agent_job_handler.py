@@ -1,6 +1,7 @@
 """Worker adapter coverage for compiled agent runs."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -13,8 +14,10 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectReviewDecision,
     ProspectRuntimeContext,
 )
+from app.features.prospect_intelligence.contracts.lane_analysis import LaneAnalysisArtifact
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
+    FitVerdict,
     OutreachDraft,
     ProspectRun,
     RepPreference,
@@ -159,6 +162,11 @@ async def test_agent_job_handler_commits_validated_graph_output_to_review() -> N
     assert "search_sec" in runtime.context.tool_handlers
     assert runtime.context.thread_id == completed.thread_id
     assert runtime.context.rep_preferences == ("Prefer concise outreach.",)
+
+    scored = runtime.context.tool_handlers["score_lane_fit_v1"]({})
+    artifact = LaneAnalysisArtifact.from_json(json.dumps(scored))
+    assert artifact.verdict is FitVerdict.FIT is completed.output.verdict
+    assert artifact.top_lanes == tuple(lane.score for lane in completed.output.brief.lanes)
 
 
 @pytest.mark.asyncio

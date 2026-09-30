@@ -47,7 +47,15 @@ class ProspectJobWorker:
         heartbeat = asyncio.create_task(self._heartbeat(claim, stop_heartbeat))
         try:
             await self._handler(claim.run_id, claim.claim_token)
-        except Exception:
+        except Exception as error:
+            # Exception text can carry model output or source data; log only its class.
+            await logger.awarning(
+                "prospect_run_execution_failed",
+                worker_id=self._worker_id,
+                run_id=str(claim.run_id),
+                error_code="execution_failed",
+                error_type=type(error).__name__,
+            )
             await asyncio.to_thread(
                 self._jobs.fail,
                 claim.id,

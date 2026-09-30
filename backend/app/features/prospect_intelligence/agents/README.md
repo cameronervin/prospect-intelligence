@@ -6,7 +6,8 @@ clients belong to `platform`; job/review handlers and workers belong to the feat
 ## Vocabulary
 
 - `specs.py` declares immutable agent topology, tool names, permissions, model classes, skill
-  sources, and middleware limits. `prompts.py` owns cache-friendly system prompts.
+  sources, and middleware limits. `prompts/` owns cache-friendly system prompts: one ALL-CAPS constant per agent, the shared
+  brief template, and the artifact contract generated from each spec.
 - `state.py` contains only checkpointed LangGraph state and its small reducers. Invocation-scoped
   dependencies are `ProspectRuntimeContext` in the feature contracts package.
 - `context.py` provides scoped access to that invocation context for compiled Deep Agent subgraphs.
@@ -44,13 +45,16 @@ depend on the provider-neutral runtime protocol, not on this package's concrete 
 ## Topology and middleware lifecycle
 
 The root Deep Agent is the only component allowed to delegate. It exposes exactly
-`account-context`, `external-research`, `lane-analyst`, and `outreach-drafter`; specialists do not
+`account-context`, `external-research`, `lane-analyst`, `outreach-drafter`, and
+`quality-reviewer`; specialists do not
 receive `task`, and Deep Agents' implicit general-purpose subagent is disabled. Specialists run in
 isolated mode so parent messages cannot bypass their context policy; shared files still merge back
 through the task result. Account and external research are eligible in the same tool-call turn.
 Delegation middleware blocks lane analysis until
-both research contracts exist, blocks outreach drafting until the brief exists, and blocks
-`send_outreach` until all required artifacts pass guardrails.
+both research contracts exist, blocks outreach drafting until the brief exists, allows an outreach
+redraft only for outreach findings from a later review, caps reviews at three, and blocks
+`send_outreach` until the latest review passed, no draft changed since it, and all artifact
+contracts validate. Draft content itself is judged by the reviewer, not by gate regexes.
 
 Each model request first receives an allowlisted context projection and dynamic prompt. Budget and
 delegation middleware constrain model/tool calls. Tool errors are sanitized, platform policy hides

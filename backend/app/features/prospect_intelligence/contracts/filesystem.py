@@ -32,6 +32,7 @@ class ProspectFileContract:
     lane_fit_markdown: str = "/analysis/lane_fit.md"
     sales_brief: str = "/output/brief.md"
     outreach_draft: str = "/output/outreach_draft.md"
+    review_findings: str = "/review/findings.json"
 
     def manifest_entries(self) -> tuple[ArtifactManifestEntry, ...]:
         """Describe the required run artifacts and their owning agent."""
@@ -58,6 +59,7 @@ class ProspectFileContract:
             ArtifactManifestEntry(
                 self.outreach_draft, "outreach-drafter", ArtifactMediaType.MARKDOWN
             ),
+            ArtifactManifestEntry(self.review_findings, "quality-reviewer", ArtifactMediaType.JSON),
         )
 
     def required_artifacts(self) -> tuple[str, ...]:

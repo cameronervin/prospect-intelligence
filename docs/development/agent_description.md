@@ -89,6 +89,7 @@ complete provenance. The orchestrator and evaluators rely on this contract.
 /analysis/lane_fit.md          # human-readable summary
 /output/brief.md               # sales brief (orchestrator)
 /output/outreach_draft.md      # draft message (drafting subagent)
+/review/findings.json          # quality review verdict and findings (reviewer subagent)
 /memories/{tenant_id}/{rep_id}/preferences.md  # persistent rep preferences
 ```
 
@@ -99,10 +100,15 @@ complete provenance. The orchestrator and evaluators rely on this contract.
 ### Orchestrator
 
 - Reads `/task/brief.md`, `/INDEX.md`, and `/memories/{tenant_id}/{rep_id}/preferences.md` first.
-- Delegates to exactly four registered subagents via `task`; never calls data APIs directly.
+- Delegates to exactly five registered subagents via `task`; never calls data APIs directly.
 - Requests account-context and external-research together. Delegation middleware requires both
   research contracts before lane analysis and the internal brief before outreach drafting.
-- Writes `/output/brief.md` from files only. Every number must come from `/analysis` or `/research`.
+- Writes `/output/brief.md` from files only, following the shared brief template in
+  `agents/prompts/brief_template.py`.
+- Runs the quality-review loop: delegates `quality-reviewer`; on `revise`, rewrites the brief for
+  brief findings and re-delegates `outreach-drafter` for outreach findings, then reviews again. At
+  most three reviews; unresolved findings fail the run closed.
+- Calls `send_outreach` only after the latest review passed and no draft changed since it.
 - Owns the HITL tool `send_outreach`. The MVP has no CRM mutation tool.
 
 ### Subagents
@@ -112,19 +118,24 @@ complete provenance. The orchestrator and evaluators rely on this contract.
    through separate injected source tools → `/research/`
 3. **lane-analyst**: uses the code interpreter with PTC. Reads `/context` and `/research`,
    loads `/skills/lane_fit_v1/SKILL.md`, fans out lane lookups, and computes scores → `/analysis/`
-4. **outreach-drafter**: reads `/output/brief.md` plus tenant/rep-scoped preferences, writes
-   `/output/outreach_draft.md`. Must not introduce numbers absent from the brief.
+4. **outreach-drafter**: reads `/output/brief.md`, tenant/rep-scoped preferences, and review
+   findings on a revision; writes `/output/outreach_draft.md` using an approved v1 template.
+5. **quality-reviewer**: read-only judgment over the brief and outreach against all evidence, the
+   lane analysis, rep preferences, and the brief template. No checking tools; writes only
+   `/review/findings.json` (round, pass/revise verdict, blocking/advisory findings).
 
 The Deep Agents default general-purpose subagent is disabled. Specialists expose no `task` tool;
-only the orchestrator receives the four compiled specialists.
+only the orchestrator receives the five compiled specialists.
 
 ### Context engineering
 
 Every chain receives a concrete middleware stack. Middleware projects the allowlisted task,
 manifest, artifacts, and rep preferences before model calls; applies model/tool budgets; redacts
 tool errors; treats source results as untrusted data; gates delegation and
-`send_outreach`; and validates each specialist's owned artifacts. Pure guardrails are reused at
-graph and persistence boundaries. LangGraph state contains checkpointed workflow data only, while
+`send_outreach` on review order and freshness; and validates each specialist's owned artifact
+contracts. Draft content is judged by the quality reviewer rather than regex checks at the gate;
+the v1 outreach template allowlist is still enforced in the domain when the result is committed and
+on rep edits. LangGraph state contains checkpointed workflow data only, while
 tenant, rep, source handlers, and other request-scoped dependencies use runtime context.
 Platform trace privacy hides all run inputs, outputs, and metadata by default.
 
@@ -209,7 +220,7 @@ facts, and the set of valid numeric values.
 | Code                | `analysis_correctness`                           | Analyst's scores match the Python reference implementation                         |
 | Code                | `fit_verdict_accuracy`                           | Correct fit / no-fit call, including edge cases                                    |
 | Code                | `file_contract`                                  | Each subagent wrote required files with valid schema                               |
-| Code (trajectory)   | `trajectory_checks`                              | Required subagents called; analyst ran after research; no send without approval    |
+| Code (trajectory)   | `trajectory_checks`                              | Required subagents called; analyst ran after research; review before send; ≤3 reviews; no send without approval |
 | Code                | `injection_resistance`                           | On injection examples: no forbidden tool call, no planted canary string in outputs |
 | Code                | cost, latency, tool-call count                   | Efficiency budget per run                                                          |
 | Jev (default judge) | Typed questions (below)                          | All semantic quality criteria, offline and online                                  |
@@ -327,7 +338,9 @@ Jev operating rules:
   review before sending customer data to Jev in production. Options: redact state before
   judging, or fall back to a self-hosted judge for sensitive fields.
 - Judge robustness: Jev can be steered by adversarial text in its state, so it never sees raw
-  tool or web output, and safety-critical checks keep a deterministic code check alongside it.
+  tool or web output. In-run draft-content gating is the quality reviewer's judgment plus human
+  approval (and the domain outreach-template allowlist); deterministic code checks are retained
+  offline as measurement. A Jev runtime guardrail is deferred (see the business-logic log).
 - Durability: checkpointer-backed resume; idempotent `update_crm`; retries with backoff and
   response caching for paid APIs.
 - Guardrails: prompt-injection screening on web content; PTC allowlist as permission boundary;

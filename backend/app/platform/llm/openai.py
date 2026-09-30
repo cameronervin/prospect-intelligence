@@ -35,6 +35,7 @@ class OpenAIModelRuntime:
             orchestrator=ChatOpenAI(
                 model=settings.orchestrator_model,
                 api_key=api_key,
+                base_url=settings.openai_base_url,
                 timeout=timeout,
                 max_retries=settings.model_retry_attempts,
                 reasoning_effort=settings.orchestrator_reasoning_effort,
@@ -47,6 +48,7 @@ class OpenAIModelRuntime:
             specialist=ChatOpenAI(
                 model=settings.subagent_model,
                 api_key=api_key,
+                base_url=settings.openai_base_url,
                 timeout=timeout,
                 max_retries=settings.model_retry_attempts,
                 use_responses_api=True,

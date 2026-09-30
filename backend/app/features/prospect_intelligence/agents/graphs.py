@@ -123,8 +123,10 @@ def build_prospect_workflow(
                     content=(
                         "Read /task/brief.md, /INDEX.md, and allowed rep memory. Delegate "
                         "account-context and external-research in one parallel tool-call turn; "
-                        "then delegate lane-analyst, write /output/brief.md, delegate "
-                        "outreach-drafter, and call send_outreach."
+                        "then delegate lane-analyst, write /output/brief.md, and delegate "
+                        "outreach-drafter. Delegate quality-reviewer; on revise, fix brief "
+                        "findings and re-delegate outreach findings, then review again (at most "
+                        "three reviews). Call send_outreach only after the latest review passes."
                     )
                 )
             ],

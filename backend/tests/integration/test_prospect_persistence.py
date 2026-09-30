@@ -128,6 +128,10 @@ def _feature_graph_files() -> dict[str, dict[str, str]]:
             ),
             "encoding": "utf-8",
         },
+        "/review/findings.json": {
+            "content": '{"round":1,"verdict":"pass","findings":[],"resolved_prior":[]}',
+            "encoding": "utf-8",
+        },
     }
 
 

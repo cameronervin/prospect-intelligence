@@ -53,6 +53,8 @@ async def test_runtime_builds_cached_provider_neutral_responses_models() -> None
     assert specialist.request_timeout == 17
     assert orchestrator.max_retries == 1
     assert specialist.max_retries == 1
+    assert orchestrator.openai_api_base is None
+    assert specialist.openai_api_base is None
 
     await runtime.close()
 
@@ -92,5 +94,39 @@ async def test_runtime_does_not_close_injected_transports() -> None:
 
     assert not sync_transport.is_closed
     assert not async_transport.is_closed
+    await asyncio.to_thread(sync_transport.close)
+    await async_transport.aclose()
+
+
+@pytest.mark.asyncio
+async def test_runtime_routes_both_models_to_the_configured_base_url() -> None:
+    requested: list[httpx.URL] = []
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        requested.append(request.url)
+        return httpx.Response(401, json={"error": {"message": "synthetic"}})
+
+    async def arefuse(request: httpx.Request) -> httpx.Response:
+        return refuse(request)
+
+    sync_transport = httpx.Client(transport=httpx.MockTransport(refuse))
+    async_transport = httpx.AsyncClient(transport=httpx.MockTransport(arefuse))
+    runtime = OpenAIModelRuntime(
+        _settings(openai_base_url="https://us.api.openai.com/v1", model_retry_attempts=0),
+        sync_transport=sync_transport,
+        async_transport=async_transport,
+    )
+
+    for model in (runtime.models.orchestrator, runtime.models.specialist):
+        assert isinstance(model, ChatOpenAI)
+        assert model.openai_api_base == "https://us.api.openai.com/v1"
+        with pytest.raises(Exception):  # noqa: B017 - provider error type is SDK-owned
+            await model.ainvoke("ping")
+
+    assert [(url.host, url.path) for url in requested] == [
+        ("us.api.openai.com", "/v1/responses"),
+        ("us.api.openai.com", "/v1/responses"),
+    ]
+    await runtime.close()
     await asyncio.to_thread(sync_transport.close)
     await async_transport.aclose()

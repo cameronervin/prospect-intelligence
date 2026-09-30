@@ -11,8 +11,12 @@ _REQUIRED_STAGES = (
     "external_research.completed",
     "lane_analyst.completed",
     "outreach_drafter.completed",
+    "quality_review.completed",
     "review.requested",
 )
+# The review loop legitimately repeats these; every other stage must run exactly once.
+_REPEATABLE = frozenset({"outreach_drafter.completed", "quality_review.completed"})
+_MAX_REVIEWS = 3
 
 
 def evaluate_trajectory(
@@ -20,14 +24,17 @@ def evaluate_trajectory(
 ) -> EvaluationResult:
     del reference_outputs
     events = snapshot_strings(outputs.get("trajectory_events"))
-    positions = {event: index for index, event in enumerate(events)}
+    positions: dict[str, int] = {}
+    for index, event in enumerate(events):
+        positions.setdefault(event, index)
     violations: list[str] = []
     missing = [event for event in _REQUIRED_STAGES if event not in positions]
     if missing:
         violations.append(f"missing stages: {', '.join(missing)}")
     for event in _REQUIRED_STAGES:
-        if events.count(event) > 1:
+        if event not in _REPEATABLE and events.count(event) > 1:
             violations.append(f"stage repeated: {event}")
+    violations.extend(_review_loop_violations(events))
     analyst = positions.get("lane_analyst.completed")
     for research_event in ("account_context.completed", "external_research.completed"):
         research = positions.get(research_event)
@@ -54,3 +61,25 @@ def evaluate_trajectory(
         score=1.0 if passed else 0.0,
         metadata={"passed": passed, "violations": violations},
     )
+
+
+def _review_loop_violations(events: list[str]) -> list[str]:
+    violations: list[str] = []
+    if events.count("quality_review.completed") > _MAX_REVIEWS:
+        violations.append(f"more than {_MAX_REVIEWS} quality reviews")
+    reviewed_since_draft = True
+    drafted = False
+    for event in events:
+        if event == "outreach_drafter.completed":
+            if drafted and not reviewed_since_draft:
+                violations.append("outreach redrafted without an intervening quality review")
+            drafted, reviewed_since_draft = True, False
+        elif event == "quality_review.completed":
+            reviewed_since_draft = True
+        elif event == "review.requested":
+            if "quality_review.completed" not in events[: events.index(event)]:
+                violations.append("quality review missing before review request")
+            elif not reviewed_since_draft:
+                violations.append("drafts changed after the last quality review")
+            break
+    return violations

@@ -58,12 +58,26 @@ def test_delegation_policy_enforces_stage_prerequisites() -> None:
         validate_delegation("task", {"subagent_type": "lane-analyst"}, before_research)
     with pytest.raises(ValueError, match="approved brief"):
         validate_delegation("task", {"subagent_type": "outreach-drafter"}, before_research)
-    with pytest.raises(ValueError, match="required artifacts"):
+    with pytest.raises(ValueError, match="requires a quality review"):
         validate_delegation("send_outreach", {}, before_research)
 
     validate_delegation("task", {"subagent_type": "lane-analyst"}, files)
     validate_delegation("task", {"subagent_type": "outreach-drafter"}, files)
-    validate_delegation("send_outreach", {}, files)
+    validate_delegation("task", {"subagent_type": "quality-reviewer"}, files)
+    reviewed = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "task",
+                    "args": {"subagent_type": "quality-reviewer"},
+                    "id": "review-1",
+                    "type": "tool_call",
+                }
+            ],
+        )
+    ]
+    validate_delegation("send_outreach", {}, files, messages=reviewed)
 
 
 def test_semantic_provenance_is_required_for_source_artifacts() -> None:

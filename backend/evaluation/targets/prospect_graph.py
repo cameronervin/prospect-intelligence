@@ -44,6 +44,7 @@ def _trajectory(raw: Mapping[str, object]) -> list[str]:
         "external-research": "external_research.completed",
         "lane-analyst": "lane_analyst.completed",
         "outreach-drafter": "outreach_drafter.completed",
+        "quality-reviewer": "quality_review.completed",
     }
     for name, args in calls:
         if name == "task" and isinstance(args.get("subagent_type"), str):

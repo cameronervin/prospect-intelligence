@@ -71,6 +71,9 @@ def artifacts(example_index: int = 0) -> dict[str, str]:
         PROSPECT_FILES.lane_fit_markdown: "# Lane fit\n",
         PROSPECT_FILES.sales_brief: "A supported rate is $1,250 and the share is 25%.",
         PROSPECT_FILES.outreach_draft: "Subject: Freight fit\n\nA supported rate is $1,250.",
+        PROSPECT_FILES.review_findings: json.dumps(
+            {"round": 1, "verdict": "pass", "findings": [], "resolved_prior": []}
+        ),
     }
 
 

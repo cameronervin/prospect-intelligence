@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
+from structlog.testing import capture_logs
 
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
 from app.features.prospect_intelligence.contracts.jobs import ClaimedJob, JobRepository
@@ -138,7 +139,19 @@ async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() 
         clock=lambda: NOW,
     )
 
-    assert await worker.run_once() is True
+    with capture_logs() as logs:
+        assert await worker.run_once() is True
 
     assert jobs.completed == []
     assert jobs.failed == [(7, CLAIM_TOKEN, "execution_failed", True)]
+    assert logs == [
+        {
+            "event": "prospect_run_execution_failed",
+            "log_level": "warning",
+            "worker_id": "worker-1",
+            "run_id": str(RUN_ID),
+            "error_code": "execution_failed",
+            "error_type": "RuntimeError",
+        }
+    ]
+    assert "customer secret" not in repr(logs)

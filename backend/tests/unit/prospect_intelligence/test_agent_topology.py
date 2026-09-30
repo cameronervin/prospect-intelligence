@@ -69,8 +69,13 @@ def test_specs_define_exact_root_and_specialist_capabilities() -> None:
         "external-research",
         "lane-analyst",
         "outreach-drafter",
+        "quality-reviewer",
     )
     assert all(spec.model_class is ModelClass.SPECIALIST for spec in specialists)
+    reviewer = next(spec for spec in specialists if spec.name == "quality-reviewer")
+    assert reviewer.tool_names == ()
+    assert reviewer.writable_paths == ("/review/findings.json",)
+    assert not any(path.startswith("/output/") for path in reviewer.writable_paths)
     assert all("task" not in spec.tool_names for spec in specialists)
     analyst = next(spec for spec in specialists if spec.name == "lane-analyst")
     assert analyst.skill_sources == ("/skills/",)
@@ -183,7 +188,7 @@ def test_lane_skill_is_discovered_from_the_virtual_backend() -> None:
     ]
 
 
-def test_chain_builder_registers_exactly_four_explicit_subagents(
+def test_chain_builder_registers_exactly_five_explicit_subagents(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, object]] = []
@@ -211,10 +216,11 @@ def test_chain_builder_registers_exactly_four_explicit_subagents(
         "external-research",
         "lane-analyst",
         "outreach-drafter",
+        "quality-reviewer",
         "orchestrator",
     ]
-    assert all(call["subagents"] == [] for call in calls[:4])
-    assert [call["skills"] for call in calls] == [None, None, ["/skills/"], None, None]
+    assert all(call["subagents"] == [] for call in calls[:5])
+    assert [call["skills"] for call in calls] == [None, None, ["/skills/"], None, None, None]
     analyst_backend = cast(Any, calls[2]["backend"])
     skill = analyst_backend.read("/skills/lane_fit_v1/SKILL.md")
     assert skill.file_data is not None
@@ -230,15 +236,16 @@ def test_chain_builder_registers_exactly_four_explicit_subagents(
         permission.operations == ["write"] and permission.paths == ["/skills/"]
         for permission in analyst_permissions
     )
-    root_subagents = cast("list[Mapping[str, object]]", calls[4]["subagents"])
+    root_subagents = cast("list[Mapping[str, object]]", calls[5]["subagents"])
     assert tuple(item["name"] for item in root_subagents) == (
         "account-context",
         "external-research",
         "lane-analyst",
         "outreach-drafter",
+        "quality-reviewer",
     )
     assert all(item["mode"] == "isolated" for item in root_subagents)
-    root_tools = cast("list[Any]", calls[4]["tools"])
+    root_tools = cast("list[Any]", calls[5]["tools"])
     assert [item.name for item in root_tools] == ["send_outreach"]
 
 
@@ -317,11 +324,12 @@ async def test_compiled_deep_agents_follow_the_root_owned_trajectory() -> None:
     assert result.pending_interrupt == "send_outreach"
     assert model.root_task_batches == [("account-context", "external-research")]
     assert model.call_counts == {
-        "orchestrator": 7,
+        "orchestrator": 8,
         "account-context": 2,
         "external-research": 2,
         "lane-analyst": 2,
         "outreach-drafter": 2,
+        "quality-reviewer": 2,
     }
     assert set(completed_files()).issubset(result.files)
     backend = create_agent_backend(
