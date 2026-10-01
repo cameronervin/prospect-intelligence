@@ -11,8 +11,8 @@ Linear is the source of truth for ticket scope, status, and dependencies. This f
 7. [COMPLETE] **After CAM-34 and CAM-35:** CAM-36 — review UI. **After CAM-38:** CAM-39 — Jev evaluators.
 8. [COMPLETE] **After CAM-36:** CAM-37 — browser tests. **After CAM-34 and CAM-39:** CAM-42 — online-quality feature.
 9. [COMPLETE] **After CAM-42:** CAM-43 — online rules and simulator. **After CAM-37, CAM-38, and CAM-39:** CAM-40 — LangSmith experiments.
-10. [CURRENT] **After CAM-40:** CAM-41 — human calibration, owned by Cameron.
-11. **After CAM-40, CAM-41, and CAM-43:** CAM-44 — reviewed regression intake.
+10. [COMPLETE] **After CAM-40:** CAM-41 — human calibration, owned by Cameron.
+11. [CURRENT] **After CAM-40, CAM-41, and CAM-43:** CAM-44 — reviewed regression intake.
 12. **After CAM-37 and CAM-44:** CAM-45 — final documentation and demo material.
 13. **After CAM-45:** CAM-46 — final acceptance and rehearsal.
 14. **Optional after CAM-46:** CAM-47 and CAM-48 — stretch work.

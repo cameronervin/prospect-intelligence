@@ -8,6 +8,7 @@ from typing import Protocol, cast
 from evaluation.datasets import langsmith_examples
 from evaluation.evaluators.semantic import SEMANTIC_EVALUATOR_KEYS
 from evaluation.evaluators.suite import OFFLINE_EVALUATOR_REGISTRATIONS
+from evaluation.evidence import require_release_evidence
 
 
 class HostedPersistenceClient(Protocol):
@@ -63,6 +64,12 @@ def verify_hosted_persistence(
         reference_id = str(getattr(run, "reference_example_id", ""))
         metadata = _root_metadata(run)
         expected_hash = sha256(f"cam-40:{expected_examples[reference_id]}".encode()).hexdigest()
+        try:
+            require_release_evidence(metadata)
+        except ValueError as error:
+            raise RuntimeError(
+                "hosted persistence drift: release metadata is incomplete"
+            ) from error
         if (
             run_id is None
             or metadata.get("rep_id_hash") != expected_hash

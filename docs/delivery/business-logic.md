@@ -17,6 +17,169 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ## Decisions
 
+### 2026-10-01 — Semantic evaluation: align judges to blind human preference
+
+- **Decision:** This entry supersedes earlier expectations that CAM-41 itself would activate or set
+  semantic promotion gates. CAM-41/CAM-50 use `cam-41-labels-v1`, a single-reviewer, two-pass human
+  reference.
+  For each of the seven `semantic-v1` questions, seed `28029` selects exactly 10 applicable cases,
+  deduplicated by metric and projected-state hash and stratified across core, edge, expected class,
+  ambiguous/adversarial, and compatible CAM-40 variant conditions. The v1 population is entirely
+  versioned synthetic state because historical CAM-40 row state is not retained in the repository;
+  variant tags describe compatibility, not trace provenance. Each question has five alignment cases
+  and five untouched holdout cases;
+  the same state hash cannot cross splits.
+- **Decision:** One designated reviewer completes and freezes a blind primary pass before any judge
+  answer is shown. Review submitted through the SDK preserves LangSmith's `api` source and must carry
+  explicit `manual_rubric_review` provenance plus a stable reviewer ID; it is not attributed to a UI user.
+  Every label requires its canonical value, confidence, concise rationale, ambiguity flag, reviewer,
+  and review time. Low-confidence or ambiguous cases require a separate blind adjudication pass.
+  The freeze covers all 70 primary values and timestamps, verifies one stable LangSmith reviewer
+  identity, and persists a checksum that calibration re-verifies before accepting labels.
+  Missing or conflicting labels, metadata, adjudication, question coverage, versions, or regenerated
+  state hashes prevent label-set approval. This process is not described as inter-rater validation.
+- **Decision:** Jev `jev-1.13.0` and GPT-5.6 Sol each run three times per approved case. Choice and
+  ordered 1–5 questions use deterministic option permutations mapped back to canonical labels. The
+  full plan is 420 logical attempts, executed as a 210-attempt alignment phase followed—only
+  after rubric/prompt freeze—by a separately authorized 210-attempt holdout phase. With two retries,
+  the disclosed provider-request ceiling is three times the logical-attempt count.
+  The prompt/answer identity is source-controlled as
+  `shared-question-payload-v2-weighted-scores`; the holdout path requires the persisted,
+  read-back-verified composite project
+  `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`, covering exactly 210 accepted
+  alignment identities for identical label, rubric, evaluator, graph, prompt, and source revisions,
+  rather than trusting operator confirmation alone.
+  Provider/validation failures remain invalid attempts; one judge never substitutes for the other.
+- **Decision:** Per question and judge, report valid-attempt coverage over the full `3 × cases`
+  denominator, exact agreement and confusion counts, balanced accuracy for represented binary or
+  categorical classes, ordered-score mean absolute error and within-one agreement, run-to-run
+  disagreement as `1 - modal valid answer share`. Option-order sensitivity first requires two
+  stable repeated canonical-order answers, then measures the proportion of eligible cases changed
+  by an alternate deterministic permutation. It is described as observed permutation-associated
+  variation because each alternate order has one sample; alternate-order observed/expected coverage
+  is reported, and zero valid/eligible denominators are unavailable rather than `0%`. Reported cost
+  plus telemetry coverage/unavailable count, and latency. Missing required class support yields
+  `class_imbalance`, not a balanced score; missing cost is not interpreted as a real zero. Jev's
+  exact-agreement delta from Sol is reported on the same question and split.
+- **Decision:** The shared score primitive's probability distribution is the authoritative mapping
+  from provider rubric positions back to canonical 1–5 values. Ordered-score runtime values retain
+  the probability-weighted canonical score. Exact agreement, confusion, run-to-run disagreement, and
+  order sensitivity use the nearest canonical label, with half points rounded upward; MAE and
+  within-one use the unrounded weighted value. The provider's aggregate score remains bounded and
+  finite but is not required to exactly equal its displayed probability distribution because Jev
+  and the comparison adapter expose that aggregate differently.
+- **Decision:** V2 is the accepted output-normalization contract and does not change rubric wording.
+  The single bounded `shared-question-payload-v3-score-anchors` experiment explicitly labeled the
+  existing score anchors and added closest-anchor/adjacent-uncertainty guidance. It is rejected
+  because, despite 60/60 valid attempts and isolated exact/MAE improvements, Jev `tone_fit`
+  within-one fell from 86.67% to 80% and Jev `actionability` introduced 6.67% run-to-run disagreement
+  and 20% option-order sensitivity. No further prompt iteration is allowed on this alignment split.
+  The candidate wording and finite metric comparison rule remain source-controlled for
+  reproducibility, while the paid `--score-revision-only` CLI path now rejects another run.
+  The accepted composite therefore uses the original categorical project plus the v2 score and
+  unavailable-only retry projects; it excludes v3.
+- **Decision:** Composite target identity pins both the original categorical prompt revision and the
+  accepted v2 score revision. The earlier `...9ede43d8fc6305bc` manifest remains immutable but is
+  superseded by hardened, read-back-verified `...039273d2fe8e3143`, which additionally rejects
+  forged, duplicate, mixed-scope, or revision-mismatched stored source summaries. Holdout
+  verification also pins the exact three approved source project names and their recorded code
+  revisions (`...0099bade7c54a0ed` / `e270dd16365b-dirty-69c567eba5e0`,
+  `...9def2f19d5593cf7` / `e270dd16365b-dirty-8527939512f9`, and
+  `...4a7eedede417b378` / `e270dd16365b-dirty-b537010dfbcf`); a lookalike alignment project cannot
+  replace an approved source.
+- **Decision:** Historical v2/v3 ordered-score traces are immutable and predate the shared canonical
+  agreement helper. Their per-run `cam41.human_agreement` boolean may reflect literal fractional
+  equality; aggregate reports remain authoritative, and the composite relies on feedback status and
+  coverage rather than that boolean. Future/holdout feedback uses the same nearest-label agreement
+  contract as aggregate reporting.
+- **Decision:** Alignment cases may diagnose a bounded rubric or projection change; any successor
+  rubric freezes before the holdout. Recommend `retain` only when holdout exact agreement is at least
+  85%, attempt coverage is complete, and Jev is no more than five percentage points behind Sol.
+  Other outcomes are `revise`, `split`, or `replace`. These thresholds are recommendation-only and
+  do not activate a semantic release gate.
+- **Decision:** Real alignment traces use `evidence_class=evaluator_alignment`,
+  `experiment_purpose=alignment`, `alignment_run=true`, split, and complete dataset, label-set,
+  rubric, evaluator, graph, prompt, judge/model/provider, and code revisions. Completion
+  requires LangSmith read-back of every expected trace and feedback record. Local-only runs require
+  a reason and cannot count as completed evidence. Future release experiments use
+  `evidence_class=release_experiment`, `experiment_purpose=model_selection`, and
+  `alignment_run=false`; release selection rejects alignment evidence by metadata. Historical CAM-40
+  v2/v3 evidence remains unchanged.
+- **Decision:** LangSmith annotation-queue membership and feedback automatically upgrade these
+  roots to extended retention. Live preflight therefore reports LangSmith trace charges separately
+  from provider charges using the workspace rate observed on 2026-10-01 (`$0.0075/trace`): at most
+  `$0.53` for 70 newly published labeling roots and `$3.15` for the traced 420-attempt matrix,
+  before provider charges and subject to included usage. The earlier 280-root publication is a
+  sunk estimated `$2.10`; queue reconciliation does not delete those traces or refund retention.
+  Base retention remains the workspace
+  default, but it is not presented as the effective tier for alignment evidence.
+- **Decision:** The alignment package separates pure `reference`, `calibration`, and `evidence`
+  contracts from `integrations/langsmith`, `reporting`, and orchestration in `workflows`. The CLI,
+  deterministic identities, trace metadata, reports, and authorization behavior remain stable.
+  Composite publication performs no provider calls, stores only sanitized aggregate source and
+  identity-checksum evidence, and rejects missing, overlapping, unavailable, holdout, or
+  revision-mismatched attempts.
+- **Alternatives considered:** Derive labels from judge outputs; expose judge scores during human
+  review; tune on holdout cases; reduce coverage denominators after failed calls; silently fall back
+  between judges; treat a solo pass as inter-rater agreement; activate semantic gates immediately;
+  reuse project-name prefixes as the evidence boundary; or add OpenEvals for a workflow already
+  covered by the shared judge, projection, rubric, and LangSmith contracts.
+- **Reasoning:** Blind human-first labeling makes the evaluator choice an empirical preference-
+  alignment decision instead of circular judge validation. Separate alignment and holdout slices
+  allow bounded iteration without presenting tuned examples as independent evidence. Fail-closed
+  coverage and metadata isolate incomplete or diagnostic runs from release decisions.
+- **Consequences:** The 70-case reference review and 13 required adjudications are complete. The
+  210-attempt alignment phase is read back; the separately authorized 210-attempt holdout remains.
+  Initial alignment produced 154 valid attempts and 56 unavailable attempts, all in `actionability` and
+  `tone_fit`, because the adapter's integer-only score assumption conflicts with the shared score
+  primitive's probability-weighted output. The bounded score revision, targeted 60-attempt run, and
+  17 unavailable-only retries now provide 60/60 valid ordered-score observations. `actionability`
+  remains `revise` because Jev within-one agreement is 80%; `tone_fit` remains `revise` because Sol
+  is closer to the human labels while also showing greater instability and option-order variation,
+  which is insufficient evidence to replace Jev. The v3 prompt experiment was rejected under the
+  predeclared rule; the v2 composite is accepted and read back as 210/210 alignment attempts.
+  Repository tests and the composite do not prove holdout alignment.
+  One reviewer cannot estimate inter-rater agreement
+  or stakeholder-wide preference. Recalibration is required after judge/model, rubric, projection,
+  or material dataset changes; class/distribution drift; repeated human disagreement; or addition of
+  customer-approved examples. Only sanitized aggregates and per-question decisions may be committed.
+- **Evidence:** The source-controlled alignment workflow and tests; canonical process documentation
+  in `docs/evaluation/evaluator-alignment-process.md`; live 2026-10-01 preparation originally
+  published 280 roots, and the MVP reconciliation reduces each of seven primary queues to 10 items
+  without deleting traces. The frozen primary pass contains 70 complete cases, 13 flagged cases were
+  adjudicated, and the state-free `cam-41-labels-v1` dataset was published with 35 alignment and 35
+  holdout examples. Project `cam-41-alignment-cam-41-labels-v1-0099bade7c54a0ed` contains 210/210
+  alignment attempt roots and 210/210 agreement feedback records, and the sanitized aggregate is in
+  `backend/evaluation/reports/cam_41_diagnostics.md`. The score-contract evidence is split across
+  immutable projects `cam-41-alignment-cam-41-labels-v1-9def2f19d5593cf7` and
+  `cam-41-alignment-cam-41-labels-v1-4a7eedede417b378`, with the combined sanitized aggregate in
+  `backend/evaluation/reports/cam_41_score_revision_diagnostics.md`. The rejected v3 evidence is
+  project `cam-41-alignment-cam-41-labels-v1-b6adb9618f50cb3e` and sanitized report
+  `backend/evaluation/reports/cam_41_score_prompt_diagnostics.md`. Its incremental cost was
+  `$0.104633` provider usage plus approximately `$0.45` in traces; the superseded and hardened
+  composite manifests added approximately `$0.015`, bringing estimated alignment-related spend to about
+  `$8.90`, with no configured spend limit hit. Composite project
+  `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143` was read back
+  with 210 accepted attempt identities. At that evidence checkpoint, the untouched holdout remained
+  pending separate authorization; the following decision explicitly waives it from MVP completion.
+
+### 2026-10-01 — Close evaluator alignment at the take-home demonstration boundary
+
+- **Decision:** CAM-41 and CAM-50 complete on the blind human reference set, full alignment-split
+  judge comparison, bounded v2 normalization fix, rejected v3 prompt experiment, read-back-verified
+  composite, documentation, and repository verification. The implemented 210-attempt holdout path
+  is intentionally not run because independent holdout validation is outside the take-home MVP.
+- **Reasoning:** The assessment needs a clear demonstration of how human preferences become reference
+  labels, how two judges are measured, and how a bounded prompt change is accepted or rejected. A
+  second paid phase would add independent validation but is not necessary to explain that lifecycle.
+- **Consequences:** The alignment-only findings remain evidence and revision recommendations. They
+  must not be presented as holdout performance, a semantic release gate, production readiness, or
+  proof that the 85% retain threshold was met. The holdout implementation and hardened composite
+  prerequisite remain available if a future scope requires that stronger claim.
+- **Evidence:** `cam-41-labels-v1`, the accepted 210-attempt composite
+  `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`, the aggregate reports, rejected v3
+  decision, canonical process document, and ticket-specific closing records.
+
 ### 2026-09-30 — Online quality operations: owned resources and deterministic demo traffic
 
 - **Decision:** CAM-42's app-side evaluator catalog and stable 10% evaluation cohort remain

@@ -37,35 +37,40 @@ class ReportableRun(Protocol):
     def rows(self) -> tuple[RowSummary, ...]: ...
 
 
-def current_code_revision() -> str:
+def current_code_revision(*, excluded_paths: Sequence[str] = ()) -> str:
     """Identify the exact tracked diff and untracked source state used by a live run."""
 
-    result = subprocess.run(
-        ("git", "rev-parse", "--short=12", "HEAD"),
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    revision = result.stdout.strip()
-    if not revision:
-        raise RuntimeError("git returned an empty code revision")
     root = subprocess.run(
         ("git", "rev-parse", "--show-toplevel"),
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
-    diff = subprocess.run(
-        ("git", "diff", "--binary", "HEAD", "--"),
+    result = subprocess.run(
+        ("git", "rev-parse", "--short=12", "HEAD"),
         check=True,
         capture_output=True,
+        text=True,
+        cwd=root,
+    )
+    revision = result.stdout.strip()
+    if not revision:
+        raise RuntimeError("git returned an empty code revision")
+    exclusions = tuple(f":(top,exclude){path}" for path in excluded_paths)
+    diff = subprocess.run(
+        ("git", "diff", "--binary", "HEAD", "--", ".", *exclusions),
+        check=True,
+        capture_output=True,
+        cwd=root,
     ).stdout
     untracked = subprocess.run(
         ("git", "ls-files", "--others", "--exclude-standard", "-z"),
         check=True,
         capture_output=True,
+        cwd=root,
     ).stdout.split(b"\0")
-    paths = sorted(path for path in untracked if path)
+    excluded = {path.encode() for path in excluded_paths}
+    paths = sorted(path for path in untracked if path and path not in excluded)
     if not diff and not paths:
         return revision
     digest = sha256(diff)

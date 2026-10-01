@@ -118,7 +118,11 @@ def question_payload(question: SemanticQuestion, option_order: tuple[str, ...]):
             instructions=question.instructions,
             criteria={option: descriptions[option] for option in option_order},
         )
-    return Score(instructions=question.instructions, criteria=question.criteria)
+    descriptions = dict(zip(question.options, question.criteria, strict=True))
+    return Score(
+        instructions=question.instructions,
+        criteria=tuple(descriptions[option] for option in option_order),
+    )
 
 
 def _answer(
@@ -149,10 +153,20 @@ def _answer(
         raise JudgeProtocolError("score is outside the requested rubric")
     zero_based = tuple(str(index) for index in range(len(question.criteria)))
     raw_probabilities = _distribution(attribute(answer, "probabilities"), zero_based)
-    probabilities = {
-        str(index + 1): raw_probabilities[str(index)] for index in range(len(question.criteria))
+    probability_total = sum(raw_probabilities.values())
+    normalized = {
+        position: probability / probability_total
+        for position, probability in raw_probabilities.items()
     }
-    return score + 1, probabilities, certainty, "provider_confidence"
+    probabilities = {option: raw_probabilities[str(index)] for index, option in enumerate(order)}
+    canonical_probabilities = {option: probabilities[option] for option in question.options}
+    try:
+        canonical_score = sum(
+            float(option) * normalized[str(index)] for index, option in enumerate(order)
+        )
+    except ValueError as error:
+        raise JudgeProtocolError("score options must be numeric") from error
+    return canonical_score, canonical_probabilities, certainty, "provider_confidence"
 
 
 def normalize_response(

@@ -82,7 +82,7 @@ async def test_score_is_shifted_from_provider_zero_based_scale() -> None:
     answer = FakeAnswer(
         type="score",
         score=3,
-        probabilities={index: 0.2 for index in range(5)},
+        probabilities={0: 0.0, 1: 0.0, 2: 0.0, 3: 1.0, 4: 0.0},
         confidence=0.82,
     )
     result = await TypeSafeJevJudge(FakeTypeSafeClient([FakeResponse(answer)])).evaluate(
@@ -90,7 +90,49 @@ async def test_score_is_shifted_from_provider_zero_based_scale() -> None:
     )
     assert result.value == 4
     assert result.option_order == ("1", "2", "3", "4", "5")
-    assert result.probabilities == {str(index): 0.2 for index in range(1, 6)}
+    assert result.probabilities == {
+        "1": 0.0,
+        "2": 0.0,
+        "3": 0.0,
+        "4": 1.0,
+        "5": 0.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_score_order_maps_provider_positions_back_to_canonical_values() -> None:
+    order = ("5", "1", "2", "3", "4")
+    answer = FakeAnswer(
+        type="score",
+        score=1,
+        probabilities={0: 0.6, 1: 0.1, 2: 0.1, 3: 0.1, 4: 0.1},
+        confidence=0.82,
+    )
+    client = FakeTypeSafeClient([FakeResponse(answer)])
+    result = await TypeSafeJevJudge(client).evaluate(
+        "actionability", {"brief": "synthetic"}, option_order=order
+    )
+    assert result.value == 4
+    assert result.option_order == order
+    assert result.probabilities == {"1": 0.1, "2": 0.1, "3": 0.1, "4": 0.1, "5": 0.6}
+    assert tuple(client.calls[0]["questions"]["decision"].criteria) == (
+        QUESTIONS["actionability"].criteria[4],
+        *QUESTIONS["actionability"].criteria[:4],
+    )
+
+
+@pytest.mark.asyncio
+async def test_score_accepts_fractional_expected_position() -> None:
+    answer = FakeAnswer(
+        type="score",
+        score=2.35,
+        probabilities={0: 0.05, 1: 0.15, 2: 0.3, 3: 0.4, 4: 0.1},
+        confidence=0.82,
+    )
+    result = await TypeSafeJevJudge(FakeTypeSafeClient([FakeResponse(answer)])).evaluate(
+        "actionability", {"brief": "synthetic"}
+    )
+    assert result.value == pytest.approx(3.35)
 
 
 @pytest.mark.asyncio

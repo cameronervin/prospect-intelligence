@@ -81,6 +81,9 @@ def _metadata(
 ) -> dict[str, object]:
     return {
         "ticket": "CAM-40",
+        "evidence_class": "release_experiment",
+        "experiment_purpose": "model_selection",
+        "alignment_run": False,
         "dataset_version": plan.dataset_version,
         "dataset_checksum_sha256": dataset_checksum or "published-hosted-dataset",
         "evaluator_version": plan.evaluator_version,

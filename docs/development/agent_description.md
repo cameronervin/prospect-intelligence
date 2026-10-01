@@ -199,9 +199,10 @@ whether it is still working in production. Production failures become offline te
 
 The repository contains the deterministic dataset, evaluator implementations, hosted experiment
 orchestration, and credential-free tests. CAM-40 persists the synthetic dataset and four controlled
-experiments in LangSmith only after an explicit `--live` opt-in; judge calibration and online
-resources below also require explicit credentials. Live evidence must be reported separately rather
-than inferred from repository checks.
+experiments in LangSmith only after an explicit `--live` opt-in. CAM-41/CAM-50 add a separate
+human-preference alignment workflow whose human review and real-judge execution also require
+explicit action and credentials. Live evidence must be reported separately rather than inferred
+from repository checks.
 
 ### 7.1 Offline harness (Test)
 
@@ -229,7 +230,7 @@ facts, and the set of valid numeric values.
 | Code                | cost, latency, tool-call count                   | Efficiency budget per run                                                          |
 | Jev (default judge) | Typed questions (below)                          | All semantic quality criteria, offline and online                                  |
 | LLM judge           | Pairwise version comparison, failure explanation | Only where written reasoning is the output (see 7.4)                               |
-| Human               | Annotation queue                                 | Label 30–50 runs; calibrate Jev per question (see 7.4)                             |
+| Human               | Annotation queue                                 | Label exactly 10 applicable cases per question; calibrate Jev per question (see 7.4) |
 
 **Jev questions.** Each question gets its own small, filtered state built in code (not the
 whole trace). Instructions state exact conditions and boundary cases.
@@ -300,7 +301,7 @@ contacts, or judge responses.
 
 Dashboard/alert provisioning, traffic execution, canary policy, production retention, and alert
 destinations remain CAM-43/deployment work. The current alert numbers are demo defaults rather than
-SLOs. Semantic scores remain informational until CAM-41 calibration.
+SLOs. CAM-41/CAM-50 alignment produces recommendations only; semantic scores remain informational.
 
 ### 7.3 Closing the loop
 
@@ -323,12 +324,34 @@ Order of preference:
 
 Calibration (makes the judge choice an eval-driven decision, not a preference):
 
-- Human-label 30–50 runs on every Jev question (annotation queue).
-- Run Jev and one LLM judge on the same labeled set. Report per-question agreement with
-  humans, run-to-run variance (5 repeats), cost, and latency.
-- Tune a pass threshold per noul on the labeled set; don't reuse thresholds across question types.
-- Any question where Jev agreement is materially below the LLM judge is either reworded,
-  split into simpler questions, or moved to the LLM judge. Document the outcome.
+- Select exactly 10 applicable cases per question with seed `28029`, deduplicated by projected-state
+  hash and split into five alignment plus five untouched holdout cases.
+- A designated single reviewer labels the bounded state without judge answers, freezes the complete primary pass, and
+  separately adjudicates every low-confidence or ambiguous case. The reference is
+  `cam-41-labels-v1`, a single-reviewer two-pass set rather than inter-rater validation.
+- Run Jev and GPT-5.6 Sol three times in a five-case alignment phase, then a separately authorized
+  frozen five-case holdout phase. Deterministic choice and score orders repeat the canonical baseline
+  twice before one alternate permutation, with all answers mapped back to canonical labels.
+- Report valid-attempt coverage over `3 × cases`, exact agreement and confusion counts, balanced
+  accuracy or explicit class imbalance, ordered-score MAE/within-one agreement, run-to-run disagreement,
+  option-order sensitivity, cost, latency, and Jev's exact-agreement delta from Sol.
+- Use only the alignment split for bounded rubric diagnosis or revision. Freeze any successor rubric
+  before the untouched holdout.
+- Recommend `retain` only with 100% holdout attempt coverage, at least 85% exact agreement, and Jev
+  no more than five percentage points behind Sol. Otherwise recommend `revise`, `split`, or `replace`
+  with rationale. These are evidence-only recommendations, not release gates.
+
+The full operator and evidence protocol is in
+[evaluator-alignment-process.md](../evaluation/evaluator-alignment-process.md). The 70-case
+`cam-41-labels-v1` reference set and 13 required adjudications are complete. The credentialed
+alignment phase is read back with 154/210 initially valid attempts. Its ordered-score contract
+finding was resolved on the alignment split, and targeted v2 evidence now gives 60/60 score
+coverage. One v3 score-anchor prompt experiment was rejected because it regressed `tone_fit`
+within-one agreement and introduced Jev `actionability` instability. The accepted original
+categorical plus v2 score evidence is composed into a read-back-verified 210-attempt manifest.
+Three questions remain alignment-only revision candidates. CAM-41/CAM-50 close on this evidence;
+the implemented holdout was explicitly waived for the take-home and remains unrun. Repository checks
+do not substitute for the completed live alignment phase.
 
 Jev operating rules:
 
@@ -381,7 +404,6 @@ Jev operating rules:
 **Credentialed/live evidence still required**
 
 - Model/provider smoke run and model-directed delegation trajectory.
-- LangSmith baseline experiment, judge calibration, and recorded result interpretation.
 - Privacy-reviewed tracing, online evaluators, dashboard, alerts, and annotation workflow.
 
 **Deferred/stretch**

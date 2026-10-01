@@ -11,6 +11,7 @@ from typing import Literal, Protocol, cast, runtime_checkable
 
 JUDGE_TIMEOUT_SECONDS = 30.0
 JUDGE_MAX_RETRIES = 2
+SEMANTIC_JUDGE_PROMPT_REVISION = "shared-question-payload-v2-weighted-scores"
 MAX_STATE_BYTES = 32_768
 MAX_STATE_STRING_CHARS = 8_000
 

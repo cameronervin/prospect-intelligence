@@ -9,6 +9,18 @@ decision outcomes, durable commit flow, preference learning, and quality feedbac
 See [experimentation-process.md](experimentation-process.md) for the CAM-40 variants, evaluation
 method, aggregate results, evaluator revisions, and MVP configuration decision.
 
+See [evaluator-alignment-process.md](evaluator-alignment-process.md) for the CAM-41/CAM-50
+human-preference workflow, blind labeling protocol, alignment/holdout analysis, evidence boundaries,
+and presentation record. The 70-case reference review and 13 adjudications are complete; the
+210-attempt alignment phase is read back. The untouched holdout was explicitly waived for the
+take-home closeout while its implementation remains available for future validation. The alignment
+diagnostic found complete coverage on all five binary/categorical questions. The approved weighted-
+score contract revision and targeted retry now provide complete ordered-score diagnostic coverage;
+one bounded v3 score-anchor prompt experiment was rejected under its predeclared rule. The accepted
+v2 categorical-plus-score evidence is now composed into a read-back-verified 210-attempt manifest;
+three questions remain revision candidates. CAM-41/CAM-50 are complete without claiming holdout or
+production validation.
+
 The credential-free harness provides:
 
 - `freight-prospect-v1`: 16 core and 8 edge examples with deterministic reference outputs.
@@ -46,8 +58,9 @@ Numeric values and counts remain the responsibility of deterministic code evalua
 date and datetime spans are excluded from quantitative scoring; their support belongs to citation
 and claim review. A semantic result with a provider or validation failure has no score and carries
 only sanitized error metadata. Missing results therefore fail metric coverage closed; GPT-5.6 Sol
-does not substitute for Jev. Human calibration in CAM-41 will set any semantic promotion thresholds.
-Until then, semantic scores are evidence only and do not affect the release decision.
+does not substitute for Jev. CAM-41/CAM-50 measure human agreement and produce per-question
+recommendations; they do not set semantic promotion gates. Semantic scores remain evidence only and
+do not affect the release decision.
 
 Each judge receives a strict, size-bounded projection rather than a trace or application object.
 Qualitative evidence uses stable `ev_<24 hex>` citation IDs derived from canonical provenance. The
@@ -169,8 +182,8 @@ output or report.
 
 `experiments.offline.results.gate_results()` remains the only deterministic release gate. It enforces exact
 example/repetition and metric coverage plus the CAM-38 thresholds; the seven Jev scores, their
-coverage, latency, and cost remain evidence-only until CAM-41 calibration. Results are aggregated by
-variant, split, dataset tag, metric, and synthetic failure ID. A candidate must pass every
+coverage, latency, and cost remain evidence-only before and after CAM-41/CAM-50 alignment. Results
+are aggregated by variant, split, dataset tag, metric, and synthetic failure ID. A candidate must pass every
 deterministic gate and introduce no new deterministic failure. A target-cost or mean-latency increase
 over 20% is accepted only when the candidate also fixes at least one baseline deterministic failure.
 Semantic improvement alone never overrides that policy.
@@ -227,9 +240,41 @@ partial result sets fail closed. The informational tool count includes all model
 including the interrupted review request; measured latency is evaluated but its environment-dependent
 value is omitted from the committed report.
 
-CAM-41 will calibrate Jev using 40 human labels per question, five judge repetitions, and
-option-order permutation. Rework any question below 85% human agreement or more than five percentage
-points behind the comparison LLM judge. Those calibration criteria are not current promotion gates.
+CAM-41/CAM-50 prepare exactly 10 applicable, deduplicated cases per question with seed `28029` and
+split them into five alignment plus five untouched holdout cases. A designated reviewer labels projected state blind,
+freezes the complete primary pass as a reviewer-verified checksum, and adjudicates low-confidence or
+ambiguous cases in separate metric queues. Jev and GPT-5.6 Sol then run three repetitions in distinct
+alignment and frozen-holdout phases. Ordered options use a repeated canonical baseline plus
+deterministic permutations mapped back to canonical labels. A revision-bound alignment completion
+manifest must exist before holdout. Retain requires complete attempt
+coverage, at least 85% holdout exact
+agreement, and Jev no more than five percentage points behind Sol. This is a single-reviewer,
+two-pass process—not inter-rater validation—and the recommendation remains evidence-only rather than
+a semantic promotion gate.
+
+For ordered scores, the shared primitive's probability distribution maps rubric positions back to a
+weighted canonical 1–5 value. Exact/confusion/stability metrics use the nearest canonical label;
+MAE and within-one retain the continuous value. This distinction was established on the alignment
+split before holdout and is versioned as `shared-question-payload-v2-weighted-scores`.
+
+This v2 revision corrected output normalization; it did not change rubric wording. A separate
+`shared-question-payload-v3-score-anchors` experiment made score-anchor guidance explicit, but was
+rejected because `tone_fit` within-one agreement regressed and Jev developed `actionability`
+repeat/order instability. The immutable v3 diagnostic is not part of the accepted composite.
+
+The alignment implementation is organized into pure `reference`, `calibration`, and `evidence`
+layers, with LangSmith operations isolated in `integrations/langsmith`, report output in
+`reporting`, and live coordination in `workflows`. The CLI and deterministic evidence identities
+remain stable across this package reorganization.
+
+Alignment traces use `evidence_class=evaluator_alignment`, `experiment_purpose=alignment`, and
+`alignment_run=true`. Future release experiments use `evidence_class=release_experiment`,
+`experiment_purpose=model_selection`, and `alignment_run=false`; release selection excludes
+alignment evidence by metadata. Historical CAM-40 evidence is unchanged.
+
+Holdout requires the accepted composite project
+`cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`. The path remains available but was
+explicitly waived from the take-home completion criteria and has not run.
 
 Online quality operations live in `features/agent_quality`. That feature owns app-side evaluation,
 the concrete injected LangSmith gateway, annotation routing, traffic simulation, and regression

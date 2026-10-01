@@ -118,6 +118,9 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
         assert len(metadata["rep_scope_sha256"]) == 64  # type: ignore[index]
         assert metadata["graph_revision"] == "prospect-intelligence-v1"  # type: ignore[index]
         assert metadata["evaluator_version"] == "test-evaluators-v9"  # type: ignore[index]
+        assert metadata["evidence_class"] == "release_experiment"  # type: ignore[index]
+        assert metadata["experiment_purpose"] == "model_selection"  # type: ignore[index]
+        assert metadata["alignment_run"] is False  # type: ignore[index]
         assert metadata["prompt_revision"] in {"v1", "evidence-self-check-v2"}  # type: ignore[index]
         assert metadata["code_revision"] == "f75630c31df2-dirty-abc123def456"  # type: ignore[index]
         assert call["max_concurrency"] == 2
@@ -185,6 +188,9 @@ def test_hosted_persistence_verifier_requires_all_roots_metadata_and_feedback() 
                         "metadata": {
                             "rep_id_hash": sha256(f"cam-40:{example_id}".encode()).hexdigest(),
                             "code_revision": code_revision,
+                            "evidence_class": "release_experiment",
+                            "experiment_purpose": "model_selection",
+                            "alignment_run": False,
                         }
                     },
                 )

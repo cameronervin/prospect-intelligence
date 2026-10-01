@@ -35,3 +35,81 @@ Suggested areas: LangChain/LangGraph API behavior, checkpointing, human review, 
   so CAM-40 does not require a paid rerun. Keep the strict runner unchanged. If a later formal
   promotion decision needs complete evidence, increase or reset the trace allowance and rerun all
   four variants without merging attempts.
+
+### 2026-10-01 — LangSmith trace quota blocks CAM-41 labeling population
+
+- **Delivery impact:** Live CAM-41 preparation successfully reconciled all seven primary annotation
+  queues, but LangSmith rejected the first labeling-run writes with HTTP 429 `Monthly unique traces
+  usage limit exceeded`. The queues therefore have no review items, so the human primary pass cannot
+  start even though the configured API key is valid.
+- **Workaround or decision:** Kept the queues and deterministic run IDs rather than substituting a
+  local labeling form. After billing was enabled, the retry exposed a LangSmith root-run schema
+  change: supplying `trace_id` now also requires `dotted_order`. Root publications now supply only
+  their deterministic run ID and let LangSmith derive the trace identity; focused tests cover all
+  alignment publication paths.
+- **Follow-up:** Resolved on 2026-10-01. API read-back initially verified 280 project roots and 40
+  items in each primary queue. The later MVP rescope retains those roots but reconciles each queue
+  to 10 unreviewed items; removing queue membership does not refund extended-retention charges.
+  The 70 retained cases, 13 required adjudications, and state-free `cam-41-labels-v1` dataset were
+  subsequently completed and read back. Subsequent judge preflights separately disclose LangSmith
+  and provider cost.
+
+### 2026-10-01 — LangSmith run-query limit prevents CAM-41 alignment publication
+
+- **Delivery impact:** Three authorized 210-attempt alignment matrices completed their provider-call
+  window, but the pre-publication idempotency query requested `limit=211`. LangSmith rejected
+  `/runs/query` with HTTP 400 because its maximum is 100. No alignment project, traces, feedback,
+  diagnostic report, or completion manifest was created, so the provider results cannot be treated
+  as evidence. Estimated provider spend is about `$2.85`; the request-envelope authorization is
+  exhausted.
+- **Workaround or decision:** Stop paid retries. Use synchronous trace ingestion so publication
+  errors are attributable, use LangSmith's native `chain` run type, bind feedback to the project
+  session, and batch every trace/feedback lookup at no more than 100 IDs. A model-free diagnostic
+  trace and feedback write verified that workspace billing and spend limits were not the blocker.
+- **Follow-up:** Focused tests cover 105-attempt query batching and the live publication contracts.
+  Resolved after a new explicit authorization: project
+  `cam-41-alignment-cam-41-labels-v1-0099bade7c54a0ed` contains all 210 attempt roots, all 210
+  agreement feedback entries, and a verified completion manifest. The manifest needed a bounded
+  read-back retry because the newly created root was not immediately query-visible. Holdout remains
+  unauthorized pending review of the alignment findings.
+
+### 2026-10-01 — Ordered-score contract rejects valid weighted scores
+
+- **Delivery impact:** Both Jev and GPT-5.6 Sol use the shared score primitive, which returns the
+  probability-weighted expected rubric position. The application adapter incorrectly required that
+  value to be an integer, making 56 of 60 ordered-score attempts unavailable even though the
+  provider calls completed. The five binary/categorical questions were unaffected.
+- **Workaround or decision:** Preserve the unavailable attempts and full denominators rather than
+  coercing them. The approved bounded adapter revision maps the returned probability distribution
+  onto canonical 1–5 values and versions the answer contract as
+  `shared-question-payload-v2-weighted-scores`. Exact/confusion metrics use the nearest canonical
+  label, while MAE/within-one retain the weighted value.
+- **Follow-up:** Resolved for alignment evidence. Focused fractional-score and permutation tests pass;
+  the targeted run plus unavailable-only retry provides 60/60 valid ordered-score attempts without
+  rewriting the original evidence. Holdout remains separately authorized and unrun.
+
+### 2026-10-01 — Docker Desktop metadata error blocks aggregate verification
+
+- **Delivery impact:** `make verify` cannot start its PostgreSQL test dependency because Docker
+  Desktop returns an input/output error while writing containerd's `meta.db`. The failure occurs
+  before repository tests run and is reproducible on retry.
+- **Workaround or decision:** Keep the failure distinct from application evidence. Run the focused
+  alignment suite, credential-free 70-case/420-attempt self-test, Ruff, and strict Pyright. The
+  expanded credential-free backend run passes 799 tests; frontend lint, typecheck, 81 tests, and
+  production build pass; secret scanning passes.
+- **Follow-up:** Repair or reset Docker Desktop's containerd metadata store, then rerun `make verify`.
+  No delivery configuration changed, so `make docker-config` is not required for this slice.
+
+### 2026-10-01 — LangSmith missing-project query returns 404 before composite creation
+
+- **Delivery impact:** Composite-manifest publication checks for an existing deterministic project
+  before writing. LangSmith's `list_runs(project_name=...)` path returns `404 Not Found` when that
+  project has never existed, instead of returning an empty run collection, so the first manifest
+  create failed before its single authorized write.
+- **Workaround or decision:** Treat LangSmith `NotFoundError` as “project absent” only during the
+  pre-create lookup. Continue to fail closed for all other query, validation, publication, and
+  read-back errors. The retry created and read back the one sanitized 210-attempt composite
+  manifest without additional provider calls.
+- **Follow-up:** Focused tests cover missing-project creation and still reject unexpected LangSmith
+  failures. Remove the compatibility branch if the SDK/API later makes missing-project list queries
+  return an empty result consistently.

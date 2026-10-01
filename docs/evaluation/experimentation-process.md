@@ -111,3 +111,41 @@ from numeric text used in company names and evidence locators.
 The hosted dataset and experiment links are recorded in the sanitized
 `backend/evaluation/reports/cam_40_hosted.md` report. Raw traces, prompts, source payloads, and
 credentials are not stored in the repository.
+
+## Human-preference alignment is a separate evidence class
+
+CAM-40 answers which product configuration to keep from the retained synthetic experiment evidence
+above. It does not establish that an automated semantic judge agrees with human preference, and its
+historical v2/v3 feedback is not rewritten for that purpose.
+
+CAM-41/CAM-50 add the separate process documented in
+[evaluator-alignment-process.md](evaluator-alignment-process.md): exactly 10 applicable cases per
+`semantic-v1` question, a five-case alignment split and five-case untouched holdout, a blind
+single-reviewer primary pass plus a separate ambiguity/low-confidence adjudication pass, and three repetitions from
+both Jev and GPT-5.6 Sol. The approved human reference version is `cam-41-labels-v1`.
+
+The alignment workflow can recommend retaining, revising, splitting, or replacing a question. It
+does not activate a semantic release gate. Live alignment traces use
+`evidence_class=evaluator_alignment`, `experiment_purpose=alignment`, and `alignment_run=true`;
+future release experiments use `evidence_class=release_experiment`,
+`experiment_purpose=model_selection`, and `alignment_run=false`. Release selection rejects alignment
+evidence using those metadata fields rather than a name prefix.
+
+The 70-case reference set and 13 flagged-case adjudications are complete and published as
+`cam-41-labels-v1`. The 210-attempt alignment phase is discoverable in LangSmith and recorded in the
+sanitized diagnostic report. The 210-attempt frozen holdout path remains implemented but was
+explicitly waived from the final take-home scope; CAM-41/CAM-50 close without a holdout claim.
+The diagnostic produced 154 valid attempts and isolated all 56 unavailable attempts to the two
+ordered-score questions, where the adapter rejected probability-weighted score outputs. This is a
+bounded evaluator-contract finding, not a product-model result or release gate. The approved
+`shared-question-payload-v2-weighted-scores` revision and targeted retry subsequently produced
+60/60 valid ordered-score attempts. The combined result keeps `actionability` and `tone_fit` as
+revision candidates. V2 is an output-normalization contract correction, not a prompt rewrite. The
+one bounded `shared-question-payload-v3-score-anchors` prompt experiment produced 60/60 valid
+attempts but was rejected because `tone_fit` within-one regressed and Jev acquired repeat/order
+instability on `actionability`.
+
+Project `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143` now provides a
+read-back-verified, provider-free manifest over the original categorical evidence and accepted v2
+score/retry evidence: 210 alignment attempts total. It is the prerequisite for a future holdout run,
+not a substitute for holdout; the 210-attempt holdout remains separately authorized and unrun.

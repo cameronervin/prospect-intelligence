@@ -120,9 +120,9 @@ class BaseJudge:
     def _option_order(
         question: SemanticQuestion, requested_order: tuple[str, ...] | None
     ) -> tuple[str, ...]:
-        if question.kind != "choice":
+        if question.kind == "noul":
             if requested_order is not None:
-                raise ValueError("option order is supported only for choice questions")
+                raise ValueError("option order is supported only for choice and score questions")
             return question.options
         order = question.options if requested_order is None else requested_order
         if len(order) != len(question.options) or set(order) != set(question.options):
