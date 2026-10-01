@@ -1,12 +1,13 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/sh
 
-.PHONY: help setup dev verify test-e2e audit docker-config docker-up docker-down feature smoke-online-quality online-quality-plan online-quality-setup online-quality-simulate online-quality-teardown secret-scan cleanup
+.PHONY: help setup dev seed-demo-user verify test-e2e audit docker-config docker-up docker-down feature smoke-online-quality online-quality-plan online-quality-setup online-quality-simulate online-quality-teardown secret-scan cleanup
 
 help:
 	@echo "LangChain take-home development targets"
 	@echo "  setup          Install backend and frontend dependencies"
 	@echo "  dev            Start PostgreSQL, backend, and frontend for development"
+	@echo "  seed-demo-user Seed the fictional local login into PostgreSQL"
 	@echo "  verify         Run repository checks and tests"
 	@echo "  test-e2e       Run Playwright browser tests"
 	@echo "  audit          Audit production dependencies"
@@ -27,6 +28,9 @@ setup:
 
 dev:
 	@sh scripts/dev.sh
+
+seed-demo-user:
+	@cd backend && uv run python -m scripts.seed_demo_user
 
 verify:
 	@sh scripts/verify.sh

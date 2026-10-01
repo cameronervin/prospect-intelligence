@@ -16,6 +16,7 @@ from app.features.prospect_intelligence.repositories.memory import (
     InMemorySendReceiptRepository,
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
+from tests.fakes import auth_context
 
 
 def build_service() -> ProspectRunService:
@@ -30,7 +31,7 @@ def build_service() -> ProspectRunService:
 
 def test_quality_event_factory_is_deterministic_and_sanitized() -> None:
     service = build_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
 
     first = build_quality_event(run, QualityEventType.RUN_CREATED)
     second = build_quality_event(run, QualityEventType.RUN_CREATED)
@@ -47,7 +48,7 @@ def test_quality_event_factory_is_deterministic_and_sanitized() -> None:
 
 def test_review_event_carries_only_decision_and_normalized_edit_feedback() -> None:
     service = build_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     reviewed = replace(run, review_action=ReviewAction.EDIT)
 
     event = build_quality_event(

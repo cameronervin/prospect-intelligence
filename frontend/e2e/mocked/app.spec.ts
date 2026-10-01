@@ -35,6 +35,64 @@ async function startRun(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Run prospect agent" }).click();
 }
 
+test("redirects unauthenticated users and keeps invalid login generic", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
+  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "current-password");
+  await page.route("**/api/auth/login", (route) =>
+    route.fulfill({ status: 401, json: { error: "invalid_credentials" } }),
+  );
+  await page.getByLabel("Password").fill("wrong-password");
+  await page.getByRole("button", { name: "Enter dispatch console" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(page.locator("#login-error")).toHaveText("Email or password is incorrect.");
+  await expect(page.getByLabel("Email")).toBeFocused();
+  await expectNoHorizontalOverflow(page);
+});
+
+test("returns an expired session to login", async ({ page }) => {
+  await page.context().addCookies([
+    {
+      name: "prospect_session",
+      value: "expired-session",
+      url: "http://127.0.0.1:3000",
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
+
+  await page.goto("/");
+
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test("logout clears the current console session at a narrow viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installProspectApi(page);
+  await page.goto("/");
+  await expect(page.getByText("Alex Morgan · Sales rep")).toBeVisible();
+  await page.getByRole("button", { name: /Atlas Foods/ }).click();
+  await page.getByRole("button", { name: "Run prospect agent" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        sessionStorage.getItem("prospect-intelligence.active-run-id:usr_alex_morgan"),
+      ),
+    )
+    .toBe("run-browser-1");
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(
+    await page.evaluate(() =>
+      sessionStorage.getItem("prospect-intelligence.active-run-id:usr_alex_morgan"),
+    ),
+  ).toBeNull();
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await expectNoHorizontalOverflow(page);
+});
+
 test("preserves an unsafe edit and lets the rep recover with a safe draft", async ({ page }) => {
   let reviews = 0;
   await installProspectApi(page, {

@@ -5,22 +5,45 @@ function shouldRemember(run: ProspectRun) {
   return run.status === "queued" || run.status === "running" || run.status === "awaiting_review";
 }
 
-export function storedRunId() {
+function key(subject: string) {
+  return `${ACTIVE_RUN_STORAGE_KEY}:${subject}`;
+}
+
+export function storedRunId(subject: string) {
   try {
-    return window.sessionStorage.getItem(ACTIVE_RUN_STORAGE_KEY) ?? undefined;
+    const scoped = window.sessionStorage.getItem(key(subject));
+    if (scoped) return scoped;
+    if (subject === "test-user") {
+      const legacy = window.sessionStorage.getItem(ACTIVE_RUN_STORAGE_KEY);
+      if (legacy) {
+        window.sessionStorage.setItem(key(subject), legacy);
+        window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+        return legacy;
+      }
+    }
+    return undefined;
   } catch {
     return undefined;
   }
 }
 
-export function rememberRun(run: ProspectRun | undefined) {
+export function rememberRun(subject: string, run: ProspectRun | undefined) {
   try {
     if (run && shouldRemember(run)) {
-      window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, run.id);
+      window.sessionStorage.setItem(key(subject), run.id);
     } else {
-      window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
+      window.sessionStorage.removeItem(key(subject));
+      if (subject === "test-user") window.sessionStorage.removeItem(ACTIVE_RUN_STORAGE_KEY);
     }
   } catch {
     // A blocked session store must not prevent the durable server-side run from continuing.
+  }
+}
+
+export function clearRememberedRun(subject: string) {
+  try {
+    window.sessionStorage.removeItem(key(subject));
+  } catch {
+    // Logout still clears the server session when browser storage is unavailable.
   }
 }

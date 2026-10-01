@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ApiErrorCode(StrEnum):
+    UNAUTHORIZED = "unauthorized"
+    FORBIDDEN = "forbidden"
     VALIDATION_ERROR = "validation_error"
     NOT_FOUND = "not_found"
     CONFLICT = "conflict"

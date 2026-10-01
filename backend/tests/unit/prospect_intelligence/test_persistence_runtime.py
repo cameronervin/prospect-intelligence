@@ -9,12 +9,17 @@ from structlog.testing import capture_logs
 
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
 from app.features.prospect_intelligence.contracts.jobs import ClaimedJob, JobRepository
+from app.features.prospect_intelligence.contracts.runtime_guardrails import (
+    GuardrailRejected,
+    GuardrailUnavailable,
+)
 from app.features.prospect_intelligence.contracts.workflow import (
     checkpoint_thread_id,
     preference_namespace,
 )
 from app.features.prospect_intelligence.services.worker import ProspectJobWorker
 from app.platform.agent_runtime import psycopg_connection_string
+from tests.fakes import auth_context
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 RUN_ID = UUID("00000000-0000-0000-0000-000000000029")
@@ -46,8 +51,7 @@ def test_workflow_identity_rejects_delimiter_injection() -> None:
     )
     context = ProspectRuntimeContext(
         run_id=RUN_ID,
-        tenant_id="tenant-a",
-        rep_id="rep-a",
+        auth=auth_context(tenant_id="tenant-a", rep_id="rep-a"),
     )
     assert context.thread_id == checkpoint_thread_id("tenant-a", "rep-a", RUN_ID)
     assert context.preference_namespace == preference_namespace("tenant-a", "rep-a")
@@ -155,3 +159,34 @@ async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() 
         }
     ]
     assert "customer secret" not in repr(logs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "code", "retryable"),
+    [
+        (GuardrailRejected("output_guardrail_rejected"), "output_guardrail_rejected", False),
+        (GuardrailUnavailable("private provider detail"), "guardrail_unavailable", True),
+    ],
+)
+async def test_worker_applies_runtime_guardrail_retry_policy(
+    error: Exception,
+    code: str,
+    retryable: bool,
+) -> None:
+    jobs = FakeJobs()
+
+    async def fail(run_id: UUID, claim_token: UUID) -> None:
+        del run_id, claim_token
+        raise error
+
+    worker = ProspectJobWorker(
+        jobs=jobs,
+        handler=fail,
+        worker_id="worker-1",
+        clock=lambda: NOW,
+    )
+
+    assert await worker.run_once() is True
+
+    assert jobs.failed == [(7, CLAIM_TOKEN, code, retryable)]

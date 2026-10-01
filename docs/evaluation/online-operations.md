@@ -7,6 +7,12 @@ signals are emitted after graph execution; reference-aware lane checks use the c
 analysis. Seven bounded Jev questions reuse the offline scoring, rubric, and judge contracts. Jev
 scores are evidence only until CAM-41 establishes calibrated thresholds.
 
+The optional synchronous runtime guardrails are intentionally separate. They are feature-owned
+LangGraph nodes, use the platform `DecisionModel` boundary, are not sampled, do not publish raw state
+to LangSmith, and use rubric `runtime-jev-v1` rather than `semantic-v1`. They default off. Production
+activation requires blind human alignment for the input question and retained output questions,
+privacy/vendor approval, and measured SLO fit; there is no fallback judge or probability threshold.
+
 The graph result is projected into a bounded evaluation envelope, including evaluator, graph,
 agent, prompt-template, and rubric versions, and committed atomically with the
 existing quality-event outbox row. The provider event contains only allowlisted metadata. Raw

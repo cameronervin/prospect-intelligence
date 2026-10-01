@@ -18,7 +18,7 @@ from langgraph.types import Command
 from ...contracts.agent_runtime import ProspectRuntimeContext
 from ...contracts.filesystem import PROSPECT_FILES
 from ..context import current_runtime_context
-from ..guardrails import artifact_content
+from ..guardrails.deterministic import artifact_content
 from ..specs import AgentSpec
 from .delegation import validate_delegation
 

@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     external_live_enabled: bool = False
     external_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
     external_retry_attempts: int = Field(default=2, ge=0, le=5)
+    demo_auth_enabled: bool = True
+    jwt_signing_secret: SecretStr | None = None
+    runtime_jev_guardrails_enabled: bool = False
     online_quality_enabled: bool = False
     online_quality_sample_rate: float = Field(
         default=0.10,
@@ -98,6 +101,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_online_quality_credentials(self) -> "Settings":
+        if self.environment is Environment.PRODUCTION and self.demo_auth_enabled:
+            raise ValueError("production must replace the demo authentication issuer")
+        if self.runtime_jev_guardrails_enabled and (
+            self.typesafe_api_key is None or not self.typesafe_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("runtime Jev guardrails require TypeSafe credentials")
         if not self.online_quality_enabled:
             return self
         configured = (
@@ -109,6 +118,16 @@ class Settings(BaseSettings):
         if not configured:
             raise ValueError("online quality requires LangSmith and TypeSafe credentials")
         return self
+
+    @property
+    def resolved_jwt_signing_secret(self) -> str:
+        if self.jwt_signing_secret is not None:
+            value = self.jwt_signing_secret.get_secret_value()
+            if len(value.encode()) >= 32:
+                return value
+        if self.environment is Environment.TEST:
+            return "test-only-jwt-signing-secret-32-bytes-minimum"
+        raise RuntimeError("TAKEHOME_JWT_SIGNING_SECRET must contain at least 32 bytes")
 
     @field_validator("openai_base_url")
     @classmethod

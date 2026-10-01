@@ -15,7 +15,7 @@ def test_scripted_runtime_uses_frontend_demo_identity() -> None:
 
     runtime = ScriptedModelRuntime.for_frontend_demo()
 
-    assert runtime.model.memory_path == "/memories/tenant-demo/maya-chen/preferences.md"
+    assert runtime.model.memory_path == "/memories/tenant-demo/alex-morgan/preferences.md"
     assert runtime.model.first_call_delay_seconds == 1.75
     assert runtime.models.orchestrator is runtime.model
     assert runtime.models.specialist is runtime.model
@@ -50,7 +50,7 @@ def test_e2e_factory_injects_scripted_runtime_into_production_container(
     assert app.state.container is container
     assert captured["settings"] is settings
     runtime = cast(Any, captured["runtime"])
-    assert runtime.model.memory_path == "/memories/tenant-demo/maya-chen/preferences.md"
+    assert runtime.model.memory_path == "/memories/tenant-demo/alex-morgan/preferences.md"
 
 
 @pytest.mark.parametrize(
@@ -58,6 +58,7 @@ def test_e2e_factory_injects_scripted_runtime_into_production_container(
     [
         Settings(
             environment=Environment.PRODUCTION,
+            demo_auth_enabled=False,
             external_live_enabled=False,
             online_quality_enabled=False,
         ),

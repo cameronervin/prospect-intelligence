@@ -90,15 +90,16 @@ Suggested areas: LangChain/LangGraph API behavior, checkpointing, human review, 
 
 ### 2026-10-01 — Docker Desktop metadata error blocks aggregate verification
 
-- **Delivery impact:** `make verify` cannot start its PostgreSQL test dependency because Docker
-  Desktop returns an input/output error while writing containerd's `meta.db`. The failure occurs
-  before repository tests run and is reproducible on retry.
-- **Workaround or decision:** Keep the failure distinct from application evidence. Run the focused
-  alignment suite, credential-free 70-case/420-attempt self-test, Ruff, and strict Pyright. The
-  expanded credential-free backend run passes 799 tests; frontend lint, typecheck, 81 tests, and
-  production build pass; secret scanning passes.
-- **Follow-up:** Repair or reset Docker Desktop's containerd metadata store, then rerun `make verify`.
-  No delivery configuration changed, so `make docker-config` is not required for this slice.
+- **Delivery impact:** `make verify` cannot start its PostgreSQL test dependency and `make test-e2e`
+  cannot start its full-stack services because Docker Desktop returns an input/output error while
+  writing containerd's `meta.db`. The failure occurs before containerized tests and is reproducible.
+- **Workaround or decision:** Keep the failure distinct from application evidence. Run Ruff, strict
+  Pyright, the complete credential-free backend suite (833 passed, 19 database-only skipped),
+  frontend lint/typecheck/build and 91 unit tests, 11 mocked Playwright journeys, secret scanning,
+  dependency audit, and quiet Compose rendering independently.
+- **Follow-up:** Repair or reset Docker Desktop's containerd metadata store, then rerun `make verify`
+  and the full-stack portion of `make test-e2e`; this also prevents executing the new seed command
+  against local PostgreSQL. `make docker-config` passes for this slice.
 
 ### 2026-10-01 — LangSmith missing-project query returns 404 before composite creation
 

@@ -14,8 +14,9 @@ _SOURCE_ARTIFACT_SCHEMA = (
     "Each JSON file under /context/ or /research/ must be one JSON object containing "
     "`coverage` (an object or list stating source status, including degraded or missing "
     "coverage) and a non-empty `evidence` list. Every evidence item needs a string `claim` "
-    "and a `provenance` object with non-empty `source`, `mode`, `endpoint_or_artifact`, "
-    "`retrieved_at`, `evidence_location`, and `source_version`, copied from the tool result. "
+    "and its opaque `citation_id`, plus a `provenance` object with non-empty `source`, `mode`, "
+    "`endpoint_or_artifact`, `retrieved_at`, `evidence_location`, and `source_version`, all copied "
+    "from the tool result. "
     "Never invent provenance or facts that no tool returned."
 )
 

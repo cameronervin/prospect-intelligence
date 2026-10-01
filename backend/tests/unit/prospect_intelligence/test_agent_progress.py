@@ -1,7 +1,9 @@
 """Specialist delegation and source calls report sanitized progress to a request-scoped sink."""
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
@@ -22,6 +24,9 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProgressSignal,
     ProspectRuntimeContext,
 )
+from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
+from app.features.prospect_intelligence.contracts.models import Evidence, Provenance, SourceMode
+from tests.fakes import auth_context
 
 
 @dataclass
@@ -38,8 +43,7 @@ class RecordingSink:
 def _context(sink: RecordingSink | None, **handlers: Any) -> ProspectRuntimeContext:
     return ProspectRuntimeContext(
         run_id=UUID(int=5),
-        tenant_id="tenant-demo",
-        rep_id="rep-demo",
+        auth=auth_context(tenant_id="tenant-demo", rep_id="rep-demo"),
         tool_handlers=handlers,
         progress=sink,
     )
@@ -218,6 +222,35 @@ async def test_source_tools_report_outcome_for_the_active_step_without_payloads(
         ("source", "external-research", "get_fmcsa", False),
     ]
     assert "Acme" not in repr(sink.events)
+
+
+async def test_source_tools_emit_stable_opaque_citation_ids() -> None:
+    provenance = Provenance(
+        source="CRM fixture",
+        mode=SourceMode.FIXTURE,
+        endpoint_or_artifact="fixture://crm",
+        retrieved_at=datetime(2026, 10, 1, tzinfo=UTC),
+        evidence_location="account:1",
+        source_version="v1",
+    )
+
+    def crm_handler(_: dict[str, object]) -> object:
+        return {"evidence": [Evidence(claim="Account resolved", provenance=provenance)]}
+
+    context = _context(
+        None,
+        get_crm_account=crm_handler,
+    )
+    tool = build_tool_registry().resolve(("get_crm_account",))[0]
+
+    with bind_runtime_context(context), bind_step("account-context"):
+        raw = await cast(Any, tool).coroutine(runtime=_runtime(context))
+
+    payload = cast("dict[str, object]", json.loads(raw))
+    evidence = cast("list[dict[str, object]]", payload["evidence"])[0]
+    assert evidence["citation_id"] == evidence_citation_id(
+        cast("dict[str, object]", evidence["provenance"])
+    )
 
 
 async def test_graph_interrupts_pass_through_without_marking_the_step_failed() -> None:

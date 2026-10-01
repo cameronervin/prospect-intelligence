@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 from uuid import UUID
 
+from app.features.authentication.public import AuthContext
+
 from .models import OutreachDraft, ReviewAction
+from .runtime_guardrails import RuntimeGuardrail
 from .workflow import checkpoint_thread_id, preference_namespace
 
 type ToolHandler = Callable[[dict[str, object]], object]
@@ -34,13 +37,23 @@ class ProspectRuntimeContext:
     """Request-scoped dependencies that must not enter checkpointed graph state."""
 
     run_id: UUID
-    tenant_id: str
-    rep_id: str
+    auth: AuthContext
     tool_handlers: Mapping[str, ToolHandler] = field(
         default_factory=lambda: dict[str, ToolHandler]()
     )
     rep_preferences: tuple[str, ...] = ()
     progress: Callable[[ProgressSignal], Awaitable[None]] | None = None
+    account_name: str = ""
+    runtime_guardrail: RuntimeGuardrail | None = None
+    injection_canary: Callable[[], str | None] | None = None
+
+    @property
+    def tenant_id(self) -> str:
+        return self.auth.tenant_id
+
+    @property
+    def rep_id(self) -> str:
+        return self.auth.rep_id
 
     @property
     def thread_id(self) -> str:

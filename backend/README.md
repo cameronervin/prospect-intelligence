@@ -11,6 +11,7 @@ slots.
 cp .env.example .env
 uv sync
 uv run alembic upgrade head
+uv run python -m scripts.seed_demo_user
 uv run uvicorn app.main:create_app --factory --reload
 ```
 
@@ -19,13 +20,19 @@ started prospect runtime when prospect routes are enabled.
 
 ## Prospect API
 
-All `/api/v1` requests require `X-Tenant-Id` and `X-Rep-Id`. The demo UI uses synthetic scope IDs;
-these headers are routing and isolation inputs, not a production authentication scheme. Accounts are
-tenant-scoped. Runs are tenant-and-rep-scoped, and an unknown or out-of-scope account/run returns the
-same sanitized `404 not_found` envelope.
+Prospect routes require an HS256 demo bearer token from `POST /api/v1/auth/token`; tenant, rep,
+subject, and role scope come only from verified claims. The explicit seed command owns the fictional
+user row; migrations create only the schema, and runtime authentication reads `auth_users` through a
+repository. Browser tenant/rep/authorization headers are discarded by the Next.js BFF. Accounts are
+tenant-scoped, runs are tenant/rep/subject-scoped, and an
+unknown or out-of-scope account/run returns the same sanitized `404 not_found` envelope. The demo
+credentials are `alex.morgan@example.test` / `prospect-demo`; only a generated Argon2 hash is stored.
 
 | Method | Path | Success | Purpose |
 | --- | --- | --- | --- |
+| `POST` | `/api/v1/auth/token` | `200` | Authenticate the fictional demo user. |
+| `POST` | `/api/v1/auth/refresh` | `200` | Rotate a valid one-hour token within its eight-hour session. |
+| `GET` | `/api/v1/auth/me` | `200` | Resolve the current verified user without returning the token. |
 | `GET` | `/api/v1/accounts` | `200` | List accounts visible to the tenant. |
 | `POST` | `/api/v1/prospect-runs` | `202` | Atomically persist and enqueue `{ "account_id": "acme-foods" }`. |
 | `GET` | `/api/v1/prospect-runs/{run_id}` | `200` | Poll the durable run. |
@@ -60,7 +67,8 @@ Failures use one non-disclosing envelope:
 }
 ```
 
-The stable codes are `validation_error`, `not_found`, `conflict`, `internal_error`, and
+The stable codes are `unauthorized`, `forbidden`, `validation_error`, `not_found`, `conflict`, and
+`internal_error`, and
 `service_unavailable`. Validation issues identify fields but never echo submitted values; internal
 errors never expose raw exceptions, prompts, credentials, or private source payloads.
 

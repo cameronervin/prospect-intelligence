@@ -17,13 +17,23 @@ from langchain_core.tools import BaseTool
 from langgraph.types import Command
 
 from ..contracts.agent_runtime import ProgressSignal, ProspectRuntimeContext
+from ..contracts.citations import evidence_citation_id
 from ..contracts.filesystem import PROSPECT_FILES
+from ..contracts.models import Evidence
 from .context import current_runtime_context, current_step
-from .guardrails import validate_workflow_artifacts
+from .guardrails.deterministic import validate_workflow_artifacts
 from .state import ProspectDeepAgentState
 
 
 def _json_safe(value: object) -> object:
+    if isinstance(value, Evidence):
+        provenance = cast("dict[str, object]", asdict(value.provenance))
+        safe_provenance = cast("Mapping[str, object]", _json_safe(provenance))
+        return {
+            "claim": value.claim,
+            "citation_id": evidence_citation_id(safe_provenance),
+            "provenance": safe_provenance,
+        }
     if is_dataclass(value) and not isinstance(value, type):
         return _json_safe(cast("dict[object, object]", asdict(value)))
     if isinstance(value, Mapping):

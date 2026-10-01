@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from app.features.authentication.public import AuthContext
+
 from ..contracts.agent_runtime import (
     ProspectAgentRuntime,
     ProspectReviewDecision,
@@ -32,6 +34,7 @@ class ProspectAgentReviewHandler:
         *,
         tool_call_id: str,
         edited_outreach: OutreachDraft | None = None,
+        auth: AuthContext,
     ) -> ProspectRun:
         if tool_call_id != review_tool_call_id(run_id):
             raise InvalidRunTransitionError("review token does not match this run")
@@ -42,6 +45,7 @@ class ProspectAgentReviewHandler:
                 action,
                 tool_call_id=tool_call_id,
                 edited_outreach=edited_outreach,
+                auth=auth,
             )
 
     async def _review(
@@ -51,8 +55,16 @@ class ProspectAgentReviewHandler:
         *,
         tool_call_id: str,
         edited_outreach: OutreachDraft | None,
+        auth: AuthContext,
     ) -> ProspectRun:
         run = await asyncio.to_thread(self.service.get_run, run_id)
+        actor = auth
+        if (
+            actor.subject != run.created_by_subject
+            or actor.tenant_id != run.tenant_id
+            or actor.rep_id != run.rep_id
+        ):
+            raise LookupError(f"unknown run: {run_id}")
         if run.status is not RunStatus.AWAITING_REVIEW:
             return await asyncio.to_thread(
                 self.service.review_run,
@@ -69,8 +81,7 @@ class ProspectAgentReviewHandler:
         decision = ProspectReviewDecision(action=action, edited_draft=edited_outreach)
         context = ProspectRuntimeContext(
             run_id=run.id,
-            tenant_id=run.tenant_id,
-            rep_id=run.rep_id,
+            auth=actor,
         )
         checkpoint = await self.runtime.checkpoint(context=context)
         if checkpoint.pending_interrupt is not None:

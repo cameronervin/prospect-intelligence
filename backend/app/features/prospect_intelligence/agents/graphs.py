@@ -1,4 +1,4 @@
-"""Three-node application workflow around the root Deep Agent."""
+"""Deterministic application workflow around the root Deep Agent."""
 
 from collections.abc import Mapping
 from typing import Any, cast
@@ -15,7 +15,18 @@ from ..contracts.filesystem import PROSPECT_FILES
 from ..contracts.models import OutreachDraft, ReviewAction
 from ..domain.errors import UnsafeOutreachError
 from ..domain.outreach import validate_customer_outreach
-from .guardrails import file_data, manifest_file, validate_outreach, validate_workflow_artifacts
+from .guardrails.deterministic import (
+    file_data,
+    manifest_file,
+    validate_outreach,
+    validate_workflow_artifacts,
+)
+from .guardrails.jev_nodes import (
+    enforce_input_guardrail,
+    enforce_output_guardrail,
+    input_jev_guardrail,
+    output_jev_guardrail,
+)
 from .state import ProspectWorkflowState
 
 
@@ -170,12 +181,20 @@ def build_prospect_workflow(
         }
 
     builder.add_node("prepare", prepare)  # pyright: ignore[reportUnknownMemberType]
+    builder.add_node("input_jev_guardrail", input_jev_guardrail)  # pyright: ignore[reportUnknownMemberType]
+    builder.add_node("enforce_input_guardrail", enforce_input_guardrail)  # pyright: ignore[reportUnknownMemberType]
     builder.add_node("root_agent", cast(Any, root))  # pyright: ignore[reportUnknownMemberType]
     builder.add_node("validate_root", validate_root)  # pyright: ignore[reportUnknownMemberType]
+    builder.add_node("output_jev_guardrail", output_jev_guardrail)  # pyright: ignore[reportUnknownMemberType]
+    builder.add_node("enforce_output_guardrail", enforce_output_guardrail)  # pyright: ignore[reportUnknownMemberType]
     builder.add_node("finalize", finalize)  # pyright: ignore[reportUnknownMemberType]
     builder.add_edge(START, "prepare")
-    builder.add_edge("prepare", "root_agent")
+    builder.add_edge("prepare", "input_jev_guardrail")
+    builder.add_edge("input_jev_guardrail", "enforce_input_guardrail")
+    builder.add_edge("enforce_input_guardrail", "root_agent")
     builder.add_edge("root_agent", "validate_root")
-    builder.add_edge("validate_root", "finalize")
+    builder.add_edge("validate_root", "output_jev_guardrail")
+    builder.add_edge("output_jev_guardrail", "enforce_output_guardrail")
+    builder.add_edge("enforce_output_guardrail", "finalize")
     builder.add_edge("finalize", END)
     return builder

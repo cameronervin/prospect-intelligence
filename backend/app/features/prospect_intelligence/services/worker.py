@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import structlog
 
 from ..contracts.jobs import ClaimedJob, JobRepository
+from ..contracts.runtime_guardrails import GuardrailRejected, GuardrailUnavailable
 
 logger = structlog.get_logger(__name__)
 
@@ -48,12 +49,21 @@ class ProspectJobWorker:
         try:
             await self._handler(claim.run_id, claim.claim_token)
         except Exception as error:
+            if isinstance(error, GuardrailRejected):
+                error_code = error.code
+                retryable = False
+            elif isinstance(error, GuardrailUnavailable):
+                error_code = "guardrail_unavailable"
+                retryable = True
+            else:
+                error_code = "execution_failed"
+                retryable = True
             # Exception text can carry model output or source data; log only its class.
             await logger.awarning(
                 "prospect_run_execution_failed",
                 worker_id=self._worker_id,
                 run_id=str(claim.run_id),
-                error_code="execution_failed",
+                error_code=error_code,
                 error_type=type(error).__name__,
             )
             await asyncio.to_thread(
@@ -61,8 +71,8 @@ class ProspectJobWorker:
                 claim.id,
                 claim.claim_token,
                 self._clock(),
-                error_code="execution_failed",
-                retryable=True,
+                error_code=error_code,
+                retryable=retryable,
                 max_attempts=self._max_attempts,
             )
         else:

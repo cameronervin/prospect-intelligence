@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, ToolCall
 
 from ...contracts.filesystem import PROSPECT_FILES
 from ...contracts.review import MAX_REVIEW_ROUNDS, QualityReviewArtifact, ReviewVerdict
-from ..guardrails import artifact_content, validate_workflow_artifacts
+from ..guardrails.deterministic import artifact_content, validate_workflow_artifacts
 
 _RESEARCH_ARTIFACTS = (
     PROSPECT_FILES.account_context,

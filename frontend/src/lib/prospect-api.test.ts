@@ -12,7 +12,7 @@ const reviewBrief = {
 };
 
 describe("prospect API boundary", () => {
-  it("sends the synthetic identity headers when a run is created", async () => {
+  it("does not send browser-controlled identity headers when a run is created", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         id: "run-1",
@@ -23,7 +23,7 @@ describe("prospect API boundary", () => {
         source_coverage: [],
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo-carrier", repId: "rep-7" });
+    const client = createProspectClient({ fetcher });
 
     await client.startRun("acct-1");
 
@@ -31,11 +31,7 @@ describe("prospect API boundary", () => {
       "/api/v1/prospect-runs",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({
-          "Content-Type": "application/json",
-          "X-Rep-Id": "rep-7",
-          "X-Tenant-Id": "demo-carrier",
-        }),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account_id: "acct-1" }),
       }),
     );
@@ -45,7 +41,7 @@ describe("prospect API boundary", () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ id: "run-1", status: "mystery" }));
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
@@ -66,7 +62,7 @@ describe("prospect API boundary", () => {
         error: null,
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).resolves.toMatchObject({ verdict: null, error: null });
   });
@@ -90,7 +86,7 @@ describe("prospect API boundary", () => {
         },
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).resolves.toMatchObject({
       pending_review: {
@@ -116,7 +112,7 @@ describe("prospect API boundary", () => {
         pending_review: null,
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
@@ -140,7 +136,7 @@ describe("prospect API boundary", () => {
         },
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
@@ -153,13 +149,13 @@ describe("prospect API boundary", () => {
             code: "validation_error",
             message: "Request validation failed.",
             retryable: false,
-            issues: [{ location: "header.X-Tenant-Id", message: "Invalid", type: "pattern" }],
+            issues: [{ location: "body.account_id", message: "Invalid", type: "pattern" }],
           },
         },
         { status: 422 },
       ),
     );
-    const client = createProspectClient({ fetcher, tenantId: "bad value", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     const error = await client.listAccounts().catch((caught: unknown) => caught);
 
@@ -181,7 +177,7 @@ describe("prospect API boundary", () => {
         { status: 503 },
       ),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toMatchObject({
       code: "service_unavailable",
@@ -226,7 +222,7 @@ describe("prospect API boundary", () => {
         },
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     const run = await client.getRun("run-1");
 
@@ -296,7 +292,7 @@ describe("prospect API boundary", () => {
         ],
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     const response = await client.getRun("run-1");
 
@@ -330,7 +326,7 @@ describe("prospect API boundary", () => {
         ],
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
@@ -354,7 +350,7 @@ describe("prospect API boundary", () => {
         ],
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
@@ -381,7 +377,7 @@ describe("prospect API boundary", () => {
         ],
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });
@@ -397,7 +393,7 @@ describe("prospect API boundary", () => {
         source_coverage: [{ source: "CRM", status: "complete", mode: "scraped" }],
       }),
     );
-    const client = createProspectClient({ fetcher, tenantId: "demo", repId: "rep" });
+    const client = createProspectClient({ fetcher });
 
     await expect(client.getRun("run-1")).rejects.toThrow("invalid response");
   });

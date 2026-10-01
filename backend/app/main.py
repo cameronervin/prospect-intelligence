@@ -7,6 +7,12 @@ from app.bootstrap.exception_handlers import register_exception_handlers
 from app.bootstrap.lifespan import lifespan
 from app.bootstrap.middleware import register_middleware
 from app.bootstrap.wiring import build_container
+from app.features.authentication.public import (
+    build_authenticated_user,
+)
+from app.features.authentication.public import (
+    build_router as build_auth_router,
+)
 from app.features.prospect_intelligence.api.router import build_router as build_prospect_router
 from app.platform.api.health import build_router as build_health_router
 from app.platform.config.settings import Settings
@@ -39,12 +45,19 @@ def create_app(
     register_exception_handlers(app)
     register_middleware(app)
     app.include_router(build_health_router(resolved_container.is_ready))
+    authenticated_user = None
+    if resolved_container.auth is not None:
+        authenticated_user = build_authenticated_user(resolved_container.auth)
+        app.include_router(build_auth_router(resolved_container.auth, authenticated_user))
     if resolved_container.prospect is not None:
+        if authenticated_user is None:
+            raise RuntimeError("prospect routes require authentication")
         component = resolved_container.prospect
         app.include_router(
             build_prospect_router(
                 component.service,
                 lambda: component.review_handler,
+                authenticated_user,
             )
         )
     return app

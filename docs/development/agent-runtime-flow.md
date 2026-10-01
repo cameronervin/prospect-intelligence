@@ -26,19 +26,32 @@ through the orchestrator's `task` tool.
 
 ## Run time
 
-`ProspectAgentJobHandler` builds a `ProspectRuntimeContext` with tenant IDs, source handlers,
-preferences, and progress reporting. It calls `CompiledProspectAgentRuntime.execute()`.
+`ProspectAgentJobHandler` reconstructs the persisted actor snapshot and builds a
+`ProspectRuntimeContext` with `AuthContext`, source handlers, preferences, and progress reporting.
+LangGraph receives it through `context_schema`/`Runtime.context`; authentication claims never enter
+checkpoint state, prompts, files, or model messages.
 
 The outer graph then runs:
 
 ```text
-prepare -> root_agent -> validate_root -> finalize
+prepare -> input_jev_guardrail -> enforce_input -> root_agent -> validate_root
+  -> output_jev_guardrail -> enforce_output -> finalize
 ```
 
 - `prepare` creates the task, memory, and index files.
+- `input_jev_guardrail` records `skipped` by default or rejects an unsafe bounded request before a
+  model call.
+- `enforce_input` raises the non-retryable policy error after the failed decision is checkpointed.
 - `root_agent` runs the orchestrator's model and tool loop.
 - `validate_root` checks all required artifacts and the review request.
+- `output_jev_guardrail` records `skipped` by default or requires supported claims, no internal-data
+  leak, and draft/brief agreement before review.
+- `enforce_output` raises after checkpointing a failed output decision, preventing human review.
 - `finalize` pauses at the human-review interrupt.
+
+The deterministic validators used by `validate_root` and middleware live in
+`agents/guardrails/deterministic.py`. The input/output Jev nodes live separately in
+`agents/guardrails/jev_nodes.py`; graph topology remains in `agents/graphs.py`.
 
 ## Specialist delegation
 
@@ -66,7 +79,10 @@ One `CompositeBackend` routes data:
 Each agent has explicit filesystem permissions. Sharing one backend does not give every agent the
 same access.
 
-`ProspectRuntimeContext` is not checkpointed. A scoped `ContextVar` carries it into isolated
+Only guardrail status, rubric version, decision keys, and state hashes are checkpointed. The
+provider-neutral decision contract and TypeSafe adapter live in `platform/decision_models`; policy,
+projection, and rejection behavior remain feature-owned. `ProspectRuntimeContext` is not
+checkpointed. A scoped `ContextVar` carries it into isolated
 specialists because Deep Agents 0.7.19 does not forward typed context there reliably.
 
 ## Human review

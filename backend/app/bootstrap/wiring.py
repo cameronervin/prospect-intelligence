@@ -49,13 +49,16 @@ from app.features.prospect_intelligence.repositories.postgres import (
 )
 from app.features.prospect_intelligence.services.quality_events import QualityEventDispatcher
 from app.features.prospect_intelligence.services.runs import ProspectRunService
+from app.features.prospect_intelligence.services.runtime_guardrails import RuntimeJevGuardrail
 from app.platform.agent_runtime import PostgresAgentRuntime
 from app.platform.config.settings import Settings
 from app.platform.database.session import Database
+from app.platform.decision_models import TypeSafeDecisionModel
 from app.platform.llm import ManagedModelRuntime
 from app.platform.llm.openai import OpenAIModelRuntime
 
 from .container import Container, ProspectComponent, QualityComponent
+from .dependencies import build_authentication
 
 
 def build_source_bundle(
@@ -114,6 +117,7 @@ def build_container(
     """Build production dependencies without starting persistence or workers."""
 
     persistence = PostgresProspectStore.from_settings(settings)
+    auth = build_authentication(settings, persistence.engine)
     service = ProspectRunService(
         accounts=PostgresAccountRepository(persistence),
         runs=PostgresRunRepository(persistence),
@@ -151,6 +155,14 @@ def build_container(
         if quality_config is not None
         else None
     )
+    runtime_guardrail = None
+    if settings.runtime_jev_guardrails_enabled:
+        typesafe_api_key = settings.typesafe_api_key
+        if typesafe_api_key is None:
+            raise RuntimeError("runtime Jev guardrail credentials are not configured")
+        runtime_guardrail = RuntimeJevGuardrail(
+            TypeSafeDecisionModel.from_api_key(typesafe_api_key.get_secret_value())
+        )
     prospect = ProspectComponent(
         service=service,
         persistence=persistence,
@@ -160,11 +172,13 @@ def build_container(
         sources=sources,
         source_http_transport=source_http_transport,
         quality_projector=quality_projector,
+        runtime_guardrail=runtime_guardrail,
     )
     quality = _build_quality_component(settings, persistence, quality_config)
     return Container(
         settings=settings,
         database=Database.from_settings(settings),
+        auth=auth,
         prospect=prospect,
         quality=quality,
     )

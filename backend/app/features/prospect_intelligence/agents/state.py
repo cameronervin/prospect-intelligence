@@ -12,6 +12,10 @@ def merge_files(left: dict[str, FileData], right: dict[str, FileData]) -> dict[s
     return {**left, **right}
 
 
+def merge_metadata(left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
+    return {**left, **right}
+
+
 def append_unique(left: list[str], right: list[str]) -> list[str]:
     return [*left, *(stage for stage in right if stage not in left)]
 
@@ -28,3 +32,4 @@ class ProspectWorkflowState(TypedDict, total=False):
     completed_stages: Annotated[list[str], append_unique]
     review_requested: dict[str, object]
     review_decision: dict[str, object]
+    guardrail_results: Annotated[dict[str, object], merge_metadata]

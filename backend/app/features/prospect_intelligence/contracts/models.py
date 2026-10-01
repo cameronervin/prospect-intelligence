@@ -1,5 +1,3 @@
-"""Typed cross-layer and cross-feature contracts."""
-
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -150,6 +148,8 @@ class ProspectRun:
     progress_percent: int
     created_at: datetime
     updated_at: datetime
+    created_by_subject: str
+    created_by_roles: tuple[str, ...]
     output: AnalysisOutput | None = None
     reviewed_outreach: OutreachDraft | None = None
     review_action: ReviewAction | None = None

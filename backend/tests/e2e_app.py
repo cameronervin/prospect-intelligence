@@ -10,7 +10,7 @@ from app.platform.config.settings import Environment, Settings
 from app.platform.llm import ModelSet
 from tests.unit.prospect_intelligence.agent_test_support import TrajectoryModel
 
-_FRONTEND_DEMO_MEMORY = "/memories/tenant-demo/maya-chen/preferences.md"
+_FRONTEND_DEMO_MEMORY = "/memories/tenant-demo/alex-morgan/preferences.md"
 
 
 @dataclass(slots=True)

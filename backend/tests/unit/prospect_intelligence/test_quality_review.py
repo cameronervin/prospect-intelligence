@@ -10,7 +10,9 @@ from langgraph.store.memory import InMemoryStore
 
 from app.features.prospect_intelligence.agents.chains import build_orchestrator_agent
 from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
-from app.features.prospect_intelligence.agents.guardrails import validate_workflow_artifacts
+from app.features.prospect_intelligence.agents.guardrails.deterministic import (
+    validate_workflow_artifacts,
+)
 from app.features.prospect_intelligence.agents.middleware import validate_delegation
 from app.features.prospect_intelligence.agents.runtime import CompiledProspectAgentRuntime
 from app.features.prospect_intelligence.agents.tools import build_tool_registry

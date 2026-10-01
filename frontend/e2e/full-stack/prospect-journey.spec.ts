@@ -15,6 +15,11 @@ test("runs the durable rep-review journey through the real application stack", a
   });
 
   await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.getByLabel("Password").fill("prospect-demo");
+  await page.getByRole("button", { name: "Enter dispatch console" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByText("Alex Morgan · Sales rep")).toBeVisible();
   const account = page.getByRole("button", { name: /Acme Foods/ });
   await account.focus();
   await page.keyboard.press("Enter");

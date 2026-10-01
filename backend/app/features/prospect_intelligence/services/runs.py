@@ -1,5 +1,3 @@
-"""Durable-run semantics independent of the persistence implementation."""
-
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
@@ -9,6 +7,7 @@ from app.features.agent_quality.contracts.models import (
     EvaluationSamplingDecision,
     QualityEvaluationEnvelope,
 )
+from app.features.authentication.public import AuthContext
 
 from ..contracts import repositories
 from ..contracts.models import (
@@ -27,6 +26,7 @@ from ..domain.errors import InvalidRunTransitionError
 from ..domain.outreach import validate_customer_outreach
 from ..domain.progress import analysis_outcome, complete_review, finish_analysis, initial_steps
 from ..domain.quality_events import build_quality_event
+from .identity import require_run_scope
 from .progress import RunProgressRecorder
 from .review_outcomes import prepare_review_outcome
 
@@ -55,15 +55,19 @@ class ProspectRunService:
     def progress(self) -> RunProgressRecorder:
         return RunProgressRecorder(runs=self._runs, clock=self._clock)
 
-    def list_accounts(self, tenant_id: str) -> tuple[Account, ...]:
-        return self._accounts.list_for_tenant(tenant_id)
+    def list_accounts(self, auth: AuthContext) -> tuple[Account, ...]:
+        return self._accounts.list_for_tenant(auth.tenant_id)
 
-    def create_run(self, tenant_id: str, rep_id: str, account_id: str) -> ProspectRun:
+    def create_run(
+        self,
+        auth: AuthContext,
+        account_id: str,
+    ) -> ProspectRun:
+        tenant_id, rep_id = auth.tenant_id, auth.rep_id
         account = self._accounts.get(tenant_id, account_id)
         if account is None:
             raise LookupError(f"unknown account: {account_id}")
-        now = self._clock()
-        run_id = self._id_factory()
+        now, run_id = self._clock(), self._id_factory()
         run = ProspectRun(
             id=run_id,
             tenant_id=tenant_id,
@@ -83,6 +87,8 @@ class ProspectRunService:
             },
             thread_id=checkpoint_thread_id(tenant_id, rep_id, run_id),
             steps=initial_steps(),
+            created_by_subject=auth.subject,
+            created_by_roles=tuple(sorted(role.value for role in auth.roles)),
         )
         if self._workflows is not None:
             self._workflows.create_run(
@@ -99,11 +105,12 @@ class ProspectRunService:
             raise LookupError(f"unknown run: {run_id}")
         return run
 
-    def get_scoped_run(self, run_id: UUID, tenant_id: str, rep_id: str) -> ProspectRun:
-        run = self.get_run(run_id)
-        if run.tenant_id != tenant_id or run.rep_id != rep_id:
-            raise LookupError(f"unknown run: {run_id}")
-        return run
+    def get_scoped_run(
+        self,
+        run_id: UUID,
+        auth: AuthContext,
+    ) -> ProspectRun:
+        return require_run_scope(self.get_run(run_id), auth)
 
     def start_run(self, run_id: UUID, *, claim_token: UUID | None = None) -> ProspectRun:
         run = self.get_run(run_id)

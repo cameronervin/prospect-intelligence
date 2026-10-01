@@ -23,12 +23,23 @@ make verify
 make dev
 ```
 
-This starts PostgreSQL in Docker, applies the empty Alembic head, and runs FastAPI and Next.js locally. Alternatively, run the full non-root stack:
+This starts PostgreSQL in Docker, applies the Alembic migrations, idempotently seeds the fictional
+demo user, and runs FastAPI and Next.js locally. Alternatively, run the full non-root stack:
 
 ```sh
 cp deploy/envs/.env.local.example deploy/envs/.env.local
 make docker-up
+make seed-demo-user
 ```
+
+The seed command is deliberately separate from migrations so deploys never create application users
+implicitly. It stores only a newly generated Argon2 hash in `auth_users`. `make dev` runs the command
+automatically and supplies the documented local-only signing value when none is exported; other
+development launch paths must set `TAKEHOME_JWT_SIGNING_SECRET` to at least 32 random bytes. Open
+`/login` and use `alex.morgan@example.test` / `prospect-demo`. The BFF retains the JWT only in an
+HttpOnly cookie.
+`TAKEHOME_RUNTIME_JEV_GUARDRAILS_ENABLED` defaults to `false`; enabling it also requires
+`TYPESAFE_API_KEY` and adds synchronous provider latency to each run.
 
 ## Create a feature
 

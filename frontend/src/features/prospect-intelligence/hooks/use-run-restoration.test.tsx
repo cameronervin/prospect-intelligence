@@ -1,10 +1,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  ProspectApiError,
-  type ProspectClient,
-} from "@/features/prospect-intelligence/api/client";
+import { ProspectApiError, type ProspectClient } from "@/features/prospect-intelligence/api/client";
 import type { Account } from "@/features/prospect-intelligence/api/schemas";
 import { useRunRestoration } from "@/features/prospect-intelligence/hooks/use-run-restoration";
 import { ACTIVE_RUN_STORAGE_KEY } from "@/features/prospect-intelligence/run/constants";

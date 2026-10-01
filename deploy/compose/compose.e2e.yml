@@ -4,6 +4,9 @@ services:
   postgres:
     ports: !override []
 
+  migrate:
+    command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_demo_user"]
+
   backend:
     build:
       target: e2e
@@ -12,6 +15,8 @@ services:
       TAKEHOME_ENVIRONMENT: test
       TAKEHOME_EXTERNAL_LIVE_ENABLED: "false"
       TAKEHOME_ONLINE_QUALITY_ENABLED: "false"
+      TAKEHOME_DEMO_AUTH_ENABLED: "true"
+      TAKEHOME_RUNTIME_JEV_GUARDRAILS_ENABLED: "false"
       LANGSMITH_TRACING: "false"
       OPENAI_API_KEY: ""
       LANGSMITH_API_KEY: ""

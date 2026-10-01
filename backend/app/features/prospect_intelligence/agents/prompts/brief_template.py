@@ -25,8 +25,8 @@ Shipper loads/week, Matched loads/week, Fit score, Modeled annual revenue, Model
 avoided. Write "No eligible lanes." when there are none.
 
 ## Evidence and sources
-One bullet per key fact: the fact, then its source, mode (live, fixture, or snapshot), and
-retrieval date from the evidence provenance.
+One bullet per key fact: the fact, then its source, mode (live, fixture, or snapshot), retrieval
+date, and opaque `[ev_...]` citation id copied from the evidence record.
 
 ## Risks and data gaps
 Degraded or unavailable sources, assumptions behind modeled figures, and anything unverified.

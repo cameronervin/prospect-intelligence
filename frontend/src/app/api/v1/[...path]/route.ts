@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { backendBaseUrl } from "@/server/env";
+import { SESSION_COOKIE } from "@/features/auth/constants";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -9,7 +10,7 @@ const API_PREFIX = "/api/v1/";
 
 function errorEnvelope(
   status: number,
-  code: "validation_error" | "service_unavailable",
+  code: "not_found" | "validation_error" | "service_unavailable",
   message: string,
 ) {
   return NextResponse.json(
@@ -24,16 +25,25 @@ async function proxy(request: NextRequest, context: RouteContext) {
   if (path.some((segment) => segment === "." || segment === "..")) {
     return errorEnvelope(400, "validation_error", "The request path is not valid.");
   }
+  const allowed =
+    (path.length === 1 && (path[0] === "accounts" || path[0] === "prospect-runs")) ||
+    (path.length === 2 && path[0] === "prospect-runs") ||
+    (path.length === 3 && path[0] === "prospect-runs" && path[2] === "review");
+  if (!allowed) {
+    return errorEnvelope(404, "not_found", "The requested API route was not found.");
+  }
   const safePath = path.map(encodeURIComponent).join("/");
   const url = new URL(`${API_PREFIX}${safePath}${request.nextUrl.search}`, backendBaseUrl());
   if (!url.pathname.startsWith(API_PREFIX)) {
     return errorEnvelope(400, "validation_error", "The request path is not valid.");
   }
   const headers = new Headers();
-  for (const name of ["content-type", "x-tenant-id", "x-rep-id"]) {
+  for (const name of ["content-type"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  if (token) headers.set("authorization", `Bearer ${token}`);
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
 
   try {
@@ -43,10 +53,12 @@ async function proxy(request: NextRequest, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
-    return new NextResponse(response.body, {
+    const proxied = new NextResponse(response.body, {
       status: response.status,
       headers: { "content-type": response.headers.get("content-type") ?? "application/json" },
     });
+    if (response.status === 401) proxied.cookies.delete(SESSION_COOKIE);
+    return proxied;
   } catch {
     return errorEnvelope(
       503,

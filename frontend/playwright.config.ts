@@ -13,6 +13,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "npm start",
+    env: { PLAYWRIGHT_MOCK_SESSION: "true" },
     url: "http://127.0.0.1:3000/",
     reuseExistingServer: false,
     timeout: 120_000,

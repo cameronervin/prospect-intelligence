@@ -22,6 +22,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from app.bootstrap.exception_handlers import register_exception_handlers
+from app.features.authentication.public import build_authenticated_user
 from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
 from app.features.prospect_intelligence.agents.runtime import CompiledProspectAgentRuntime
 from app.features.prospect_intelligence.api.router import build_router
@@ -70,7 +71,12 @@ from app.features.prospect_intelligence.services.worker import (
 from app.platform.agent_runtime import PostgresAgentRuntime
 from app.platform.config.settings import Settings
 from tests.deterministic_pipeline import DeterministicProspectPipeline
-from tests.fakes import synthetic_prospect_sources
+from tests.fakes import (
+    auth_context,
+    authentication_service,
+    authentication_user,
+    synthetic_prospect_sources,
+)
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 
@@ -175,8 +181,16 @@ def build_service(store: PostgresProspectStore) -> ProspectRunService:
 def build_api(service: ProspectRunService) -> TestClient:
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(service, lambda: None))
-    return TestClient(app)
+    auth = authentication_service(
+        authentication_user(
+            email="alex.morgan@example.test",
+            display_name="Alex Morgan",
+            rep_id="alex-morgan",
+        )
+    )
+    app.include_router(build_router(service, lambda: None, build_authenticated_user(auth)))
+    token = auth.login("alex.morgan@example.test", "prospect-demo").access_token
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.mark.postgresql
@@ -243,7 +257,7 @@ def test_run_and_job_creation_roll_back_together_when_job_insert_fails(
     event.listen(store.engine, "before_cursor_execute", fail_worker_job_insert)
     try:
         with pytest.raises(RuntimeError, match="forced worker job insert failure"):
-            build_service(store).create_run("tenant-demo", "rep-a", "acme-foods")
+            build_service(store).create_run(auth_context(rep_id="rep-a"), "acme-foods")
     finally:
         event.remove(store.engine, "before_cursor_execute", fail_worker_job_insert)
 
@@ -261,7 +275,7 @@ def test_run_enqueue_restart_and_concurrent_edit_are_atomic_and_idempotent(
     settings = Settings(database_url=SecretStr(postgres_url))
     first_store = PostgresProspectStore.from_settings(settings)
     service = build_service(first_store)
-    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
 
     with Session(first_store.engine) as session:
         assert (
@@ -351,7 +365,7 @@ async def test_two_slot_worker_supervisor_processes_a_job_after_repository_resta
 ) -> None:
     settings = Settings(database_url=SecretStr(postgres_url))
     first_store = PostgresProspectStore.from_settings(settings)
-    run = build_service(first_store).create_run("tenant-demo", "rep-a", "acme-foods")
+    run = build_service(first_store).create_run(auth_context(rep_id="rep-a"), "acme-foods")
     first_store.close()
 
     restarted_store = PostgresProspectStore.from_settings(settings)
@@ -392,8 +406,8 @@ async def test_two_slot_worker_supervisor_processes_a_job_after_repository_resta
 def test_claims_are_exclusive_renewable_and_stale_claims_are_fenced(postgres_url: str) -> None:
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     service = build_service(store)
-    first = service.create_run("tenant-demo", "rep-a", "acme-foods")
-    second = service.create_run("tenant-demo", "rep-b", "northstar-retail")
+    first = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
+    second = service.create_run(auth_context(rep_id="rep-b"), "northstar-retail")
     jobs = PostgresJobRepository(store)
 
     def claim_job(worker: str):
@@ -422,7 +436,7 @@ def test_reclaimed_job_fences_stale_run_writes_and_resumes_once(postgres_url: st
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     service = build_service(store)
     pipeline = DeterministicProspectPipeline(service, synthetic_prospect_sources())
-    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
 
     stale = jobs.claim_next("worker-stale", NOW, timedelta(minutes=5))
@@ -452,7 +466,7 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
     service = build_service(store)
     pipeline = DeterministicProspectPipeline(service, synthetic_prospect_sources())
 
-    rejected_run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    rejected_run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     pipeline.run(rejected_run.id)
     rejected_tool_call_id = review_tool_call_id(rejected_run.id)
     rejected = service.review_run(
@@ -468,7 +482,7 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
     assert rejected.status is RunStatus.REJECTED
     assert replayed == rejected
 
-    approved_run = service.create_run("tenant-demo", "rep-b", "northstar-retail")
+    approved_run = service.create_run(auth_context(rep_id="rep-b"), "northstar-retail")
     pipeline.run(approved_run.id)
     approved_token = review_tool_call_id(approved_run.id)
     approved = service.review_run(
@@ -485,7 +499,7 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
         == approved
     )
 
-    edited_run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    edited_run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     pipeline.run(edited_run.id)
     edited = service.review_run(
         edited_run.id,
@@ -500,7 +514,7 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
     assert len(service.get_preferences("tenant-demo", "rep-a")) == 1
     assert service.get_preferences("tenant-demo", "rep-b") == ()
 
-    replacement_run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    replacement_run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     pipeline.run(replacement_run.id)
     service.review_run(
         replacement_run.id,
@@ -568,8 +582,8 @@ def test_delayed_older_edit_cannot_replace_the_current_preference(postgres_url: 
         workflows=PostgresWorkflowRepository(store),
         clock=lambda: NOW + timedelta(seconds=1),
     )
-    older_run = older_service.create_run("tenant-demo", "rep-a", "acme-foods")
-    newer_run = newer_service.create_run("tenant-demo", "rep-a", "acme-foods")
+    older_run = older_service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
+    newer_run = newer_service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     DeterministicProspectPipeline(older_service, synthetic_prospect_sources()).run(older_run.id)
     DeterministicProspectPipeline(newer_service, synthetic_prospect_sources()).run(newer_run.id)
 
@@ -604,7 +618,7 @@ def test_retry_exhaustion_marks_job_and_run_failed_without_private_error(
 ) -> None:
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     service = build_service(store)
-    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
 
     for attempt in range(1, 4):
@@ -641,7 +655,7 @@ def test_retry_exhaustion_marks_job_and_run_failed_without_private_error(
 def test_expired_third_attempt_is_reaped_after_worker_crash(postgres_url: str) -> None:
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     service = build_service(store)
-    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
 
     for attempt in range(1, 4):
@@ -670,7 +684,7 @@ def test_expired_third_attempt_preserves_durable_analysis_success(postgres_url: 
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     service = build_service(store)
     pipeline = DeterministicProspectPipeline(service, synthetic_prospect_sources())
-    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
 
     third_claim = None
@@ -754,8 +768,7 @@ async def test_feature_review_interrupt_survives_postgres_restart(
 ) -> None:
     context = ProspectRuntimeContext(
         run_id=UUID("00000000-0000-0000-0000-000000000032"),
-        tenant_id="tenant-demo",
-        rep_id="rep-a",
+        auth=auth_context(tenant_id="tenant-demo", rep_id="rep-a"),
     )
     first_persistence = PostgresAgentRuntime(postgres_url)
     await first_persistence.start()
@@ -814,7 +827,7 @@ def test_specialist_progress_persists_under_claim_and_fails_open_steps(
 ) -> None:
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     service = build_service(store)
-    run = service.create_run("tenant-demo", "rep-a", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
     claim = jobs.claim_next("worker-1", NOW, timedelta(minutes=5))
     assert claim is not None

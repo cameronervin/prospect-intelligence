@@ -9,7 +9,7 @@ outer LangGraph invokes one root Deep Agent harness that delegates to five decla
 compiled internally with LangChain `create_agent()`, then pauses at a named outreach interrupt.
 
 ```text
-Browser -> Next.js -> FastAPI API -> prospect services -> PostgreSQL job/run state
+Browser -> Next.js BFF -> FastAPI JWT boundary -> prospect services -> PostgreSQL job/run state
                                      |                     ^
                                      v                     |
                               two-slot worker -> compiled agent graph
@@ -24,7 +24,8 @@ api -> services / agents -> contracts / domain
 - `app/main.py` is the FastAPI application factory and ASGI entrypoint.
 - `bootstrap` constructs concrete dependencies and owns application lifecycle through its container,
   wiring, lifespan, middleware, and exception-handler modules.
-- `platform` owns HTTP, configuration, database, observability, and agent-runtime mechanics without product rules.
+- `platform` owns HTTP, configuration, database, observability, agent-runtime mechanics, and the
+  provider-neutral decision-model transport without product rules.
 - `shared_kernel` contains only concepts that are genuinely universal.
 - `features/<name>` owns all business behavior and persistence for one capability.
 - `evaluation` is an offline development/release harness, not a production monitoring service.
@@ -39,8 +40,8 @@ The prospect feature keeps each agent concept explicit without single-module pac
 agents/
   chains.py       prompts/       specs.py
   graphs.py       compiler.py     state.py
-  tools.py        guardrails.py   runtime.py
-  context.py      middleware/     skills/
+  tools.py        runtime.py      context.py
+  guardrails/     middleware/     skills/
 ```
 
 `chains.py` creates the shared backend, declarative specialists, and root Deep Agent;
@@ -55,8 +56,14 @@ The feature owns the five-specialist topology, tools, prompts, filesystem permis
 boundary, thread identity, typed runtime, and structured result. The root Deep Agent is the only
 specialist scheduler. The outer graph prepares state, invokes that root, and finalizes completion; it
 never invokes specialists.
+`guardrails/deterministic.py` owns fail-closed artifact and outreach validation;
+`guardrails/jev_nodes.py` owns the optional checkpoint-safe Jev graph nodes. The package groups the
+agent guardrail boundary without conflating deterministic validation with provider-backed policy.
 `platform/agent_runtime` owns the lifespan-managed PostgreSQL checkpointer/store and explicitly runs
 their idempotent schema setup. `platform/llm` owns Settings-selected provider models and transports.
+`platform/decision_models` owns the generic TypeSafe/Jev boolean-decision adapter; prospect
+intelligence owns every runtime guardrail question, projection, and failure policy. This remains
+separate from `agent_quality` sampling, scoring, alignment, and LangSmith delivery.
 Bootstrap constructs those platform resources, calls the feature compiler once after persistence
 starts, and injects its async runtime into both durable worker slots.
 Source adapters and model transports remain separate dependency groups. LangSmith tracing remains
@@ -131,6 +138,22 @@ feature did not remove the evaluation harness; it removed a duplicate integratio
 Carrier-network and carrier-registry adapters remain separate. The former is private operational
 capacity owned by the carrier; the latter is public FMCSA identity, authority, and safety data.
 
+## Authentication boundary
+
+The authentication feature owns a generic user domain record, repository contract, credential
+verification, and the demo JWT service. `bootstrap/dependencies.py` composes those exported
+capabilities with the PostgreSQL adapter and settings; the feature does not own an application
+bootstrap helper. PostgreSQL owns user data in `auth_users`; schema migrations
+do not create identities. An explicit idempotent development script seeds Alex Morgan and generates
+the stored Argon2 hash. Production composition injects the PostgreSQL user repository, while tests
+inject an in-memory repository. JWT encoding and validation remain internal stateless authentication
+services rather than outbound integrations.
+
 ## Frontend boundary
 
-The frontend uses App Router; the review console is one client component tree behind a same-origin `/api/v1` proxy. `BACKEND_BASE_URL` remains server-only. When the backend is unreachable the proxy returns the typed `service_unavailable` envelope, so the browser never sees transport exceptions or dependency details.
+The frontend uses App Router. `/login` exchanges the demo credential through BFF routes and stores
+the access token in an HttpOnly Strict cookie. The protected review console sits behind a same-origin
+`/api/v1` proxy that injects bearer auth server-side and strips browser authorization and identity
+headers. `BACKEND_BASE_URL` remains server-only. When the backend is unreachable the proxy returns
+the typed `service_unavailable` envelope, so the browser never sees transport exceptions or
+dependency details.

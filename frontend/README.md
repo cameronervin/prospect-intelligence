@@ -16,8 +16,8 @@ BACKEND_BASE_URL=http://127.0.0.1:8000 npm run dev
   checkpoint, and outcome.
 - `src/lib/prospect-api.ts` is a compatibility facade over the feature-scoped API boundary, where
   Zod validates every backend response.
-- `src/app/api/v1/[...path]/route.ts` proxies same-origin requests, forwards only the scoped
-  identity headers, and rejects dot segments that would leave `/api/v1`.
+- `src/app/api/v1/[...path]/route.ts` allowlists the prospect API, strips browser identity input,
+  injects the HttpOnly-cookie bearer server-side, and never exposes backend auth endpoints.
 
 `BACKEND_BASE_URL` is server-only. No browser bundle receives backend credentials or LangSmith
 configuration. The interface uses Tailwind's built-in system font stack and token scales.

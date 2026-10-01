@@ -19,6 +19,7 @@ from pydantic import Field
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectRuntimeContext,
 )
+from tests.fakes import auth_context
 
 
 def file_data(content: str) -> FileData:
@@ -365,7 +366,6 @@ class TrajectoryModel(BaseChatModel):
 def runtime_context(*, rep_preferences: tuple[str, ...] = ()) -> ProspectRuntimeContext:
     return ProspectRuntimeContext(
         run_id=UUID("00000000-0000-0000-0000-000000000123"),
-        tenant_id="tenant-demo",
-        rep_id="rep-demo",
+        auth=auth_context(tenant_id="tenant-demo", rep_id="rep-demo"),
         rep_preferences=rep_preferences,
     )

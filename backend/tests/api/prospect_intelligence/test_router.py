@@ -5,11 +5,18 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
+import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.bootstrap.exception_handlers import register_exception_handlers
+from app.features.authentication.public import (
+    AuthenticationService,
+    InMemoryUserRepository,
+    JwtTokenService,
+    build_authenticated_user,
+)
 from app.features.prospect_intelligence.api.router import build_router
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
@@ -34,14 +41,27 @@ from app.features.prospect_intelligence.repositories.memory import (
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
-from tests.fakes import synthetic_prospect_sources
+from tests.fakes import auth_context, authentication_user, synthetic_prospect_sources
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
+TEST_USER = authentication_user()
+JWT_SECRET = "test-signing-secret-that-is-at-least-thirty-two-bytes"
+
+
+def _test_authentication() -> AuthenticationService:
+    return AuthenticationService(
+        users=InMemoryUserRepository((TEST_USER,)),
+        tokens=JwtTokenService(JWT_SECRET),
+    )
+
+
+def _test_user_dependency():
+    return _test_authentication().login(TEST_USER.email, "prospect-demo").user
 
 
 def test_runs_expose_sanitized_specialist_steps_for_polling() -> None:
     api, service, _ = api_with_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     service.start_run(run.id)
     service.progress.record(run.id, StepStarted("external-research", NOW))
     service.progress.record(
@@ -85,13 +105,39 @@ def api_with_service() -> tuple[TestClient, ProspectRunService, InMemoryRunRepos
     )
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(service, lambda: None))
-    return TestClient(app), service, runs
+    auth = _test_authentication()
+    token = auth.login(TEST_USER.email, "prospect-demo").access_token
+    app.include_router(build_router(service, lambda: None, build_authenticated_user(auth)))
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"}), service, runs
 
 
 def client() -> TestClient:
     api, _, _ = api_with_service()
     return api
+
+
+def test_missing_bearer_returns_typed_401_challenge() -> None:
+    api, _, _ = api_with_service()
+    del api.headers["authorization"]
+
+    response = api.get("/api/v1/accounts")
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_verified_identity_without_sales_rep_role_returns_403() -> None:
+    api, _, _ = api_with_service()
+    valid = _test_authentication().login(TEST_USER.email, "prospect-demo").access_token
+    claims = jwt.decode(valid, options={"verify_signature": False})
+    claims["roles"] = []
+    token = jwt.encode(claims, JWT_SECRET, algorithm="HS256")
+
+    response = api.get("/api/v1/accounts", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
 
 
 def terminal_output(verdict: FitVerdict) -> AnalysisOutput:
@@ -119,22 +165,10 @@ def terminal_output(verdict: FitVerdict) -> AnalysisOutput:
     )
 
 
-def test_accounts_require_validated_synthetic_scope_headers() -> None:
-    response = client().get("/api/v1/accounts")
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "validation_error"
-    assert "input" not in response.text
-
+def test_accounts_ignore_browser_scope_headers_and_use_verified_token() -> None:
     response = client().get(
         "/api/v1/accounts",
-        headers={"X-Tenant-Id": "tenant demo", "X-Rep-Id": "rep-demo"},
-    )
-    assert response.status_code == 422
-    assert response.json()["error"]["issues"][0]["location"].startswith("header.")
-
-    response = client().get(
-        "/api/v1/accounts",
-        headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"},
+        headers={"X-Tenant-Id": "tenant-other", "X-Rep-Id": "rep-other"},
     )
     assert response.status_code == 200
     assert response.json()["items"][0]["name"] == "Acme Foods"
@@ -167,11 +201,11 @@ def test_awaiting_review_exposes_stable_review_contract() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(service, lambda: None))
+    app.include_router(build_router(service, lambda: None, _test_user_dependency))
 
     response = TestClient(app).get(
         f"/api/v1/prospect-runs/{run.id}",
@@ -191,7 +225,7 @@ def test_awaiting_review_exposes_stable_review_contract() -> None:
 
 def test_fit_lanes_expose_lane_fit_score_components() -> None:
     api, service, _ = api_with_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
 
     response = api.get(
@@ -210,7 +244,7 @@ def test_fit_lanes_expose_lane_fit_score_components() -> None:
 
 def test_source_coverage_discloses_source_mode() -> None:
     api, service, _ = api_with_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
 
     response = api.get(
@@ -229,7 +263,7 @@ def test_source_coverage_discloses_source_mode() -> None:
 def test_pending_review_is_null_for_non_review_lifecycle_states() -> None:
     api, service, runs = api_with_service()
     headers = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"}
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
 
     assert (
         api.get(f"/api/v1/prospect-runs/{run.id}", headers=headers).json()["pending_review"] is None
@@ -250,7 +284,7 @@ def test_pending_review_is_null_for_non_review_lifecycle_states() -> None:
     assert rejected["status"] == "rejected"
     assert rejected["pending_review"] is None
 
-    failed_run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    failed_run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     runs.save(
         replace(
             failed_run,
@@ -279,7 +313,7 @@ def test_terminal_success_verdicts_are_completed_without_review(
 ) -> None:
     api, service, _ = api_with_service()
     headers = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"}
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     service.start_run(run.id)
     service.submit_analysis(run.id, terminal_output(verdict))
 
@@ -291,7 +325,7 @@ def test_terminal_success_verdicts_are_completed_without_review(
     assert response.json()["pending_review"] is None
 
 
-def test_tenant_cannot_poll_another_tenants_run() -> None:
+def test_tenant_header_cannot_override_token_scope() -> None:
     api = client()
     owner = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"}
     account_id = api.get("/api/v1/accounts", headers=owner).json()["items"][0]["id"]
@@ -306,18 +340,10 @@ def test_tenant_cannot_poll_another_tenants_run() -> None:
         headers={"X-Tenant-Id": "tenant-other", "X-Rep-Id": "rep-demo"},
     )
 
-    assert response.status_code == 404
-    assert response.json() == {
-        "error": {
-            "code": "not_found",
-            "message": "Run not found",
-            "retryable": False,
-            "issues": [],
-        }
-    }
+    assert response.status_code == 200
 
 
-def test_rep_cannot_poll_another_reps_run_within_the_same_tenant() -> None:
+def test_rep_header_cannot_override_token_scope() -> None:
     api = client()
     owner = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-owner"}
     created = api.post(
@@ -331,9 +357,8 @@ def test_rep_cannot_poll_another_reps_run_within_the_same_tenant() -> None:
         headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-other"},
     )
 
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "not_found"
-    assert created["id"] not in response.text
+    assert response.status_code == 200
+    assert response.json()["id"] == created["id"]
 
 
 def test_unknown_account_and_run_return_ownership_safe_not_found() -> None:
@@ -449,7 +474,7 @@ def test_review_rejects_a_noncanonical_token_as_a_conflict() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
 
     async def review_handler(
@@ -458,7 +483,9 @@ def test_review_rejects_a_noncanonical_token_as_a_conflict() -> None:
         *,
         tool_call_id: str,
         edited_outreach: OutreachDraft | None = None,
+        auth: Any | None = None,
     ) -> ProspectRun:
+        del auth
         return service.review_run(
             run_id,
             action,
@@ -468,7 +495,9 @@ def test_review_rejects_a_noncanonical_token_as_a_conflict() -> None:
 
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(service, lambda: cast(Any, review_handler)))
+    app.include_router(
+        build_router(service, lambda: cast(Any, review_handler), _test_user_dependency)
+    )
 
     response = TestClient(app).post(
         f"/api/v1/prospect-runs/{run.id}/review",
@@ -482,14 +511,17 @@ def test_review_rejects_a_noncanonical_token_as_a_conflict() -> None:
 
 
 @pytest.mark.parametrize(
-    "headers",
+    ("tenant_id", "rep_id", "subject"),
     [
-        {"X-Tenant-Id": "tenant-other", "X-Rep-Id": "rep-owner"},
-        {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-other"},
+        ("tenant-other", "rep-owner", "rep-owner"),
+        ("tenant-demo", "rep-other", "rep-other"),
+        ("tenant-demo", "rep-owner", "different-subject"),
     ],
 )
 def test_out_of_scope_review_returns_not_found_without_calling_handler(
-    headers: dict[str, str],
+    tenant_id: str,
+    rep_id: str,
+    subject: str,
 ) -> None:
     service = ProspectRunService(
         accounts=InMemoryAccountRepository.seeded(),
@@ -498,7 +530,7 @@ def test_out_of_scope_review_returns_not_found_without_calling_handler(
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-owner", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-owner"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     calls: list[UUID] = []
 
@@ -515,11 +547,23 @@ def test_out_of_scope_review_returns_not_found_without_calling_handler(
 
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(service, lambda: cast(Any, review_handler)))
+    requester = replace(TEST_USER, tenant_id=tenant_id, rep_id=rep_id, subject=subject)
+    auth = AuthenticationService(
+        users=InMemoryUserRepository((requester,)),
+        tokens=JwtTokenService(JWT_SECRET),
+    )
+    app.include_router(
+        build_router(service, lambda: cast(Any, review_handler), build_authenticated_user(auth))
+    )
+    token = auth.login(requester.email, "prospect-demo").access_token
 
     response = TestClient(app).post(
         f"/api/v1/prospect-runs/{run.id}/review",
-        headers=headers,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Tenant-Id": "tenant-demo",
+            "X-Rep-Id": "rep-owner",
+        },
         json={"decision": "approve", "tool_call_id": review_tool_call_id(run.id)},
     )
 
@@ -536,7 +580,7 @@ def test_unsafe_edit_returns_sanitized_conflict_without_echoing_draft() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
 
     class ReviewHandler:
@@ -547,7 +591,9 @@ def test_unsafe_edit_returns_sanitized_conflict_without_echoing_draft() -> None:
             *,
             tool_call_id: str,
             edited_outreach: OutreachDraft | None = None,
+            auth: Any | None = None,
         ) -> ProspectRun:
+            del auth
             return service.review_run(
                 run_id,
                 action,
@@ -557,7 +603,9 @@ def test_unsafe_edit_returns_sanitized_conflict_without_echoing_draft() -> None:
 
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(service, lambda: cast(Any, ReviewHandler())))
+    app.include_router(
+        build_router(service, lambda: cast(Any, ReviewHandler()), _test_user_dependency)
+    )
 
     response = TestClient(app).post(
         f"/api/v1/prospect-runs/{run.id}/review",
@@ -593,7 +641,11 @@ def test_unexpected_failure_returns_generic_error_without_internal_details() -> 
 
     app = FastAPI()
     register_exception_handlers(app)
-    app.include_router(build_router(cast(ProspectRunService, ExplodingService()), lambda: None))
+    app.include_router(
+        build_router(
+            cast(ProspectRunService, ExplodingService()), lambda: None, _test_user_dependency
+        )
+    )
 
     response = TestClient(app, raise_server_exceptions=False).get(
         "/api/v1/prospect-runs/00000000-0000-0000-0000-000000000001",
@@ -619,7 +671,7 @@ def test_review_route_uses_lifespan_provided_agent_review_handler() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     calls: list[ReviewAction] = []
 
@@ -631,7 +683,9 @@ def test_review_route_uses_lifespan_provided_agent_review_handler() -> None:
             *,
             tool_call_id: str,
             edited_outreach: OutreachDraft | None = None,
+            auth: Any | None = None,
         ) -> ProspectRun:
+            del auth
             calls.append(action)
             return service.review_run(
                 run_id,
@@ -643,7 +697,7 @@ def test_review_route_uses_lifespan_provided_agent_review_handler() -> None:
     app = FastAPI()
     register_exception_handlers(app)
     handler = ReviewHandler()
-    app.include_router(build_router(service, lambda: cast(Any, handler)))
+    app.include_router(build_router(service, lambda: cast(Any, handler), _test_user_dependency))
 
     response = TestClient(app).post(
         f"/api/v1/prospect-runs/{run.id}/review",

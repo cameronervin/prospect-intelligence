@@ -36,6 +36,7 @@ from app.features.prospect_intelligence.repositories.memory import (
     InMemorySendReceiptRepository,
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
+from tests.fakes import auth_context
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 
@@ -126,8 +127,8 @@ def test_outreach_allowlist_rejects_near_miss_or_unpaired_templates(
 
 def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
 
     assert run.status is RunStatus.QUEUED
     service.start_run(run.id)
@@ -152,7 +153,7 @@ def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
 
 def test_review_rejects_a_token_that_does_not_belong_to_the_run() -> None:
     service = build_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     service.start_run(run.id)
     service.submit_analysis(run.id, analysis("Could we discuss your freight needs?"))
 
@@ -164,7 +165,7 @@ def test_review_rejects_a_token_that_does_not_belong_to_the_run() -> None:
 
 def test_review_replay_rejects_a_different_decision_for_the_same_token() -> None:
     service = build_service()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     service.start_run(run.id)
     service.submit_analysis(run.id, analysis("Could we discuss your freight needs?"))
     tool_call_id = review_tool_call_id(run.id)
@@ -176,8 +177,8 @@ def test_review_replay_rejects_a_different_decision_for_the_same_token() -> None
 
 def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    rejected = service.create_run("tenant-demo", "rep-a", account.id)
+    account = service.list_accounts(auth_context())[0]
+    rejected = service.create_run(auth_context(rep_id="rep-a"), account.id)
     service.start_run(rejected.id)
     service.submit_analysis(
         rejected.id,
@@ -200,7 +201,7 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
     assert result.send_receipt_id is None
     assert service.get_preferences("tenant-demo", "rep-a") == ()
 
-    edited = service.create_run("tenant-demo", "rep-a", account.id)
+    edited = service.create_run(auth_context(rep_id="rep-a"), account.id)
     service.start_run(edited.id)
     service.submit_analysis(
         edited.id,
@@ -239,7 +240,7 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
     assert altered_replay == reviewed
     assert service.get_preferences("tenant-demo", "rep-a") == preferences
 
-    replacement = service.create_run("tenant-demo", "rep-a", account.id)
+    replacement = service.create_run(auth_context(rep_id="rep-a"), account.id)
     service.start_run(replacement.id)
     service.submit_analysis(
         replacement.id,
@@ -264,8 +265,8 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
 
 def test_internal_business_data_is_blocked_from_customer_outreach() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
 
     with pytest.raises(UnsafeOutreachError, match="internal-only"):
@@ -303,8 +304,8 @@ def test_generated_outreach_rejects_internal_topics_in_subject_or_body(
     unsafe_copy: str,
 ) -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
 
     with pytest.raises(UnsafeOutreachError):
@@ -338,8 +339,8 @@ def test_rep_edits_cannot_bypass_subject_or_body_outreach_guardrail(
     unsafe_copy: str,
 ) -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
     service.submit_analysis(run.id, analysis("Could we compare freight needs?"))
 
@@ -376,8 +377,8 @@ def test_qualitative_outreach_boundary_rejects_validator_reproductions(
     unsafe_copy: str,
 ) -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
     unsafe_outreach = OutreachDraft(
         subject=unsafe_copy if field == "subject" else "Freight conversation",
@@ -413,8 +414,8 @@ def _step_statuses(run: ProspectRun) -> dict[str, RunStepStatus]:
 
 def test_runs_record_specialist_progress_from_queue_to_review() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
 
     assert set(_step_statuses(run).values()) == {RunStepStatus.PENDING}
     service.start_run(run.id)
@@ -440,8 +441,8 @@ def test_runs_record_specialist_progress_from_queue_to_review() -> None:
 
 def test_runs_append_each_draft_review_attempt_before_human_review() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
 
     for key in (
@@ -474,8 +475,8 @@ def test_runs_append_each_draft_review_attempt_before_human_review() -> None:
 
 def test_retrying_a_failed_attempt_never_regresses_progress_percent() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
 
     service.progress.record(run.id, StepStarted("outreach-drafter:1", NOW))
@@ -488,8 +489,8 @@ def test_retrying_a_failed_attempt_never_regresses_progress_percent() -> None:
 
 def test_progress_outside_a_running_run_is_ignored() -> None:
     service = build_service()
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
 
     unchanged = service.progress.record(run.id, StepStarted("account-context", NOW))
 
@@ -511,8 +512,8 @@ def test_progress_with_a_lost_worker_claim_is_dropped_without_failing() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: NOW,
     )
-    account = service.list_accounts("tenant-demo")[0]
-    run = service.create_run("tenant-demo", "rep-demo", account.id)
+    account = service.list_accounts(auth_context())[0]
+    run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
 
     result = service.progress.record(

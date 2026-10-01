@@ -8,13 +8,13 @@ from typing import cast
 
 from deepagents.backends.protocol import FileData
 
-from ..contracts.filesystem import PROSPECT_FILES, ArtifactMediaType
-from ..contracts.lane_analysis import LaneAnalysisArtifact
-from ..contracts.models import OutreachDraft
-from ..contracts.review import QualityReviewArtifact
-from ..domain.errors import UnsafeOutreachError
-from ..domain.outreach import validate_customer_outreach
-from .specs import AgentSpec
+from ...contracts.filesystem import PROSPECT_FILES, ArtifactMediaType
+from ...contracts.lane_analysis import LaneAnalysisArtifact
+from ...contracts.models import OutreachDraft
+from ...contracts.review import QualityReviewArtifact
+from ...domain.errors import UnsafeOutreachError
+from ...domain.outreach import validate_customer_outreach
+from ..specs import AgentSpec
 
 _NUMBER = re.compile(r"(?<![\w])[$]?(-?\d+(?:,\d{3})*(?:\.\d+)?)%?")
 _NUMERIC_TEXT = re.compile(r"^-?\d+(?:,\d{3})*(?:\.\d+)?$")
@@ -181,6 +181,6 @@ def validate_workflow_artifacts(
 
 
 def _all_specs() -> tuple[AgentSpec, ...]:
-    from .specs import orchestrator_spec, specialist_specs
+    from ..specs import orchestrator_spec, specialist_specs
 
     return (*specialist_specs(), orchestrator_spec())

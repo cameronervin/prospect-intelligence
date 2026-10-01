@@ -9,7 +9,7 @@ from app.features.prospect_intelligence.contracts.agent_runtime import ProspectA
 from app.main import create_app
 from app.platform.config.settings import Environment, Settings
 from app.platform.llm import ModelSet
-from tests.fakes import FakeDatabase, FakeSyncLifecycle
+from tests.fakes import FakeDatabase, FakeSyncLifecycle, authentication_service
 
 
 class _AsyncCloseRecorder:
@@ -122,6 +122,7 @@ async def test_lifespan_fails_closed_when_database_is_unavailable() -> None:
     container = Container(
         settings=settings,
         database=database,
+        auth=authentication_service(),
         prospect=_component(
             source_http_transport=source_client,
         ),

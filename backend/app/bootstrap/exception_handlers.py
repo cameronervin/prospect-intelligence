@@ -46,6 +46,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def http_error(request: Request, error: StarletteHTTPException) -> JSONResponse:
         del request
         code = {
+            401: ApiErrorCode.UNAUTHORIZED,
+            403: ApiErrorCode.FORBIDDEN,
             404: ApiErrorCode.NOT_FOUND,
             409: ApiErrorCode.CONFLICT,
             503: ApiErrorCode.SERVICE_UNAVAILABLE,

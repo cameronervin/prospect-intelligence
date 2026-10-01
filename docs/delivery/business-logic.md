@@ -17,6 +17,36 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ## Decisions
 
+### 2026-10-01 — Authentication and optional runtime Jev boundaries
+
+- **Decision:** Demo access uses a repository-backed fictional Alex Morgan user and fixed-algorithm
+  HS256 JWTs. The application contains no built-in Alex identity: an explicit, idempotent development
+  script writes the user and a newly generated Argon2 hash to PostgreSQL after migrations. Tokens
+  last one hour; refresh rotates `jti`, preserves `sid`/`auth_time`, and cannot exceed eight hours.
+  Next.js stores the token only in an HttpOnly Strict cookie. Verified claims, not browser headers,
+  establish tenant, rep, subject, and the sole `sales_rep` role. Runs persist an immutable actor
+  snapshot and review requires the current subject/tenant/rep to match it. JWT issuance and
+  verification are internal authentication services; `integrations` is reserved for outbound systems.
+- **Decision:** Disabled-by-default `runtime-jev-v1` nodes surround the Deep Agent. Explicit policy
+  rejection is non-retryable; provider/protocol failure is `guardrail_unavailable` and retryable.
+  Checkpoints retain only status, version, decision keys, and hashes. The platform owns the generic
+  decision-model transport and maps Jev's selected `true`/`false` choice without a score threshold;
+  prospect intelligence owns policy and projections. Claim checks resolve opaque citations to
+  bounded, account-redacted evidence excerpts, source tools emit the same stable opaque IDs, and
+  leaked injection canaries are rejected. Asynchronous sampled `semantic-v1` evaluation and
+  LangSmith delivery are unchanged.
+- **Alternatives considered:** A singleton demo user compiled into the feature; seeding credentials in
+  the schema migration; treating local JWT mechanics as an external integration; trusted scope
+  headers; browser-readable local storage; JWT claims in graph state or prompts; placing synchronous
+  policy inside `agent_quality`; automatic judge fallback; and uncalibrated score thresholds.
+- **Reasoning:** The slice makes identity and durable authorization reviewable without claiming the
+  demo issuer is production IAM, while keeping runtime enforcement distinct from evaluation evidence.
+- **Consequences:** Production must replace the issuer with OIDC/JWKS, rotation, revocation, and
+  organization provisioning. Runtime Jev stays off until blind human alignment, privacy/vendor
+  review, and latency/SLO evidence support activation.
+- **Evidence:** Authentication repository/seed, API, graph, worker, frontend, and browser tests plus
+  the auth-user and actor-snapshot migrations and documented configuration defaults.
+
 ### 2026-10-01 — Semantic evaluation: align judges to blind human preference
 
 - **Decision:** This entry supersedes earlier expectations that CAM-41 itself would activate or set
@@ -936,21 +966,23 @@ include credentials, private customer data, raw traces, or generated result expo
   round with no findings; the brief matched the template and `lane_fit.json` figures. This is a
   single live run, not a LangSmith experiment, and it did not exercise a revise round.
 
-### 2026-09-30 — Deferred: Jev (System One) runtime guardrail before rep review
+### 2026-09-30 — Superseded: deferred Jev runtime guardrail
 
-- **Decision:** Do not add a Jev guardrail on the final pre-review step yet.
+- **Historical decision:** Do not add a Jev guardrail on the final pre-review step yet. The
+  2026-10-01 decision above supersedes this by wiring disabled-by-default input and output seams.
 - **Reasoning:**
   - TypeSafe offers no zero data retention, so runtime judging of CRM-derived drafts needs a
     redaction design.
-  - Jev lives in offline `backend/evaluation`, which the app must not import; a runtime adapter
-    belongs in `agent_quality`.
+  - The then-proposed placement in `agent_quality` was rejected during implementation. Generic
+    provider transport now belongs to `platform/decision_models`; prospect policy remains in the
+    prospect feature, and online evaluation remains unchanged.
   - It adds a 30 s external dependency with an unsettled outage policy (fail-open vs fail-closed).
   - Adding it together with the new reviewer would confound diagnosis.
 - **Staged path:**
   1. Measure how often Jev's offline semantic metrics and reviewer verdicts disagree.
   2. Add Jev as a non-blocking online evaluator (score and alert) behind redaction.
-  3. Promote it to a blocking gate only when disagreement, redaction, latency, and outage policy
-     are settled.
+  3. Enable the already-wired blocking seams only when disagreement, redaction, privacy review,
+     latency, and outage policy are settled.
 ### 2026-09-29 — Review console: operational-first workspace and disclosure rules
 
 - **Decision:** The product is presented as **Prospect Intelligence**. The workspace opens directly

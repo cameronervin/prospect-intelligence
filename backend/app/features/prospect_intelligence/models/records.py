@@ -31,6 +31,8 @@ class ProspectRunRecord(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(100))
     rep_id: Mapped[str] = mapped_column(String(100))
+    created_by_subject: Mapped[str] = mapped_column(String(200))
+    created_by_roles: Mapped[list[str]] = mapped_column(JSONB)
     thread_id: Mapped[str] = mapped_column(String(400), unique=True)
     account_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(32), index=True)

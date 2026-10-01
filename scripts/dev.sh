@@ -17,7 +17,11 @@ fi
 docker compose --env-file "$env_file" -f "$compose_file" up --detach postgres
 
 export TAKEHOME_DATABASE_URL="postgresql+psycopg://takehome:takehome@127.0.0.1:5432/takehome"
+if [ -z "${TAKEHOME_JWT_SIGNING_SECRET:-}" ]; then
+  export TAKEHOME_JWT_SIGNING_SECRET="local-demo-signing-key-at-least-32-bytes"
+fi
 run_in "$root/backend" uv run alembic upgrade head
+run_in "$root/backend" uv run python -m scripts.seed_demo_user
 
 backend_pid=
 frontend_pid=

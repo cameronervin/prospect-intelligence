@@ -25,7 +25,9 @@ from pydantic import Field
 
 from app.features.prospect_intelligence.agents.chains import build_orchestrator_agent
 from app.features.prospect_intelligence.agents.context import bind_runtime_context
-from app.features.prospect_intelligence.agents.guardrails import validate_agent_artifacts
+from app.features.prospect_intelligence.agents.guardrails.deterministic import (
+    validate_agent_artifacts,
+)
 from app.features.prospect_intelligence.agents.prompts import (
     AGENT_PROMPTS,
     BRIEF_TEMPLATE,
@@ -39,6 +41,7 @@ from app.features.prospect_intelligence.agents.specs import (
 from app.features.prospect_intelligence.agents.tools import build_tool_registry
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from tests.fakes import auth_context
 from tests.unit.prospect_intelligence.agent_test_support import file_data, runtime_context
 
 _CONTRACT_LINE = re.compile(r"^- `(/[^`]+)`", re.MULTILINE)
@@ -297,8 +300,7 @@ async def test_declarative_specialist_receives_scoped_runtime_context() -> None:
     base = runtime_context()
     context = ProspectRuntimeContext(
         run_id=base.run_id,
-        tenant_id=base.tenant_id,
-        rep_id=base.rep_id,
+        auth=auth_context(tenant_id=base.tenant_id, rep_id=base.rep_id),
         tool_handlers={"get_crm_account": get_account},
     )
 

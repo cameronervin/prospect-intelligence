@@ -14,6 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 from langsmith import tracing_context  # pyright: ignore[reportUnknownVariableType]
 
+from app.features.authentication.public import AuthContext, UserRole
 from app.features.prospect_intelligence.agents.compiler import build_prospect_agent_runtime
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectAgentInput,
@@ -104,8 +105,12 @@ class ProspectOfflineTarget:
         )
         context = ProspectRuntimeContext(
             run_id=uuid5(NAMESPACE_URL, f"cam-38:{example_id}"),
-            tenant_id="evaluation",
-            rep_id="runner",
+            auth=AuthContext(
+                subject="evaluation-runner",
+                tenant_id="evaluation",
+                rep_id="runner",
+                roles=frozenset({UserRole.SALES_REP}),
+            ),
         )
         started = perf_counter()
         with tracing_context(enabled=False):

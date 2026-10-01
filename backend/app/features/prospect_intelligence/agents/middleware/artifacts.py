@@ -6,7 +6,7 @@ from typing import Any, cast
 from langchain.agents.middleware import hook_config
 from langchain_core.messages import AIMessage, HumanMessage
 
-from ..guardrails import validate_agent_artifacts
+from ..guardrails.deterministic import validate_agent_artifacts
 from ..prompts import artifact_reminder
 from ..specs import AgentSpec
 from .policy import ProspectMiddleware, state_files

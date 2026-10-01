@@ -44,6 +44,8 @@ the rep.
   - Judge meaning, not formatting: 0.8 and 80%, 582400 and $582,400 or $582.4K, and a retrieval
     date taken from provenance are all supported.
   - A value that is absent, altered, or a calculation not shown in the evidence is not supported.
+  - Every Evidence and sources bullet must use only opaque citation ids present in the source
+    artifacts; a missing or unknown id is blocking.
 - lane_consistency: The verdict, the recommended next step, and the top-lane table match
   /analysis/lane_fit.json exactly in meaning and order. Revenue and deadhead are labeled as modeled
   estimates, and revenue is never described as margin or profit.

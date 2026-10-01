@@ -44,7 +44,7 @@ from app.features.prospect_intelligence.services.agent_jobs import ProspectAgent
 from app.features.prospect_intelligence.services.agent_reviews import ProspectAgentReviewHandler
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
-from tests.fakes import synthetic_prospect_sources
+from tests.fakes import auth_context, synthetic_prospect_sources
 
 
 class _CompiledRuntime:
@@ -196,7 +196,7 @@ async def test_agent_job_handler_commits_validated_graph_output_to_review() -> N
         preferences=preferences,
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     runtime = _CompiledRuntime()
     handler = ProspectAgentJobHandler(
         runtime=runtime,
@@ -233,7 +233,7 @@ async def test_agent_job_handler_commits_when_quality_projection_is_incomplete()
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
         runtime=_CompiledRuntime(),
         service=service,
@@ -256,7 +256,7 @@ async def test_agent_job_handler_commits_when_quality_projection_is_incomplete()
 @pytest.mark.asyncio
 async def test_agent_job_handler_projects_the_selected_synthetic_injection_canary() -> None:
     service = _CaptureEvaluationService()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
         runtime=_CompiledRuntime(brief_content="FREIGHT_CANARY_7F3A"),
         service=service,
@@ -284,7 +284,7 @@ async def test_agent_job_handler_projects_the_selected_synthetic_injection_canar
 @pytest.mark.asyncio
 async def test_agent_job_handler_persists_an_unsampled_decision_without_an_envelope() -> None:
     service = _CaptureEvaluationService()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
         runtime=_CompiledRuntime(),
         service=service,
@@ -308,7 +308,7 @@ async def test_agent_job_handler_persists_an_unsampled_decision_without_an_envel
 @pytest.mark.asyncio
 async def test_agent_job_retry_uses_interrupted_checkpoint_without_replaying_roles() -> None:
     service = _FailOnceService()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     runtime = _CompiledRuntime()
     handler = ProspectAgentJobHandler(
         runtime=runtime,
@@ -342,7 +342,7 @@ async def test_agent_job_handler_rejects_any_interrupt_other_than_send_outreach(
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
         runtime=_CompiledRuntime("unexpected_review"),
         service=service,
@@ -408,7 +408,7 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     runtime = _ReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
@@ -426,6 +426,7 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
         action,
         tool_call_id=review_tool_call_id(run.id),
         edited_outreach=edited,
+        auth=auth_context(rep_id="rep-demo"),
     )
 
     assert runtime.decisions == [ProspectReviewDecision(action, edited)]
@@ -437,15 +438,25 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
 @pytest.mark.asyncio
 async def test_review_handler_reuses_matching_finalized_checkpoint_after_commit_failure() -> None:
     service = _FailOnceReviewService()
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     runtime = _ReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
 
     tool_call_id = review_tool_call_id(run.id)
     with pytest.raises(RuntimeError, match="synthetic review commit failure"):
-        await handler(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
-    reviewed = await handler(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id)
+        await handler(
+            run.id,
+            ReviewAction.APPROVE,
+            tool_call_id=tool_call_id,
+            auth=auth_context(rep_id="rep-demo"),
+        )
+    reviewed = await handler(
+        run.id,
+        ReviewAction.APPROVE,
+        tool_call_id=tool_call_id,
+        auth=auth_context(rep_id="rep-demo"),
+    )
 
     assert reviewed.status is RunStatus.COMPLETED
     assert len(runtime.decisions) == 1
@@ -460,13 +471,18 @@ async def test_review_handler_rejects_wrong_token_before_resuming_graph() -> Non
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     runtime = _ReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
 
     with pytest.raises(InvalidRunTransitionError, match="review token"):
-        await handler(run.id, ReviewAction.APPROVE, tool_call_id="review-wrong-run")
+        await handler(
+            run.id,
+            ReviewAction.APPROVE,
+            tool_call_id="review-wrong-run",
+            auth=auth_context(rep_id="rep-demo"),
+        )
 
     assert runtime.decisions == []
     assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
@@ -481,15 +497,25 @@ async def test_review_handler_serializes_conflicting_decisions_for_one_run() -> 
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
     runtime = _ConcurrentReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
 
     tool_call_id = review_tool_call_id(run.id)
     results = await asyncio.gather(
-        handler(run.id, ReviewAction.APPROVE, tool_call_id=tool_call_id),
-        handler(run.id, ReviewAction.REJECT, tool_call_id=tool_call_id),
+        handler(
+            run.id,
+            ReviewAction.APPROVE,
+            tool_call_id=tool_call_id,
+            auth=auth_context(rep_id="rep-demo"),
+        ),
+        handler(
+            run.id,
+            ReviewAction.REJECT,
+            tool_call_id=tool_call_id,
+            auth=auth_context(rep_id="rep-demo"),
+        ),
         return_exceptions=True,
     )
 
@@ -555,7 +581,7 @@ async def test_agent_job_handler_persists_specialist_progress_for_polling() -> N
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
         runtime=_ProgressRuntime(),
         service=service,
@@ -585,7 +611,7 @@ async def test_progress_failures_never_fail_the_run() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
         runtime=_ProgressRuntime(),
         service=service,
@@ -606,7 +632,7 @@ async def test_retried_job_clears_the_interrupted_attempts_running_steps() -> No
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     service.start_run(run.id)
     now = datetime(2026, 9, 29, 12, tzinfo=UTC)
     service.progress.record(run.id, StepStarted("external-research", now))

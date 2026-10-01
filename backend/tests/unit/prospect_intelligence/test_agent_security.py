@@ -11,7 +11,9 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_quickjs import CodeInterpreterMiddleware
 
-from app.features.prospect_intelligence.agents.guardrails import validate_workflow_artifacts
+from app.features.prospect_intelligence.agents.guardrails.deterministic import (
+    validate_workflow_artifacts,
+)
 from app.features.prospect_intelligence.agents.middleware import (
     ContextProjectionMiddleware,
     DelegationPolicyMiddleware,
@@ -29,6 +31,7 @@ from app.features.prospect_intelligence.agents.tools import build_tool_registry
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectRuntimeContext,
 )
+from tests.fakes import auth_context
 from tests.unit.prospect_intelligence.agent_test_support import (
     completed_files,
     file_data,
@@ -214,8 +217,7 @@ async def test_read_only_tool_boundary_sanitizes_direct_and_ptc_errors() -> None
 
     context = ProspectRuntimeContext(
         run_id=UUID("00000000-0000-0000-0000-000000000123"),
-        tenant_id="tenant-demo",
-        rep_id="rep-demo",
+        auth=auth_context(tenant_id="tenant-demo", rep_id="rep-demo"),
         tool_handlers={"score_lane_fit_v1": fail},
     )
     runtime: Any = ToolRuntime(

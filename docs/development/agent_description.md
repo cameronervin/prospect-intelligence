@@ -137,8 +137,10 @@ tool errors; treats source results as untrusted data; gates delegation and
 `send_outreach` on review order and freshness; and validates each specialist's owned artifact
 contracts. Draft content is judged by the quality reviewer rather than regex checks at the gate;
 the v1 outreach template allowlist is still enforced in the domain when the result is committed and
-on rep edits. LangGraph state contains checkpointed workflow data only, while
-tenant, rep, source handlers, and other request-scoped dependencies use runtime context.
+on rep edits. LangGraph state contains checkpointed workflow data only, while the verified
+`AuthContext`, source handlers, and other request-scoped dependencies use LangGraph
+`context_schema`/`Runtime.context`. Optional `runtime-jev-v1` input/output nodes are wired around the
+Deep Agent and default off; they checkpoint only sanitized decision metadata.
 Platform trace privacy hides all run inputs, outputs, and metadata by default.
 
 The code layout keeps those concepts visible as `chains.py`, `prompts/`, `specs.py`, `graphs.py`,

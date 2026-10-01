@@ -166,6 +166,15 @@ export async function installProspectApi(
   } = {},
 ) {
   const started = options.startRun ?? fitRun;
+  await page.context().addCookies([
+    {
+      name: "prospect_session",
+      value: "playwright-mock-session",
+      url: "http://127.0.0.1:3000",
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
 
   await page.route("**/api/v1/accounts", async (route) => {
     await options.accountsReady;
@@ -173,8 +182,9 @@ export async function installProspectApi(
   });
   await page.route("**/api/v1/prospect-runs", async (route) => {
     expect(route.request().method()).toBe("POST");
-    expect(route.request().headers()["x-tenant-id"]).toBe("tenant-demo");
-    expect(route.request().headers()["x-rep-id"]).toBe("maya-chen");
+    expect(route.request().headers()["x-tenant-id"]).toBeUndefined();
+    expect(route.request().headers()["x-rep-id"]).toBeUndefined();
+    expect(route.request().headers()["authorization"]).toBeUndefined();
     const payload = route.request().postDataJSON() as { account_id: string };
     options.onStart?.(payload.account_id);
     await options.startReady;

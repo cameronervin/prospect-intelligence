@@ -1,14 +1,17 @@
 """Application lifecycle ownership for composed resources."""
 
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
+from app.features.authentication.public import AuthenticationService
 from app.features.prospect_intelligence.agents.compiler import build_prospect_agent_runtime
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectAgentRuntime
 from app.features.prospect_intelligence.contracts.jobs import JobRepository
 from app.features.prospect_intelligence.contracts.quality_evaluation import (
     OnlineQualityProjector,
 )
+from app.features.prospect_intelligence.contracts.runtime_guardrails import RuntimeGuardrail
 from app.features.prospect_intelligence.contracts.sources import ProspectSources
 from app.features.prospect_intelligence.services.agent_jobs import ProspectAgentJobHandler
 from app.features.prospect_intelligence.services.agent_reviews import ProspectAgentReviewHandler
@@ -52,6 +55,10 @@ class AsyncLifecycle(Protocol):
     async def close(self) -> None: ...
 
 
+class AsyncClose(Protocol):
+    async def aclose(self) -> None: ...
+
+
 @dataclass(slots=True)
 class QualityComponent:
     """Own provider provisioning and durable quality-event delivery."""
@@ -87,6 +94,7 @@ class ProspectComponent:
     sources: ProspectSources
     source_http_transport: SyncLifecycle
     quality_projector: OnlineQualityProjector | None = None
+    runtime_guardrail: RuntimeGuardrail | None = None
     runtime: ProspectAgentRuntime | None = None
     review_handler: ProspectAgentReviewHandler | None = None
     worker_supervisor: ProspectWorkerSupervisor | None = None
@@ -136,6 +144,7 @@ class ProspectComponent:
             service=self.service,
             sources=self.sources,
             quality_projector=self.quality_projector,
+            runtime_guardrail=self.runtime_guardrail,
         )
         if self.review_handler is None:
             self.review_handler = ProspectAgentReviewHandler(
@@ -152,15 +161,21 @@ class ProspectComponent:
                 await self.worker_supervisor.close()
         finally:
             try:
-                await self.model_runtime.close()
+                if self.runtime_guardrail is not None:
+                    close = getattr(self.runtime_guardrail, "aclose", None)
+                    if callable(close):
+                        await cast("Awaitable[object]", close())
             finally:
                 try:
-                    await self.graph_persistence.close()
+                    await self.model_runtime.close()
                 finally:
                     try:
-                        self.source_http_transport.close()
+                        await self.graph_persistence.close()
                     finally:
-                        self.persistence.close()
+                        try:
+                            self.source_http_transport.close()
+                        finally:
+                            self.persistence.close()
 
 
 @dataclass(slots=True)
@@ -169,6 +184,7 @@ class Container:
 
     settings: Settings
     database: DatabaseLifecycle
+    auth: AuthenticationService | None = None
     prospect: ProspectComponent | None = None
     quality: QualityComponent | None = None
     started: bool = False

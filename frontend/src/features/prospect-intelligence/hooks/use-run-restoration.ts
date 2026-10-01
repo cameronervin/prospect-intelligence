@@ -16,11 +16,18 @@ type Options = {
   api: ProspectClient;
   show: (run: ProspectRun | undefined) => void;
   selectAccount: (account: Account) => void;
+  subject?: string;
 };
 
 /** Restore the tab's durable active run before account or new-run navigation can unlock. */
-export function useRunRestoration({ accounts, api, show, selectAccount }: Options) {
-  const [restoring, setRestoring] = useState(() => Boolean(storedRunId()));
+export function useRunRestoration({
+  accounts,
+  api,
+  show,
+  selectAccount,
+  subject = "test-user",
+}: Options) {
+  const [restoring, setRestoring] = useState(() => Boolean(storedRunId(subject)));
   const [restoreFailed, setRestoreFailed] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
 
@@ -28,7 +35,7 @@ export function useRunRestoration({ accounts, api, show, selectAccount }: Option
     if (accounts.kind === "loading") return;
     let cancelled = false;
     void Promise.resolve().then(async () => {
-      const runId = storedRunId();
+      const runId = storedRunId(subject);
       if (!runId) {
         if (!cancelled) {
           setRestoring(false);
@@ -49,7 +56,7 @@ export function useRunRestoration({ accounts, api, show, selectAccount }: Option
         const next = await api.getRun(runId);
         if (cancelled) return;
         if (!shouldRestore(next)) {
-          rememberRun(undefined);
+          rememberRun(subject, undefined);
           setRestoring(false);
           return;
         }
@@ -61,7 +68,7 @@ export function useRunRestoration({ accounts, api, show, selectAccount }: Option
       } catch (error) {
         if (cancelled) return;
         if (error instanceof ProspectApiError && error.code === "not_found") {
-          rememberRun(undefined);
+          rememberRun(subject, undefined);
           setRestoring(false);
           setRestoreFailed(false);
           return;
@@ -73,7 +80,7 @@ export function useRunRestoration({ accounts, api, show, selectAccount }: Option
     return () => {
       cancelled = true;
     };
-  }, [accounts, api, restoreAttempt, selectAccount, show]);
+  }, [accounts, api, restoreAttempt, selectAccount, show, subject]);
 
   function retryRestore() {
     setRestoreFailed(false);

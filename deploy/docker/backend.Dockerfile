@@ -14,6 +14,7 @@ COPY backend/pyproject.toml backend/uv.lock backend/README.md ./
 COPY backend/app ./app
 COPY backend/evaluation/datasets/golden ./evaluation/datasets/golden
 COPY backend/migrations ./migrations
+COPY backend/scripts ./scripts
 COPY backend/alembic.ini ./alembic.ini
 RUN uv sync --frozen --no-dev \
     && chown -R root:root /app \

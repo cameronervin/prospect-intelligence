@@ -22,7 +22,7 @@ from app.features.prospect_intelligence.repositories.memory import (
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
-from tests.fakes import synthetic_prospect_sources
+from tests.fakes import auth_context, synthetic_prospect_sources
 
 
 class _DuplicateNetworkSource:
@@ -63,7 +63,7 @@ def test_pipeline_produces_reviewable_fit_from_seeded_evidence() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
 
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
 
@@ -92,7 +92,7 @@ def test_pipeline_returns_needs_more_data_without_lane_evidence() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "northstar-retail")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "northstar-retail")
 
     DeterministicProspectPipeline(
         service,
@@ -115,7 +115,7 @@ def test_pipeline_matches_each_default_alias_scenario_reference() -> None:
             preferences=InMemoryPreferenceRepository(),
             clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
         )
-        run = service.create_run("tenant-demo", "rep-demo", account_id)
+        run = service.create_run(auth_context(rep_id="rep-demo"), account_id)
         DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
         completed = service.get_run(run.id)
         scenario = catalog.scenario_for_account(account_id)
@@ -135,7 +135,7 @@ def test_pipeline_abstains_when_freight_coverage_is_degraded() -> None:
             preferences=InMemoryPreferenceRepository(),
             clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
         )
-        run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+        run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
         DeterministicProspectPipeline(
             service,
             synthetic_prospect_sources(aliases={"acme-foods": scenario_id}),
@@ -154,7 +154,7 @@ def test_pipeline_abstains_when_source_contains_duplicate_lanes() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     sources = synthetic_prospect_sources()
     sources = replace(sources, network=_DuplicateNetworkSource(sources.network))
 
@@ -175,7 +175,7 @@ def test_pipeline_abstains_when_source_contains_malformed_lane_values() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     sources = synthetic_prospect_sources()
     sources = replace(sources, network=_MalformedNetworkSource(sources.network))
 
@@ -204,7 +204,7 @@ def test_pipeline_verdict_depends_on_direct_capacity_not_equipment_share(
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
 
     DeterministicProspectPipeline(
         service,

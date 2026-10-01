@@ -52,7 +52,7 @@ from app.features.prospect_intelligence.repositories.memory import (
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
-from tests.fakes import synthetic_prospect_sources
+from tests.fakes import auth_context, synthetic_prospect_sources
 from tests.unit.prospect_intelligence.agent_test_support import (
     TrajectoryModel,
     completed_files,
@@ -164,8 +164,7 @@ async def test_fmcsa_lookup_omits_unset_optional_arguments() -> None:
     base = runtime_context()
     context = ProspectRuntimeContext(
         run_id=base.run_id,
-        tenant_id=base.tenant_id,
-        rep_id=base.rep_id,
+        auth=auth_context(tenant_id=base.tenant_id, rep_id=base.rep_id),
         tool_handlers={"get_fmcsa": lookup},
     )
     runtime: Any = ToolRuntime(
@@ -345,7 +344,7 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    learned_run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    learned_run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(learned_run.id)
     service.review_run(
         learned_run.id,
@@ -356,15 +355,14 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
             body="Could we compare freight needs?",
         ),
     )
-    later_run = service.create_run("tenant-demo", "rep-demo", "acme-foods")
+    later_run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     learned_preferences = tuple(
         preference.summary
         for preference in service.get_preferences(later_run.tenant_id, later_run.rep_id)
     )
     context = ProspectRuntimeContext(
         run_id=later_run.id,
-        tenant_id=later_run.tenant_id,
-        rep_id=later_run.rep_id,
+        auth=auth_context(tenant_id=later_run.tenant_id, rep_id=later_run.rep_id),
         rep_preferences=learned_preferences,
     )
     model = TrajectoryModel()
@@ -676,8 +674,7 @@ async def test_shared_memory_backend_keeps_concurrent_runtime_namespaces_isolate
     first = replace(runtime_context(), tool_handlers={"get_crm_account": first_handler})
     second = replace(
         first,
-        tenant_id="tenant-other",
-        rep_id="rep-other",
+        auth=auth_context(tenant_id="tenant-other", rep_id="rep-other"),
         tool_handlers={"get_crm_account": second_handler},
     )
     store = InMemoryStore()

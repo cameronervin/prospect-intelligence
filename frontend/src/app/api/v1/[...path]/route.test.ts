@@ -13,14 +13,19 @@ describe("same-origin API proxy", () => {
     vi.unstubAllEnvs();
   });
 
-  it("forwards only the scoped identity headers to the backend", async () => {
+  it("uses only the HttpOnly session cookie for backend identity", async () => {
     vi.stubEnv("BACKEND_BASE_URL", "http://backend.internal:8000");
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ items: [] }));
     vi.stubGlobal("fetch", fetcher);
 
     const response = await GET(
       new NextRequest("http://localhost/api/v1/accounts", {
-        headers: { "x-tenant-id": "tenant-demo", "x-rep-id": "maya-chen", cookie: "secret=1" },
+        headers: {
+          authorization: "Bearer browser-controlled",
+          "x-tenant-id": "tenant-other",
+          "x-rep-id": "other",
+          cookie: "prospect_session=signed-token; secret=1",
+        },
       }),
       context(["accounts"]),
     );
@@ -29,8 +34,24 @@ describe("same-origin API proxy", () => {
     const [url, init] = fetcher.mock.calls[0] ?? [];
     expect(String(url)).toBe("http://backend.internal:8000/api/v1/accounts");
     const headers = new Headers(init?.headers);
-    expect(headers.get("x-tenant-id")).toBe("tenant-demo");
+    expect(headers.get("authorization")).toBe("Bearer signed-token");
+    expect(headers.get("x-tenant-id")).toBeNull();
+    expect(headers.get("x-rep-id")).toBeNull();
     expect(headers.get("cookie")).toBeNull();
+  });
+
+  it("does not expose backend authentication endpoints to browser JavaScript", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/v1/auth/token", { method: "POST" }),
+      context(["auth", "token"]),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("returns the typed retryable envelope when the backend is unreachable", async () => {

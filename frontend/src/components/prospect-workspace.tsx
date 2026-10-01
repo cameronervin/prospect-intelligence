@@ -17,7 +17,6 @@ import {
   ACTIVE_RUN_STORAGE_KEY,
   MAX_POLL_RETRIES,
 } from "@/features/prospect-intelligence/run/constants";
-import { DEMO_REP_ID, DEMO_TENANT_ID } from "@/lib/demo-identity";
 import {
   createProspectClient,
   type Account,
@@ -31,11 +30,9 @@ export { ACTIVE_RUN_STORAGE_KEY };
 export function ProspectWorkspace({
   client,
   pollIntervalMs = 1200,
-}: Readonly<{ client?: ProspectClient; pollIntervalMs?: number }>) {
-  const api = useMemo(
-    () => client ?? createProspectClient({ tenantId: DEMO_TENANT_ID, repId: DEMO_REP_ID }),
-    [client],
-  );
+  subject = "test-user",
+}: Readonly<{ client?: ProspectClient; pollIntervalMs?: number; subject?: string }>) {
+  const api = useMemo(() => client ?? createProspectClient({}), [client]);
   const [accounts, setAccounts] = useState<AccountsState>({ kind: "loading" });
   const [accountPage, setAccountPage] = useState(1);
   const [selected, setSelected] = useState<Account>();
@@ -89,11 +86,14 @@ export function ProspectWorkspace({
     });
   }
 
-  const show = useCallback((next: ProspectRun | undefined) => {
-    currentRunId.current = next?.id;
-    rememberRun(next);
-    setRun(next);
-  }, []);
+  const show = useCallback(
+    (next: ProspectRun | undefined) => {
+      currentRunId.current = next?.id;
+      rememberRun(subject, next);
+      setRun(next);
+    },
+    [subject],
+  );
 
   const selectRestoredAccount = useCallback(
     (account: Account) => {
@@ -110,6 +110,7 @@ export function ProspectWorkspace({
     api,
     show,
     selectAccount: selectRestoredAccount,
+    subject,
   });
 
   useEffect(() => {

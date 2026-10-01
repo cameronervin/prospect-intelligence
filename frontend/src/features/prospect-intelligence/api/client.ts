@@ -22,7 +22,7 @@ export interface ProspectClient {
   getRun(runId: string): Promise<ProspectRun>;
   reviewRun(runId: string, review: RunReview): Promise<ProspectRun>;
 }
-type ClientOptions = { fetcher?: typeof fetch; tenantId: string; repId: string };
+type ClientOptions = { fetcher?: typeof fetch };
 
 export class ProspectApiError extends Error {
   readonly code?: ProspectApiErrorCode;
@@ -41,15 +41,9 @@ export class ProspectApiError extends Error {
   }
 }
 
-export function createProspectClient({
-  fetcher = fetch,
-  tenantId,
-  repId,
-}: ClientOptions): ProspectClient {
+export function createProspectClient({ fetcher = fetch }: ClientOptions): ProspectClient {
   const headers = {
     "Content-Type": "application/json",
-    "X-Tenant-Id": tenantId,
-    "X-Rep-Id": repId,
   };
   async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
     let response: Response;

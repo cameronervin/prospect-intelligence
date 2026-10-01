@@ -18,6 +18,7 @@ from langgraph.store.memory import InMemoryStore
 from langsmith import tracing_context  # pyright: ignore[reportUnknownVariableType]
 from langsmith.run_helpers import set_run_metadata
 
+from app.features.authentication.public import AuthContext, UserRole
 from app.features.prospect_intelligence.agents.compiler import build_prospect_agent_runtime
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectAgentInput,
@@ -173,8 +174,12 @@ class ProspectLiveTarget:
         rep_id_hash = hashlib.sha256(f"cam-40:{example_id}".encode()).hexdigest()
         context = ProspectRuntimeContext(
             run_id=uuid4(),
-            tenant_id="evaluation",
-            rep_id=rep_id_hash,
+            auth=AuthContext(
+                subject=rep_id_hash,
+                tenant_id="evaluation",
+                rep_id=rep_id_hash,
+                roles=frozenset({UserRole.SALES_REP}),
+            ),
             tool_handlers=_handlers(payload),
         )
         set_run_metadata(rep_id_hash=rep_id_hash)

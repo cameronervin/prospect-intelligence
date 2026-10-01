@@ -5,6 +5,14 @@ from collections.abc import Mapping
 import httpx
 
 from app.bootstrap.wiring import build_source_bundle
+from app.features.authentication.public import (
+    AuthContext,
+    AuthenticationService,
+    InMemoryUserRepository,
+    JwtTokenService,
+    User,
+    UserRole,
+)
 from app.features.prospect_intelligence.contracts.sources import ProspectSources
 from app.features.prospect_intelligence.fixtures.synthetic import (
     SyntheticSourceCatalog,
@@ -36,6 +44,57 @@ class FakeSyncLifecycle:
 
     def close(self) -> None:
         self.closed = True
+
+
+TEST_PASSWORD_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$Rz8Twntb/bB8NRi42Hr+ig$"
+    "MPW9qorVoajpjnPlmI4O/i6zPm9CrqiDWIGsExoRopc"
+)
+
+
+def authentication_user(
+    *,
+    subject: str | None = None,
+    email: str = "rep@example.test",
+    display_name: str = "Test Rep",
+    tenant_id: str = "tenant-demo",
+    rep_id: str = "rep-demo",
+) -> User:
+    return User(
+        subject=subject or rep_id,
+        email=email,
+        display_name=display_name,
+        tenant_id=tenant_id,
+        rep_id=rep_id,
+        roles=frozenset({UserRole.SALES_REP}),
+        password_hash=TEST_PASSWORD_HASH,
+    )
+
+
+def authentication_service(
+    user: User | None = None,
+    *,
+    secret: str = "test-signing-secret-that-is-at-least-thirty-two-bytes",
+) -> AuthenticationService:
+    resolved_user = user or authentication_user()
+    return AuthenticationService(
+        users=InMemoryUserRepository((resolved_user,)),
+        tokens=JwtTokenService(secret),
+    )
+
+
+def auth_context(
+    *,
+    tenant_id: str = "tenant-demo",
+    rep_id: str = "rep-demo",
+    subject: str | None = None,
+) -> AuthContext:
+    return AuthContext(
+        subject=subject or rep_id,
+        tenant_id=tenant_id,
+        rep_id=rep_id,
+        roles=frozenset({UserRole.SALES_REP}),
+    )
 
 
 def synthetic_prospect_sources(*, aliases: Mapping[str, str] | None = None) -> ProspectSources:

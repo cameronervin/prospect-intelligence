@@ -5,8 +5,13 @@ from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.features.authentication.public import (
+    AuthenticatedUser,
+    SessionUser,
+    require_sales_rep,
+)
 from app.platform.api.errors import ErrorResponse
 
 from ..contracts.models import OutreachDraft, ReviewAction
@@ -16,7 +21,6 @@ from ..schemas.api import (
     AccountsResponse,
     ProspectRunResponse,
     ReviewRunRequest,
-    ScopeId,
     StartRunRequest,
 )
 from ..services.agent_reviews import ProspectAgentReviewHandler
@@ -30,13 +34,12 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     500: {"model": ErrorResponse},
     503: {"model": ErrorResponse},
 }
-TenantHeader = Annotated[ScopeId, Header(alias="X-Tenant-Id")]
-RepHeader = Annotated[ScopeId, Header(alias="X-Rep-Id")]
 
 
 def build_router(
     service: ProspectRunService,
     review_handler_provider: Callable[[], ProspectAgentReviewHandler | None],
+    authenticated_user: AuthenticatedUser,
 ) -> APIRouter:
     router = APIRouter(
         prefix="/api/v1",
@@ -46,10 +49,9 @@ def build_router(
 
     @router.get("/accounts", response_model=AccountsResponse)
     def list_accounts(
-        x_tenant_id: TenantHeader,
-        x_rep_id: RepHeader,
+        user: Annotated[SessionUser, Depends(authenticated_user)],
     ) -> AccountsResponse:
-        del x_rep_id
+        auth = require_sales_rep(user).auth
         return AccountsResponse(
             items=[
                 AccountResponse(
@@ -59,7 +61,7 @@ def build_router(
                     industry=account.industry,
                     location=account.location,
                 )
-                for account in service.list_accounts(x_tenant_id)
+                for account in service.list_accounts(auth)
             ]
         )
 
@@ -70,11 +72,11 @@ def build_router(
     )
     def create_run(
         request: StartRunRequest,
-        x_tenant_id: TenantHeader,
-        x_rep_id: RepHeader,
+        user: Annotated[SessionUser, Depends(authenticated_user)],
     ) -> ProspectRunResponse:
+        auth = require_sales_rep(user).auth
         try:
-            run = service.create_run(x_tenant_id, x_rep_id, request.account_id)
+            run = service.create_run(auth, request.account_id)
         except LookupError as error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
@@ -85,11 +87,11 @@ def build_router(
     @router.get("/prospect-runs/{run_id}", response_model=ProspectRunResponse)
     def get_run(
         run_id: UUID,
-        x_tenant_id: TenantHeader,
-        x_rep_id: RepHeader,
+        user: Annotated[SessionUser, Depends(authenticated_user)],
     ) -> ProspectRunResponse:
+        auth = require_sales_rep(user).auth
         try:
-            run = service.get_scoped_run(run_id, x_tenant_id, x_rep_id)
+            run = service.get_scoped_run(run_id, auth)
         except LookupError as error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
@@ -100,16 +102,15 @@ def build_router(
     async def review_run(
         run_id: UUID,
         request: ReviewRunRequest,
-        x_tenant_id: TenantHeader,
-        x_rep_id: RepHeader,
         response: Response,
+        user: Annotated[SessionUser, Depends(authenticated_user)],
     ) -> ProspectRunResponse:
+        auth = require_sales_rep(user).auth
         try:
             await asyncio.to_thread(
                 service.get_scoped_run,
                 run_id,
-                x_tenant_id,
-                x_rep_id,
+                auth,
             )
             edited_outreach = (
                 OutreachDraft(subject=request.subject, body=request.body)
@@ -129,6 +130,7 @@ def build_router(
                 request.decision,
                 tool_call_id=request.tool_call_id,
                 edited_outreach=edited_outreach,
+                auth=auth,
             )
         except LookupError as error:
             raise HTTPException(

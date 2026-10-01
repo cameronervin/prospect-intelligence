@@ -1,5 +1,3 @@
-"""Feature-owned worker adapter for compiled prospect agent runs."""
-
 import asyncio
 import json
 from collections.abc import Callable, Mapping
@@ -28,6 +26,7 @@ from app.features.prospect_intelligence.contracts.models import (
 from app.features.prospect_intelligence.contracts.quality_evaluation import (
     OnlineQualityProjector,
 )
+from app.features.prospect_intelligence.contracts.runtime_guardrails import RuntimeGuardrail
 from app.features.prospect_intelligence.contracts.sources import (
     ProspectSources,
     RunSourceCache,
@@ -39,6 +38,7 @@ from app.features.prospect_intelligence.services.agent_output import (
     parse_outreach,
     text_file,
 )
+from app.features.prospect_intelligence.services.identity import persisted_auth
 from app.features.prospect_intelligence.services.lane_analysis import analyze_lanes
 from app.features.prospect_intelligence.services.progress import RunProgressSink
 from app.features.prospect_intelligence.services.runs import ProspectRunService
@@ -52,6 +52,7 @@ class ProspectAgentJobHandler:
     service: ProspectRunService
     sources: ProspectSources
     quality_projector: OnlineQualityProjector | None = None
+    runtime_guardrail: RuntimeGuardrail | None = None
 
     async def __call__(self, run_id: UUID, claim_token: UUID) -> None:
         current = await asyncio.to_thread(self.service.get_run, run_id)
@@ -74,8 +75,10 @@ class ProspectAgentJobHandler:
         )
         runtime_context = ProspectRuntimeContext(
             run_id=run.id,
-            tenant_id=run.tenant_id,
-            rep_id=run.rep_id,
+            auth=persisted_auth(run),
+            account_name=run.account.name,
+            runtime_guardrail=self.runtime_guardrail,
+            injection_canary=lambda: injection_canary(source_context),
             tool_handlers=self._tool_handlers(run, source_context),
             progress=RunProgressSink(self.service.progress, run.id, claim_token),
             rep_preferences=tuple(

@@ -24,7 +24,12 @@ from app.main import create_app
 from app.platform.config.settings import Environment, Settings
 from app.platform.llm import ManagedModelRuntime
 from tests.deterministic_pipeline import DeterministicProspectPipeline
-from tests.fakes import FakeDatabase, synthetic_prospect_sources
+from tests.fakes import (
+    FakeDatabase,
+    authentication_service,
+    authentication_user,
+    synthetic_prospect_sources,
+)
 
 
 class _NoLiveModelRuntime:
@@ -93,6 +98,37 @@ def test_production_container_rejects_blank_model_credentials(
 
     with pytest.raises(RuntimeError, match="model runtime credentials are not configured"):
         build_container(settings)
+
+
+def test_production_refuses_the_demo_authentication_issuer() -> None:
+    with pytest.raises(ValueError, match="production must replace the demo authentication issuer"):
+        Settings(environment=Environment.PRODUCTION)
+
+
+@pytest.mark.asyncio
+async def test_disabled_demo_issuer_does_not_require_or_construct_a_signing_secret(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    settings = Settings(environment=Environment.DEVELOPMENT, demo_auth_enabled=False)
+
+    container = build_container(
+        settings,
+        model_runtime=cast(ManagedModelRuntime, cast(Any, _NoLiveModelRuntime())),
+    )
+
+    assert container.auth is None
+    await container.close()
+
+
+def test_enabled_runtime_guardrails_require_typesafe_credentials() -> None:
+    with pytest.raises(ValueError, match="runtime Jev guardrails require TypeSafe credentials"):
+        Settings(
+            environment=Environment.TEST,
+            runtime_jev_guardrails_enabled=True,
+            typesafe_api_key=None,
+        )
 
 
 @pytest.mark.asyncio
@@ -212,9 +248,12 @@ def test_offline_demo_runs_to_human_review_without_credentials() -> None:
         container.prospect.service,
         synthetic_prospect_sources(),
     )
-    headers = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"}
-
     client = TestClient(create_app(settings, container=container))
+    login = client.post(
+        "/api/v1/auth/token",
+        json={"email": "alex.morgan@example.test", "password": "prospect-demo"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     created = client.post(
         "/api/v1/prospect-runs",
         headers=headers,
@@ -251,7 +290,17 @@ def _test_container(settings: Settings) -> Container:
         preferences=InMemoryPreferenceRepository(),
         clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
     )
-    return Container(settings=settings, database=FakeDatabase(), prospect=_test_component(service))
+    user = authentication_user(
+        email="alex.morgan@example.test",
+        display_name="Alex Morgan",
+        rep_id="alex-morgan",
+    )
+    return Container(
+        settings=settings,
+        database=FakeDatabase(),
+        auth=authentication_service(user),
+        prospect=_test_component(service),
+    )
 
 
 def _test_component(service: ProspectRunService) -> ProspectComponent:
