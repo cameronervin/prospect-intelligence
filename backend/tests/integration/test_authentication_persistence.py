@@ -31,9 +31,7 @@ def postgres_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
 
 @pytest.mark.postgresql
 def test_user_upsert_is_idempotent_and_lookup_is_case_insensitive(postgres_url: str) -> None:
-    store = PostgresProspectStore.from_settings(
-        Settings(database_url=SecretStr(postgres_url))
-    )
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
     repository = PostgresUserRepository(store.engine)
     user = User(
         subject="usr_test",

@@ -51,6 +51,13 @@ are accepted; other provider failures leave the outbox row pending. Failed deter
 rep rejections enter the annotation queue. Semantic scores do not route merely for being low while
 uncalibrated.
 
+Reviewed failures cross back into offline evaluation through an explicit service boundary, not by
+copying the LangSmith run. An operator supplies a separately sanitized shared-dataset draft and the
+source event/run identifiers. PostgreSQL preserves candidate and reviewer audit history; accepted
+rows are exported to the versioned regression snapshot, while rejected rows never enter the offline
+population. Automatic trace rehydration, customer-data sanitization, and a reviewer UI remain
+outside the MVP.
+
 `freight-prospect-review` includes a privacy-bounded reviewer rubric. Reviewers must record the
 owned `freight-prospect-online-v1-human-review-decision` category as Reject (`0`), Edit (`1`), or
 Approve (`2`). This key is intentionally distinct from application and simulator

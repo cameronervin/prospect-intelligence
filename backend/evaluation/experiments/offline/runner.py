@@ -18,7 +18,7 @@ from langsmith import (
 from langsmith.schemas import Example, LangSmithInfo
 
 from app.platform.config.settings import Settings
-from evaluation.datasets import DATASET_VERSION, langsmith_examples
+from evaluation.datasets import DATASET_VERSION, REGRESSION_ARTIFACT_PATH, release_examples
 from evaluation.evaluators.suite import EVALUATOR_VERSION, OFFLINE_EVALUATORS
 from evaluation.targets.prospect_graph import ProspectOfflineTarget
 
@@ -59,9 +59,15 @@ def run_offline_evaluation(
     *,
     report_path: Path = DEFAULT_REPORT_PATH,
     examples: Sequence[Example] | None = None,
+    regression_path: Path = REGRESSION_ARTIFACT_PATH,
     evaluate_fn: EvaluateFunction = LOCAL_EVALUATE,
 ) -> OfflineEvaluationSummary:
-    selected = tuple(examples if examples is not None else langsmith_examples())
+    selected = tuple(examples if examples is not None else release_examples(regression_path))
+    dataset_versions = tuple(
+        dict.fromkeys(
+            str((example.metadata or {}).get("dataset_version", "unknown")) for example in selected
+        )
+    )
     expected_ids = tuple(
         str((example.inputs or {}).get("example_id", example.id)) for example in selected
     )
@@ -82,6 +88,7 @@ def run_offline_evaluation(
                 evaluators=OFFLINE_EVALUATORS,
                 metadata={
                     "dataset_version": DATASET_VERSION,
+                    "dataset_versions": list(dataset_versions),
                     "evaluator_version": EVALUATOR_VERSION,
                     "graph_revision": GRAPH_REVISION,
                 },
@@ -110,6 +117,7 @@ def run_offline_evaluation(
             aggregate_scores=aggregate_scores,
             gates=gates,
             expected_row_count=len(selected) * REPETITIONS,
+            dataset_versions=dataset_versions,
             graph_revision=GRAPH_REVISION,
             repetitions=REPETITIONS,
         ),

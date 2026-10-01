@@ -17,6 +17,43 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ## Decisions
 
+### 2026-10-01 — Reviewed online failures become deterministic regressions
+
+- **Decision:** `agent_quality` accepts an explicitly sanitized shared-dataset draft from either an
+  online evaluator flag or a rep rejection. It never downloads or copies a LangSmith trace. A
+  canonical SHA-256 over the complete target input plus the failure taxonomy identifies duplicates;
+  mapping key order does not change that identity, while a different taxonomy remains distinct.
+  Candidate creation, one explicit accept/reject decision, and promotion are durable, audited state
+  transitions. Identical retries, including concurrent promotion retries, are no-ops and conflicting
+  reviews or promotions fail closed.
+- **Decision:** PostgreSQL is the audit source of truth. Accepted candidates promote once into an
+  immutable `freight-prospect-regression-v1` example; rejected candidates remain auditable without
+  entering that population. An operator export atomically materializes all promoted rows as a
+  canonical, checksummed repository snapshot. A failed export can be repaired by retrying promotion
+  without duplicating the candidate, audit event, or example. Serialized exports merge with the
+  current immutable snapshot so a stale concurrent writer cannot remove an already promoted row.
+- **Decision:** The historical `freight-prospect-v1` hosted population remains exactly 16 core and
+  eight edge examples. Credential-free release evaluation composes that unchanged population with
+  the regression snapshot and runs only the deterministic evaluator suite through the existing
+  `gate_results()` authority. The snapshot starts empty; repository tests prove a reviewed synthetic
+  failure reaches the offline runner without presenting it as production evidence.
+- **Alternatives considered:** Automatic promotion from evaluator feedback, reconstructing examples
+  from raw traces, a reviewer UI or HTTP API, querying the application database from CI, and mutating
+  the historical hosted LangSmith dataset.
+- **Reasoning:** Human confirmation prevents noisy operational feedback from becoming ground truth,
+  while the separate snapshot gives offline CI a credential-free, reviewable release input. Keeping
+  intake explicit preserves the established trace-minimization boundary and the CAM-40 evidence.
+- **Consequences:** Product candidates and audit rows have indefinite MVP retention. The committed
+  snapshot contains only reviewer-approved, synthetic or independently sanitized inputs, references,
+  bounded evidence, machine-readable taxonomy, and version provenance; prompts, messages, contacts,
+  credentials, provider payloads, actor scope, and raw traces are rejected. Production customer data
+  still requires a deletion policy, privacy/vendor review, and an approved sanitization process.
+  Forbidden field names are normalized across case, separators, and camel-case aliases before this
+  boundary accepts them.
+- **Evidence:** Domain/service, snapshot-integrity, offline-release, PostgreSQL restart/concurrency,
+  migration, architecture, and repository verification tests. No live LangSmith experiment or
+  production-quality claim is inferred from this evidence.
+
 ### 2026-10-01 — Authentication and optional runtime Jev boundaries
 
 - **Decision:** Demo access uses a repository-backed fictional Alex Morgan user and fixed-algorithm

@@ -20,8 +20,10 @@ tomllib.loads((root / ".codex/config.toml").read_text())
 PY
 
 postgres_container="langchain-takehome-verify-postgres-$$"
+offline_report=$(mktemp "${TMPDIR:-/tmp}/langchain-takehome-offline.XXXXXX")
 cleanup() {
   docker rm --force "$postgres_container" >/dev/null 2>&1 || true
+  rm -f "$offline_report"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -48,6 +50,6 @@ postgres_port=$(docker inspect --format '{{(index (index .NetworkSettings.Ports 
 export TAKEHOME_TEST_DATABASE_URL="postgresql+psycopg://takehome:takehome-test@127.0.0.1:$postgres_port/takehome_test"
 
 run_in "$root/backend" sh scripts/check.sh
+run_in "$root/backend" uv run python -m evaluation.experiments.offline --report "$offline_report"
 run_in "$root/frontend" npm run check
 sh "$root/scripts/secret-scan.sh"
-

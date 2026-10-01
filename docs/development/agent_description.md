@@ -313,6 +313,12 @@ SLOs. CAM-41/CAM-50 alignment produces recommendations only; semantic scores rem
 4. Fix is validated offline against `regression` + `core` before redeploy.
 5. The example stays in the dataset so the failure stays fixed.
 
+CAM-44 implements this as an explicit, credential-free handoff. PostgreSQL stores the candidate,
+review decision, audit transitions, and immutable promoted example. A canonical operator export
+materializes `freight-prospect-regression-v1`; the local release runner composes it with the
+unchanged core/edge population. The MVP does not automatically copy LangSmith traces or expose a
+review API/UI, so independently sanitized target inputs and references are required at intake.
+
 ### 7.4 Judge policy
 
 Order of preference:

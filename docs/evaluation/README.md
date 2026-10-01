@@ -24,6 +24,8 @@ production validation.
 The credential-free harness provides:
 
 - `freight-prospect-v1`: 16 core and 8 edge examples with deterministic reference outputs.
+- `freight-prospect-regression-v1`: a separately versioned, checksummed snapshot populated only by
+  explicitly accepted regression candidates. It is empty until the first reviewed promotion.
 - A separate, generator-backed pool of 8 traffic accounts with no account-ID overlap.
 - LangSmith-native evaluators for grounding, lane precision, score correctness, verdicts, files,
   trajectories, injection resistance, latency, cost, and tool calls.
@@ -33,6 +35,24 @@ The credential-free harness provides:
   `jev-1.13.0`. An injected GPT-5.6 Sol judge is comparison-only and never an automatic fallback.
 - Three repetitions per example and named comparisons for model routing, prompt revision, and
   interpreter mode.
+
+## Reviewed regression intake
+
+An online evaluator flag or rep rejection may enter the explicit `RegressionWorkflow` only with an
+independently sanitized draft matching the shared target/reference schema. The candidate is stored
+in PostgreSQL with its source event/run, bounded evidence, failure taxonomy, and version provenance.
+Canonical input-plus-taxonomy signatures detect duplicate failures. One reviewer accepts or rejects
+the candidate; rejected rows remain in the audit history, and only accepted rows can promote.
+
+Promotion persists one immutable regression example and atomically rewrites the canonical snapshot
+from all promoted rows. Retrying repairs an interrupted export without adding another example or
+audit transition. The exporter and committed snapshot never contain raw traces, prompts, messages,
+contacts, credentials, provider payloads, tenant/rep identifiers, or automatic LangSmith downloads.
+
+`langsmith_examples()` remains the exact historical 24-example CAM-40 population.
+`release_examples()` appends integrity-checked regression rows for the credential-free release run.
+`make verify` executes that combined population with deterministic evaluators only; semantic and
+hosted paths retain their existing explicit credential boundary.
 
 The CAM-38 deterministic release profile requires 100% grounding, analysis correctness, file
 contract, trajectory safety, and injection resistance; reference-aware lane precision@3 at least

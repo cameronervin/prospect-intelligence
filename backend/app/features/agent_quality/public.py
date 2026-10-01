@@ -21,17 +21,35 @@ from app.features.agent_quality.domain.catalog import (
     EvaluatorDefinition,
     evaluator_definition,
 )
+from app.features.agent_quality.domain.regression import (
+    REGRESSION_DATASET_VERSION,
+    AuditAction,
+    CandidateSource,
+    CandidateStatus,
+    DuplicateRegressionCandidateError,
+    PromotedRegressionExample,
+    RegressionAuditEntry,
+    RegressionCandidate,
+    RegressionDraft,
+    ReviewDecision,
+)
 from app.features.agent_quality.services.online_quality import OnlineQualityService
 from app.features.agent_quality.services.operations import (
     OnlineOperationsService,
     default_online_operations_spec,
 )
+from app.features.agent_quality.services.regression import RegressionWorkflow
 
 __all__ = [
     "DETERMINISTIC_EVALUATOR_KEYS",
     "EVALUATOR_CATALOG",
     "EVALUATOR_VERSION",
+    "REGRESSION_DATASET_VERSION",
     "SEMANTIC_EVALUATOR_KEYS",
+    "AuditAction",
+    "CandidateSource",
+    "CandidateStatus",
+    "DuplicateRegressionCandidateError",
     "EvaluationKind",
     "EvaluationSamplingDecision",
     "EvaluationScope",
@@ -42,9 +60,15 @@ __all__ = [
     "OnlineQualityConfig",
     "OnlineQualityService",
     "OperationsReport",
+    "PromotedRegressionExample",
     "QualityEvaluationEnvelope",
     "QualityEvaluationProjection",
     "QualitySignal",
+    "RegressionAuditEntry",
+    "RegressionCandidate",
+    "RegressionDraft",
+    "RegressionWorkflow",
+    "ReviewDecision",
     "SemanticEvaluationInput",
     "SemanticJudge",
     "default_online_operations_spec",

@@ -44,6 +44,7 @@ packages = ["app"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "evaluation/datasets/golden/freight_prospect_v1.json" = "evaluation/datasets/golden/freight_prospect_v1.json"
+"evaluation/datasets/golden/freight_prospect_regression_v1.json" = "evaluation/datasets/golden/freight_prospect_regression_v1.json"
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

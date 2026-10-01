@@ -3,7 +3,6 @@
 from collections.abc import Mapping, Sequence
 from typing import cast
 
-from evaluation.datasets import DATASET_VERSION
 from evaluation.evaluators.suite import EVALUATOR_VERSION, GATE_MINIMUMS
 
 from .results import RowSummary, slice_scores
@@ -50,6 +49,7 @@ def render_report(
     aggregate_scores: Mapping[str, float],
     gates: Mapping[str, bool],
     expected_row_count: int,
+    dataset_versions: Sequence[str],
     graph_revision: str,
     repetitions: int,
 ) -> str:
@@ -61,7 +61,7 @@ def render_report(
         "",
         "## Versions",
         "",
-        f"- Dataset: `{DATASET_VERSION}`",
+        f"- Datasets: `{', '.join(dataset_versions)}`",
         f"- Evaluators: `{EVALUATOR_VERSION}`",
         f"- Graph target: `{graph_revision}`",
         f"- Repetitions: `{repetitions}`",

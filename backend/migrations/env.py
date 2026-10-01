@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 # Import feature records so Alembic sees their metadata.
+from app.features.agent_quality.models import records as agent_quality_records  # noqa: F401
 from app.features.authentication.models import records as authentication_records  # noqa: F401
 from app.features.prospect_intelligence.models import records as prospect_records  # noqa: F401
 from app.platform.config.settings import Settings
