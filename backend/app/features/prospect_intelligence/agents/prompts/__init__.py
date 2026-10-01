@@ -5,7 +5,7 @@ from .brief_template import BRIEF_TEMPLATE
 from .contract import artifact_contract, artifact_reminder, render_system_prompt
 from .external_research import EXTERNAL_RESEARCH_PROMPT
 from .lane_analyst import LANE_ANALYST_PROMPT
-from .orchestrator import ORCHESTRATOR_PROMPT
+from .orchestrator import EVIDENCE_SELF_CHECK_V2, ORCHESTRATOR_PROMPT
 from .outreach_drafter import OUTREACH_DRAFTER_PROMPT
 from .quality_reviewer import QUALITY_REVIEWER_PROMPT
 
@@ -21,6 +21,7 @@ AGENT_PROMPTS: dict[str, str] = {
 __all__ = [
     "AGENT_PROMPTS",
     "BRIEF_TEMPLATE",
+    "EVIDENCE_SELF_CHECK_V2",
     "artifact_contract",
     "artifact_reminder",
     "render_system_prompt",

@@ -66,6 +66,31 @@ The smoke proves that the Jev, GPT-5.6 Sol comparison, and failure-explanation p
 the time of execution. It does not prove a hosted LangSmith experiment, replace `make verify`, or
 establish semantic promotion thresholds; CAM-41 owns human calibration and threshold selection.
 
+## Hosted experiment matrix
+
+Run CAM-40 from `backend/` only when LangSmith persistence and provider calls are intended:
+
+```sh
+uv run python -m evaluation.experiments.offline --live
+```
+
+Put `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, and `TYPESAFE_API_KEY` in the ignored
+`backend/.env` before running the command; never put credential values on the command line.
+
+The explicit live path publishes or verifies the synthetic-only `freight-prospect-v1` dataset and
+runs the `baseline`, `lower-cost`, `prompt-revision`, and `interpreter-off` experiments three times
+per example. LangSmith retains completed experiments according to workspace policy. If the command
+fails after an experiment is uploaded, the strict runner keeps the partial attempt as diagnostic
+evidence and produces no automated gate decision. Do not combine attempts. The CAM-40 retained
+evidence memo is an owner-approved MVP exception and does not change this runner contract. Never
+place credentials in tracked files, shell history, committed output, or screenshots.
+The command verifies each variant from LangSmith after upload (72 roots, exact repetitions, metadata,
+and evaluator feedback) and fails closed before report generation if hosted persistence is partial.
+
+The default command without `--live` is still the credential-free CAM-38 repository gate. Passing
+repository checks does not imply a successful hosted run, and a hosted run does not replace
+`make verify`.
+
 ## Online quality operations
 
 Preview the complete owned LangSmith resource plan without credentials or external writes:

@@ -9,7 +9,7 @@ versioned dataset
   inputs + reference outputs
              |
              v
-  experiments/offline.py
+  experiments/offline/runner.py
   LangSmith evaluate() -- local only
              |
              +---------------- target run ----------------+
@@ -38,10 +38,10 @@ versioned dataset
                     LangSmith EvaluationResult rows
                                   |
                                   v
-              offline_results.py -> gates and aggregates
+          experiments/offline/results.py -> gates and aggregates
                                   |
                                   v
-                   offline_report.py -> Markdown report
+           experiments/offline/report.py -> Markdown report
 ```
 
 The separate live semantic path is:

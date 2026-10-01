@@ -24,7 +24,8 @@ The package follows the same four-part shape used by LangSmith's
 - `judges/` contains only provider-specific async adapters: Jev is the default semantic judge and
   GPT-5.6 Sol is comparison-only, never an automatic fallback.
 - `experiments/` selects a target and evaluator suite, invokes `evaluate(...)`, aggregates rows, and
-  renders evidence. `offline_results.gate_results()` is the only release-gate implementation.
+  renders evidence. `experiments.offline.results.gate_results()` is the only release-gate
+  implementation.
 
 In dependency terms, contracts are consumed by targets and evaluators; evaluator modules are
 composed by the suite; and experiments consume both a target and the suite. Judges remain a
@@ -68,9 +69,59 @@ interrupted `send_outreach` review request. Measured latency is not persisted in
 repository evidence remains reproducible. CAM-39 semantic metrics remain informational until human
 calibration establishes their promotion thresholds in CAM-41.
 
-Live experiments require explicit credentials, a
-reviewed synthetic dataset, and a sanitized result entry under `docs/evaluation/`. Raw traces,
-inputs, customer data, API keys, and downloaded LangSmith results must not be committed.
+The hosted CAM-40 matrix requires explicit credentials and a reviewed synthetic dataset. Run it from
+`backend/` only when hosted writes and model-provider calls are intended:
+
+```sh
+uv run python -m evaluation.experiments.offline --live
+```
+
+Load `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, and `TYPESAFE_API_KEY` from the ignored
+`backend/.env`; do not place credential values in the command line.
+
+The default command without `--live` remains the credential-free CAM-38 path. The live command
+idempotently publishes `freight-prospect-v1` with stable IDs, its canonical checksum and seed, and
+exactly 16 core plus 8 edge examples; any controlled metadata, population, or split drift fails
+closed. LangSmith's SDK-added runtime inventory is ignored by the canonical comparison.
+It then uploads four experiments, each with three repetitions per example:
+
+- `baseline`: GPT-5.6 Sol orchestrator, GPT-5.6 Luna specialists, prompt `v1`, interpreter on.
+- `lower-cost`: GPT-5.6 Luna for both model roles, prompt `v1`, interpreter on.
+- `prompt-revision`: GPT-5.6 Sol/Luna, prompt `evidence-self-check-v2`, interpreter on.
+- `interpreter-off`: GPT-5.6 Sol/Luna, prompt `v1`, interpreter off.
+
+All future variants use graph `prospect-intelligence-v1`, evaluators `freight-evaluators-v3`, rubric
+`semantic-v1`, and Jev `jev-1.13.0`. The real compiled graph uses deterministic synthetic handlers,
+in-memory persistence, and no public-source reads. Rep metadata contains only SHA-256 scope hashes.
+Raw traces, prompts, source/provider payloads, model messages, customer data, API keys, and downloaded
+LangSmith results must not be committed.
+Each target call must exactly match its local canonical synthetic example. After every variant, the
+runner flushes and reads LangSmith back, requiring 72 root runs, exact example/repetition coverage,
+hashed rep and code metadata, and all evaluator feedback. A commit-plus-worktree fingerprint is
+captured once and reused in hosted metadata and the final report.
+
+The deterministic suite runs before the seven Jev evaluators in the configured evaluator order.
+`experiments.offline.results.gate_results()` is the only release gate; semantic scores and judge cost/latency are
+evidence-only until CAM-41. Aggregation includes variant, split, tags, metric, and synthetic failure
+ID. Target costs use the CAM-40 OpenAI standard card: Sol `$4/$0.40/$20` and Luna
+`$0.20/$0.02/$1.20` per million input/cached/output tokens. Jev uses the separate 2026-09-15 card.
+A candidate with a target-cost or mean-latency regression over 20% is rejected unless it passes all
+deterministic gates, fixes a baseline deterministic failure, and introduces no new deterministic
+failure.
+
+LangSmith persists the dataset, traces, evaluator feedback, metadata, and completed experiment runs
+under workspace retention. The repository stores only the sanitized aggregate report at
+`evaluation/reports/cam_40_hosted.md`. If a later variant fails, earlier hosted experiments remain,
+but the strict runner produces no automated gate decision from a partial matrix and never merges
+attempts. CAM-40 also records one owner-approved MVP decision from retained, clearly labeled
+evidence after quota exhaustion; that decision does not claim that the four-variant automated gate
+completed. Hosted evidence, the local CAM-38 report, and repository verification remain distinct.
+
+Experiment code is grouped by execution boundary. Credential-free orchestration, reporting, and
+gate aggregation live under `evaluation/experiments/offline/`. Hosted dataset publication, runtime
+composition, persistence checks, reporting, and the controlled matrix live under
+`evaluation/experiments/hosted/`. The provider smoke remains the independent
+`evaluation.experiments.semantic_smoke` command.
 
 Run the explicit local semantic smoke from `backend/` only when live provider calls are intended:
 
@@ -87,8 +138,9 @@ It does not upload a hosted LangSmith experiment and does not require `LANGSMITH
 Semantic projections accept bounded strings and known typed fields only. Stable `ev_<24 hex>` IDs
 are derived from canonical provenance and resolved locally to bounded support text; raw source/tool
 output, CRM bodies, traces, arbitrary objects, unknown citations, and canaries are rejected before
-a judge call. Numbers, counts, and dates stay with deterministic evaluators. Provider failure emits
-a missing score and sanitized error metadata so coverage fails closed.
+a judge call. Numbers and counts stay with deterministic evaluators. Complete ISO date and datetime
+spans are excluded from quantitative scoring; their support belongs to citation and claim review.
+Provider failure emits a missing score and sanitized error metadata so coverage fails closed.
 
 Jev requests have a 30-second budget and at most two SDK retries for connection/timeout errors, HTTP
 408/429, and 5xx responses. The normalized result records model revisions, actual option order,

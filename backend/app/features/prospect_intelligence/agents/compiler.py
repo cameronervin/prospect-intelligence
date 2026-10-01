@@ -9,6 +9,7 @@ from langgraph.store.base import BaseStore
 from .chains import build_orchestrator_agent
 from .graphs import build_prospect_workflow
 from .runtime import CompiledProspectAgentRuntime, CompiledWorkflow
+from .specs import PromptRevision
 from .tools import build_tool_registry
 
 
@@ -18,6 +19,8 @@ def build_prospect_agent_runtime(
     specialist_model: BaseChatModel,
     checkpointer: BaseCheckpointSaver[Any],
     store: BaseStore,
+    prompt_revision: PromptRevision = "v1",
+    interpreter_enabled: bool = True,
 ) -> CompiledProspectAgentRuntime:
     """Compile the feature runtime once after persistence has started."""
 
@@ -27,6 +30,8 @@ def build_prospect_agent_runtime(
         specialist_model=specialist_model,
         tools=tools,
         store=store,
+        prompt_revision=prompt_revision,
+        interpreter_enabled=interpreter_enabled,
     )
     graph = build_prospect_workflow(orchestrator)
     compiled = graph.compile(  # pyright: ignore[reportUnknownMemberType]

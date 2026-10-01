@@ -1,4 +1,4 @@
-"""Normalize LangSmith rows and apply fail-closed aggregate gates."""
+"""Normalize offline LangSmith rows and apply fail-closed aggregate gates."""
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
@@ -19,6 +19,7 @@ class RowSummary:
     repetition: int
     scores: Mapping[str, float]
     evidence: Mapping[str, tuple[str | None, Mapping[str, object]]]
+    tags: frozenset[str] = frozenset()
 
 
 def _score(result: EvaluationResult) -> float | None:
@@ -43,7 +44,15 @@ def normalize_rows(raw_rows: Iterable[object]) -> tuple[RowSummary, ...]:
         example_id = str((example.inputs or {}).get("example_id", example.id))
         repetition = occurrences[example_id]
         occurrences[example_id] += 1
-        split = str((example.metadata or {}).get("split", "unknown"))
+        metadata = cast("Mapping[str, object]", example.metadata or {})
+        split = str(metadata.get("split", "unknown"))
+        raw_tags = metadata.get("tags", ())
+        if not isinstance(raw_tags, Sequence) or isinstance(raw_tags, (str, bytes)):
+            raise ValueError("LangSmith example tags are malformed")
+        tag_items = cast("Sequence[object]", raw_tags)
+        if any(not isinstance(tag, str) or not tag.strip() for tag in tag_items):
+            raise ValueError("LangSmith example tags are malformed")
+        tags = frozenset(cast("Sequence[str]", tag_items))
         payload = row.get("evaluation_results")
         if not isinstance(payload, Mapping):
             raise ValueError("LangSmith evaluation row omitted evaluator results")
@@ -67,7 +76,7 @@ def normalize_rows(raw_rows: Iterable[object]) -> tuple[RowSummary, ...]:
                     result.metadata or {},  # pyright: ignore[reportUnknownMemberType]
                 ),
             )
-        rows.append(RowSummary(example_id, split, repetition, scores, evidence))
+        rows.append(RowSummary(example_id, split, repetition, scores, evidence, tags))
     return tuple(rows)
 
 

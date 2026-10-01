@@ -19,6 +19,7 @@ from app.features.agent_quality.contracts.semantic_judges import (
     JudgeDecision,
     JudgeProtocolError,
 )
+from app.features.agent_quality.public import EVALUATOR_VERSION
 from app.features.agent_quality.services.online_quality import OnlineQualityService
 from app.features.prospect_intelligence.public import (
     QualityEvent,
@@ -192,7 +193,7 @@ async def test_publish_records_durable_deterministic_signals() -> None:
         agent_version="graph-v1",
         prompt_version="prompt-v1",
         evaluation=QualityEvaluationEnvelope(
-            evaluator_version="freight-evaluators-v2",
+            evaluator_version=EVALUATOR_VERSION,
             graph_revision="graph-v1",
             rubric_version="semantic-v1",
             agent_version="graph-v1",
@@ -206,7 +207,7 @@ async def test_publish_records_durable_deterministic_signals() -> None:
     _, recorded = gateway.feedback[0]
     assert recorded.key == signal.key
     assert recorded.metadata == {
-        "evaluator_version": "freight-evaluators-v2",
+        "evaluator_version": EVALUATOR_VERSION,
         "graph_revision": "graph-v1",
         "rubric_version": "semantic-v1",
         "agent_version": "graph-v1",
@@ -268,7 +269,7 @@ async def test_publish_runs_semantic_inputs_with_the_injected_judge() -> None:
         agent_version="graph-v1",
         prompt_version="prompt-v1",
         evaluation=QualityEvaluationEnvelope(
-            evaluator_version="freight-evaluators-v2",
+            evaluator_version=EVALUATOR_VERSION,
             graph_revision="graph-v1",
             rubric_version="semantic-v1",
             agent_version="graph-v1",
@@ -335,7 +336,7 @@ def _semantic_event() -> QualityEvent:
         agent_version="graph-v1",
         prompt_version="prompt-v1",
         evaluation=QualityEvaluationEnvelope(
-            evaluator_version="freight-evaluators-v2",
+            evaluator_version=EVALUATOR_VERSION,
             graph_revision="graph-v1",
             rubric_version="semantic-v1",
             agent_version="graph-v1",
@@ -369,7 +370,7 @@ async def test_invalid_semantic_response_routes_annotation_without_retry() -> No
         value="invalid",
         metadata={
             "status": "invalid_evaluator_state",
-            "evaluator_version": "freight-evaluators-v2",
+            "evaluator_version": EVALUATOR_VERSION,
             "graph_revision": "graph-v1",
             "rubric_version": "semantic-v1",
             "agent_version": "graph-v1",

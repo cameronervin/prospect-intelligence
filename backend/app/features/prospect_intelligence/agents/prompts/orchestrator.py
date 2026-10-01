@@ -77,3 +77,19 @@ one author:
 The latest /review/findings.json has verdict "pass", no draft changed after that review, and you
 have called send_outreach exactly once.
 """.strip()
+
+
+EVIDENCE_SELF_CHECK_V2 = """
+# Bounded evidence self-check
+
+After first writing /output/brief.md and before delegating outreach drafting or quality review,
+perform exactly one evidence self-check:
+
+1. Reread /task/brief.md, /analysis/lane_fit.json, /analysis/lane_fit.md, and
+   /output/brief.md.
+2. Verify the brief follows the required template; preserves the verdict, recommended next step,
+   and top-lane order; keeps every authoritative number exact; labels modeled values as estimates;
+   and uses only evidence citation ids already present in the source artifacts.
+3. Rewrite /output/brief.md at most once, and only if needed to correct a failed check. Do not
+   repeat this self-check after the optional rewrite.
+""".strip()

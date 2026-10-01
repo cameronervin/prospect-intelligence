@@ -1,6 +1,7 @@
 """Privacy-safe projections derived from decoded graph artifacts."""
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from contextlib import suppress
@@ -28,6 +29,16 @@ _SOURCE_PATHS = (
     PROSPECT_FILES.market_research,
 )
 _COVERAGE_STATES = frozenset({"complete", "degraded", "unavailable"})
+_NUMBER = re.compile(r"(?<![\w])[-+]?\$?\d[\d,]*(?:\.\d+)?%?")
+_ISO_DATE_OR_DATETIME = re.compile(
+    r"(?<![\w])\d{4}-\d{2}-\d{2}"
+    r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?"
+    r"(?![\w])"
+)
+_ALPHA_PREFIXED_DOTTED_VERSION = re.compile(
+    r"(?<![\w])[A-Za-z][A-Za-z0-9_-]*\d+(?:\.\d+){2,}(?![\w])"
+)
+_ORDERED_LIST_MARKER = re.compile(r"^[ \t]*\d+[.)][ \t]+", re.MULTILINE)
 
 
 class FileContractObservation(TypedDict):
@@ -159,12 +170,32 @@ def numeric_evidence_observation(artifacts: Mapping[str, str]) -> NumericEvidenc
                 visit(child)
 
     for path in REQUIRED_ARTIFACTS:
-        if path.endswith(".json") and path.startswith(("/research/", "/analysis/")):
+        if path.endswith(".json") and path.startswith(("/context/", "/research/", "/analysis/")):
             try:
-                visit(json_object(artifacts, path))
+                decoded = json_object(artifacts, path)
             except ValueError:
                 invalid.append(path)
-    return {"values": sorted(str(value) for value in values), "invalid_evidence": sorted(invalid)}
+                continue
+            visit(decoded)
+            evidence = decoded.get("evidence")
+            if isinstance(evidence, Sequence) and not isinstance(evidence, (str, bytes, bytearray)):
+                for item in cast("Sequence[object]", evidence):
+                    if not isinstance(item, Mapping):
+                        continue
+                    claim = cast("Mapping[object, object]", item).get("claim")
+                    if not isinstance(claim, str):
+                        continue
+                    without_dates = _ISO_DATE_OR_DATETIME.sub("", claim)
+                    normalized = _ALPHA_PREFIXED_DOTTED_VERSION.sub("", without_dates)
+                    normalized = _ORDERED_LIST_MARKER.sub("", normalized)
+                    values.update(
+                        decimal_value(token, percentage=token.endswith("%"))
+                        for token in _NUMBER.findall(normalized)
+                    )
+    return {
+        "values": sorted(str(value) for value in values),
+        "invalid_evidence": sorted(invalid),
+    }
 
 
 def source_health_observation(artifacts: Mapping[str, str]) -> dict[str, SourceHealth]:

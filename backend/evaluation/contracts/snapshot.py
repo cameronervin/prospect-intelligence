@@ -100,12 +100,22 @@ def normalize_snapshot(
     account_name: str = "",
     rep_preferences: Sequence[str] = (),
     injection_canary: str | None = None,
+    semantic_source_artifacts: Mapping[str, str] | None = None,
+    allowed_memory_path: str | None = None,
 ) -> OfflineRunSnapshot:
     decoded = decode_artifacts(files)
+    memory_path = allowed_memory_path or PROSPECT_FILES.rep_memory("evaluation", "runner")
+    if not memory_path.startswith("/memories/") or ".." in memory_path.split("/"):
+        raise ValueError("allowed memory path must stay within /memories")
+    semantic_files = dict(decoded)
+    for path, body in (semantic_source_artifacts or {}).items():
+        if not path.startswith(("/context/", "/research/")):
+            raise ValueError("semantic source overrides must stay within source paths")
+        semantic_files[path] = body
     observations: dict[str, object] = {
         "file_contract": file_contract_observation(
             decoded,
-            allowed_non_artifact_paths={PROSPECT_FILES.rep_memory("evaluation", "runner")},
+            allowed_non_artifact_paths={memory_path},
         ),
         "numeric_evidence": numeric_evidence_observation(decoded),
         "source_states": source_health_observation(decoded),
@@ -116,7 +126,7 @@ def normalize_snapshot(
         artifacts=model_artifacts,
         artifact_observations=observations,
         semantic_observations=semantic_observations(
-            decoded,
+            semantic_files,
             account_name=account_name,
             rep_preferences=rep_preferences,
             injection_canary=injection_canary,

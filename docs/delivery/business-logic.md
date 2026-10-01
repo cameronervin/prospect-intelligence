@@ -372,6 +372,9 @@ include credentials, private customer data, raw traces, or generated result expo
 
 ### 2026-09-29 — Evaluation: strict deterministic gates and calibrated semantic judges
 
+> The numeric evidence scope in this entry was expanded on 2026-10-01 after hosted experiments
+> exposed missing context and evidence-claim values. The gate thresholds remain unchanged.
+
 - **Decision:** Use 16 core and 8 edge examples with three repetitions. The CAM-38 deterministic
   profile requires 100% numeric grounding, analysis correctness, file-contract, trajectory, and
   injection checks, reference-aware lane precision@3 of at least 0.80, and verdict accuracy of at
@@ -967,3 +970,98 @@ include credentials, private customer data, raw traces, or generated result expo
   target or expanding the MVP API surface.
 - **Evidence:** CAM-49 component/accessibility tests and desktop Playwright coverage for skeleton
   replacement, pagination, queued/running transitions, review handoff, reduced motion, and overflow.
+
+### 2026-09-30 — Hosted experiments: controlled synthetic matrix and promotion policy
+
+- **Decision:** The explicit CAM-40 `--live` path idempotently publishes `freight-prospect-v1` with
+  seed `28029`, its canonical SHA-256 checksum, stable example IDs, and exactly 16 core plus 8 edge
+  examples. Controlled hosted metadata, example, or split drift fails closed; LangSmith's injected
+  SDK runtime inventory is not part of the canonical dataset checksum. Each variant runs three
+  repetitions: baseline GPT-5.6 Sol/Luna with prompt `v1` and interpreter on; Luna/Luna lower cost;
+  Sol/Luna with `evidence-self-check-v2`; and Sol/Luna with the interpreter off.
+- **Decision:** The hosted target uses real models and graph `prospect-intelligence-v1`, but all
+  business-data tools resolve through deterministic synthetic handlers with in-memory persistence
+  and public-source reads disabled. Only synthetic inputs and sanitized outputs may be uploaded.
+  Every target invocation must exactly match the local canonical input for its stable example ID;
+  a hosted dataset edit between publication and execution fails before any model or tool call.
+  Per-example rep identity and the representative scope are SHA-256 digests; no real rep identifier,
+  prompt, raw source/provider payload, tool argument, canary, or private customer data enters the
+  committed report. File-contract normalization allowlists only the exact per-example hashed memory
+  path used by that run; other unexpected runtime files still fail the deterministic invariant.
+- **Decision:** `experiments.offline.results.gate_results()` remains the only deterministic release
+  authority.
+  The full deterministic suite and all seven Jev `jev-1.13.0`/`semantic-v1` metrics run for each
+  hosted variant, but semantic scores, coverage, judge latency, and judge cost remain evidence-only
+  pending CAM-41 calibration. Aggregate evidence is sliced by variant, core/edge split, dataset tag,
+  metric, and synthetic failure ID.
+- **Decision:** A live graph or output-normalization exception becomes a sanitized `target_error`
+  result rather than a dropped experiment row. The result exposes only the exception type, rep hash,
+  elapsed wall time, and provider-observed token/cost totals; it carries empty evaluation projections
+  so deterministic coverage fails closed without leaking the provider message or understating
+  measured spend.
+- **Decision:** Reject a candidate whose target cost or mean target latency exceeds baseline by more
+  than 20% unless it passes every deterministic gate, fixes at least one baseline deterministic
+  failure, and introduces no new deterministic failure. Semantic improvement alone cannot justify
+  the regression. Target estimates use the CAM-40 standard OpenAI card: Sol `$4/$0.40/$20` and Luna
+  `$0.20/$0.02/$1.20` per million input/cached/output tokens. Jev cost is reported separately using
+  the reviewed 2026-09-15 TypeSafe card; estimates are not invoices.
+- **Decision:** LangSmith persists the dataset, traces, evaluator feedback, metadata, and completed
+  experiment runs under workspace retention. A later-variant failure can leave earlier experiment
+  uploads in LangSmith, but a partial matrix yields no valid aggregate report or promotion decision;
+  rerun all four variants and do not merge attempts. Repository tests, the CAM-38 local report, the
+  CAM-39 provider smoke, and hosted CAM-40 records are separate evidence classes.
+- **Decision:** Local evaluator iteration is insufficient proof of hosted completion. After each
+  variant, the runner flushes pending traces and reads LangSmith back, requiring exactly 72 root
+  runs, three repetitions of every canonical example, the expected per-example rep hash and code
+  revision, and one feedback record for every deterministic and semantic evaluator. Any discrepancy
+  stops the matrix before report generation. The code revision is captured before model execution as
+  the commit plus a deterministic SHA-256 fingerprint of tracked changes and untracked, non-ignored
+  files, then reused in every experiment's metadata and the final report.
+- **Alternatives considered:** Upload live customer or public-source data; use semantic scores as
+  uncalibrated gates; allow a costlier candidate on judge quality alone; resume or merge partial
+  attempts; store raw hosted results in git.
+- **Reasoning:** A fixed synthetic population and controlled one-variable comparisons make model,
+  prompt, and interpreter trade-offs reviewable without exposing customer data. Reusing the strict
+  offline gate prevents hosted orchestration from changing release semantics, while retained hosted
+  traces support stakeholder inspection.
+- **Consequences:** The hosted command requires LangSmith, OpenAI, and TypeSafe credentials and can
+  incur provider cost. Interrupted suites may leave diagnostic hosted experiments that require clear
+  labeling and workspace-retention review. Human-calibrated semantic promotion remains CAM-41 work.
+- **Evidence:** CAM-40 dataset publication/drift, live-target, hosted-runner, aggregation, report
+  redaction, cost, regression-policy, credential-gating, and runtime-option tests; sanitized hosted
+  experiment evidence is recorded separately after a complete live run.
+
+### 2026-10-01: Numeric grounding syntax and CAM-40 MVP decision
+
+- **Decision:** Numeric grounding checks quantitative claims in the brief and outreach against
+  `/context/`, `/research/`, and `/analysis/` JSON. Numeric scalars and complete numeric strings are
+  evidence. Embedded values are extracted only from fields named `claim`, not from provenance URLs,
+  record identifiers, or arbitrary strings. The evaluator removes a complete ISO date or datetime,
+  an alpha-prefixed multi-dot version label such as `FAF5.7.1`, and a Markdown ordered-list marker
+  at the start of a line before extracting quantitative claims. It does not exempt a bare year,
+  standalone decimal, money, percentage, quantity, or number elsewhere in prose. Stable `ev_`
+  citation IDs remain outside the numeric token boundary. Date support is a citation and
+  claim-review concern, not a quantitative-grounding concern.
+- **Decision:** Keep the baseline configuration: GPT-5.6 Sol orchestrator, GPT-5.6 Luna specialists,
+  prompt `v1`, and interpreter enabled. Reject lower-cost routing because it produced 21 target
+  errors. Reject the prompt revision because it did not improve deterministic quality and increased
+  target cost and latency. Do not disable the interpreter because the retained sample showed no
+  useful cost, latency, or quality gain.
+- **Decision:** Close CAM-40 with a labeled retained-evidence memo instead of buying quota for
+  another run. Baseline, lower-cost, and prompt-revision each have 72 roots. Interpreter-off has 51
+  roots across all 24 examples, with every example represented at least twice. This is enough for
+  the MVP configuration choice, but it is not a completed four-variant release-gate result. The
+  strict hosted runner still requires 72 roots for every variant and never merges attempts.
+- **Alternatives considered:** Pay for more LangSmith traces and rerun all model and Jev calls;
+  weaken hosted persistence checks; treat the partial matrix as a formal gate pass.
+- **Reasoning:** The completed variants give a clear model and prompt decision. The partial
+  interpreter sample covers the full dataset and gives no signal that disabling the interpreter is
+  beneficial. Another paid run would add little value to the one-week MVP.
+- **Consequences:** The report separates original hosted feedback from the corrected local numeric
+  re-score under `freight-evaluators-v3`, records that the exact dirty source revision is
+  unavailable, and does not claim formal matrix completion. A later promotion decision can rerun
+  the unchanged strict matrix if stronger evidence is needed. Online quality events already queued
+  with `freight-evaluators-v2` remain durable, but their semantic inputs are routed to annotation as
+  incompatible rather than being judged under the changed v3 rules.
+- **Evidence:** Focused numeric and parity tests, the 72-row credential-free regression, retained
+  LangSmith root counts and experiment links, and `evaluation/reports/cam_40_hosted.md`.

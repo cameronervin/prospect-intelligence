@@ -19,6 +19,7 @@ from app.features.agent_quality.domain.sampling import (
     evaluation_sampling_decision,
 )
 from app.features.agent_quality.domain.semantic_projection import citation_id
+from app.features.agent_quality.public import EVALUATOR_VERSION
 from app.features.agent_quality.services.projector import OnlineQualityProjector
 from app.features.prospect_intelligence.public import (
     PROSPECT_FILES,
@@ -95,7 +96,7 @@ RUN_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 def _projector(*, sample_rate: float = 1.0) -> OnlineQualityProjector:
     return OnlineQualityProjector(
-        evaluator_version="freight-evaluators-v2",
+        evaluator_version=EVALUATOR_VERSION,
         graph_revision="prospect-graph-v1",
         rubric_version="semantic-v1",
         evaluation_sample_rate=sample_rate,
@@ -249,7 +250,7 @@ def test_projector_matches_offline_numeric_and_trajectory_semantics() -> None:
     assert signals["cost_usd"].score is None
     assert signals["cost_usd"].value == "unavailable"
     assert signals["tool_call_count"].score == 6.0
-    assert envelope.evaluator_version == "freight-evaluators-v2"
+    assert envelope.evaluator_version == EVALUATOR_VERSION
     assert envelope.graph_revision == "prospect-graph-v1"
     assert envelope.rubric_version == "semantic-v1"
     assert envelope.agent_version == "prospect-intelligence-v1"

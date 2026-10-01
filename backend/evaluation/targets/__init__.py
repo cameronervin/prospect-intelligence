@@ -1,4 +1,4 @@
-"""Credential-free targets exercised by local evaluation harnesses."""
+"""Credential-free targets exposed without loading hosted dependencies."""
 
 from .prospect_graph import ProspectOfflineTarget
 

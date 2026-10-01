@@ -3,13 +3,15 @@
 import socket
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from langsmith.evaluation import EvaluationResult
+from pydantic import SecretStr
 
 from evaluation.datasets import langsmith_examples
-from evaluation.experiments.offline import run_offline_evaluation
+from evaluation.experiments.offline import main, run_offline_evaluation
 
 
 def _result(key: str, score: float) -> EvaluationResult:
@@ -172,3 +174,41 @@ def test_real_langsmith_runner_performs_no_network_with_ambient_tracing(
     assert summary.row_count == 3
     assert summary.passed is True
     assert network_attempts == []
+
+
+def test_live_cli_requires_all_explicit_credentials(capsys: pytest.CaptureFixture[str]) -> None:
+    settings = SimpleNamespace(
+        langsmith_api_key=SecretStr("langsmith"),
+        openai_api_key=None,
+        typesafe_api_key=SecretStr("typesafe"),
+    )
+
+    exit_code = main(["--live"], settings_factory=lambda: settings)  # type: ignore[arg-type]
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "OPENAI_API_KEY" in captured.err
+    assert "langsmith" not in captured.err
+
+
+def test_live_cli_dispatches_only_when_explicitly_selected() -> None:
+    settings = SimpleNamespace(
+        langsmith_api_key=SecretStr("langsmith"),
+        openai_api_key=SecretStr("openai"),
+        typesafe_api_key=SecretStr("typesafe"),
+    )
+    calls: list[object] = []
+
+    async def live_runner(value: object) -> object:
+        calls.append(value)
+        return SimpleNamespace(runs=(1, 2, 3, 4))
+
+    assert (
+        main(
+            ["--live"],
+            settings_factory=lambda: settings,  # type: ignore[arg-type]
+            live_runner=live_runner,  # type: ignore[arg-type]
+        )
+        == 0
+    )
+    assert calls == [settings]

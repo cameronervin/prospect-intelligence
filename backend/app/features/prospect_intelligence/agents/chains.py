@@ -23,7 +23,7 @@ from ..contracts.agent_runtime import ProspectRuntimeContext
 from .context import current_runtime_context
 from .middleware import middleware_for_agent
 from .prompts import render_system_prompt
-from .specs import AgentSpec, ModelClass, orchestrator_spec, specialist_specs
+from .specs import AgentSpec, ModelClass, PromptRevision, orchestrator_spec, specialist_specs
 from .state import ProspectDeepAgentState
 from .tools import ToolRegistry
 
@@ -86,9 +86,13 @@ def filesystem_permissions(spec: AgentSpec) -> list[FilesystemPermission]:
     return permissions
 
 
-def _middleware_for_spec(spec: AgentSpec) -> list[AgentMiddleware[Any, Any, Any]]:
+def _middleware_for_spec(
+    spec: AgentSpec,
+    *,
+    interpreter_enabled: bool = True,
+) -> list[AgentMiddleware[Any, Any, Any]]:
     middleware: list[AgentMiddleware[Any, Any, Any]] = list(middleware_for_agent(spec))
-    if spec.ptc_tool_names:
+    if interpreter_enabled and spec.ptc_tool_names:
         middleware.append(
             CodeInterpreterMiddleware(
                 ptc=list(spec.ptc_tool_names),
@@ -117,6 +121,7 @@ def build_specialist_subagents(
     orchestrator_model: BaseChatModel,
     specialist_model: BaseChatModel,
     tools: ToolRegistry,
+    interpreter_enabled: bool = True,
 ) -> tuple[SubAgent, ...]:
     """Build raw specs that Deep Agents compiles with ``create_agent``."""
 
@@ -134,7 +139,10 @@ def build_specialist_subagents(
             ),
             # Explicit, including empty lists, so root-only tools are never inherited.
             "tools": list(tools.resolve(spec.tool_names)),
-            "middleware": _middleware_for_spec(spec),
+            "middleware": _middleware_for_spec(
+                spec,
+                interpreter_enabled=interpreter_enabled,
+            ),
             # Explicit so the broader orchestrator policy is never inherited.
             "permissions": filesystem_permissions(spec),
         }
@@ -150,15 +158,18 @@ def build_orchestrator_agent(
     specialist_model: BaseChatModel,
     tools: ToolRegistry,
     store: BaseStore,
+    prompt_revision: PromptRevision = "v1",
+    interpreter_enabled: bool = True,
 ) -> Runnable[dict[str, object], dict[str, object]]:
     """Build the single Deep Agent harness for the prospect workflow."""
 
-    spec = orchestrator_spec()
+    spec = orchestrator_spec(prompt_revision)
     _disable_implicit_subagent(orchestrator_model)
     subagents = build_specialist_subagents(
         orchestrator_model=orchestrator_model,
         specialist_model=specialist_model,
         tools=tools,
+        interpreter_enabled=interpreter_enabled,
     )
     if tuple(subagent["name"] for subagent in subagents) != spec.subagent_names:
         raise ValueError("orchestrator specialists must match the declared topology")

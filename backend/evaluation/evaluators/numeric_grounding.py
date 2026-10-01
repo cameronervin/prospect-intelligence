@@ -15,7 +15,9 @@ from evaluation.contracts.snapshot import (
 )
 
 
-def _observed_values(observation: Mapping[str, object]) -> tuple[set[Decimal], list[str]]:
+def _observed_values(
+    observation: Mapping[str, object],
+) -> tuple[set[Decimal], list[str]]:
     raw_values = observation.get("values")
     raw_invalid = observation.get("invalid_evidence")
     if (

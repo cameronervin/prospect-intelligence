@@ -2,9 +2,12 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Literal
 
 from ..contracts.filesystem import PROSPECT_FILES
-from .prompts import AGENT_PROMPTS
+from .prompts import AGENT_PROMPTS, EVIDENCE_SELF_CHECK_V2
+
+type PromptRevision = Literal["v1", "evidence-self-check-v2"]
 
 
 class ModelClass(StrEnum):
@@ -119,12 +122,17 @@ def specialist_specs() -> tuple[AgentSpec, ...]:
     )
 
 
-def orchestrator_spec() -> AgentSpec:
+def orchestrator_spec(prompt_revision: PromptRevision = "v1") -> AgentSpec:
+    if prompt_revision not in ("v1", "evidence-self-check-v2"):
+        raise ValueError(f"unsupported prompt revision: {prompt_revision}")
     specialist_names = tuple(spec.name for spec in specialist_specs())
+    system_prompt = AGENT_PROMPTS["orchestrator"]
+    if prompt_revision == "evidence-self-check-v2":
+        system_prompt = f"{system_prompt}\n\n{EVIDENCE_SELF_CHECK_V2}"
     return AgentSpec(
         name="orchestrator",
         description="Delegate research and analysis, synthesize the brief, and request review.",
-        system_prompt=AGENT_PROMPTS["orchestrator"],
+        system_prompt=system_prompt,
         model_class=ModelClass.ORCHESTRATOR,
         tool_names=("send_outreach",),
         readable_paths=(

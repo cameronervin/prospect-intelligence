@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable, Mapping, Sequence
+import asyncio
+import sys
+from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from langsmith import (
     Client,
@@ -15,11 +17,13 @@ from langsmith import (
 )
 from langsmith.schemas import Example, LangSmithInfo
 
+from app.platform.config.settings import Settings
 from evaluation.datasets import DATASET_VERSION, langsmith_examples
 from evaluation.evaluators.suite import EVALUATOR_VERSION, OFFLINE_EVALUATORS
-from evaluation.experiments.offline_report import render_report
-from evaluation.experiments.offline_results import aggregates, gate_results, normalize_rows
 from evaluation.targets.prospect_graph import ProspectOfflineTarget
+
+from .report import render_report
+from .results import aggregates, gate_results, normalize_rows
 
 GRAPH_REVISION = "prospect-compiled-script-v1"
 REPETITIONS = 3
@@ -31,6 +35,15 @@ class EvaluateFunction(Protocol):
 
 
 LOCAL_EVALUATE = cast(EvaluateFunction, evaluate)
+type SettingsFactory = Callable[[], Settings]
+
+
+class LiveSummary(Protocol):
+    @property
+    def runs(self) -> Sequence[object]: ...
+
+
+type LiveRunner = Callable[[Settings], Coroutine[Any, Any, LiveSummary]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,10 +124,48 @@ def run_offline_evaluation(
     )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _credential_value(settings: Settings, field: str) -> str:
+    secret = getattr(settings, field)
+    return "" if secret is None else secret.get_secret_value().strip()
+
+
+async def _default_live_runner(settings: Settings) -> LiveSummary:
+    from ..hosted import run_live_suite
+
+    return await run_live_suite(settings)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    settings_factory: SettingsFactory = Settings,
+    live_runner: LiveRunner = _default_live_runner,
+) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT_PATH)
+    parser.add_argument("--live", action="store_true", help="authorize hosted provider calls")
     args = parser.parse_args(argv)
+    if cast(bool, args.live):
+        settings = settings_factory()
+        missing = [
+            name
+            for name, field in (
+                ("LANGSMITH_API_KEY", "langsmith_api_key"),
+                ("OPENAI_API_KEY", "openai_api_key"),
+                ("TYPESAFE_API_KEY", "typesafe_api_key"),
+            )
+            if not _credential_value(settings, field)
+        ]
+        if missing:
+            print(f"error: missing required credential(s): {', '.join(missing)}", file=sys.stderr)
+            return 2
+        try:
+            summary = asyncio.run(live_runner(settings))
+        except Exception as error:
+            print(f"CAM-40 hosted experiments: FAIL; error_type={type(error).__name__}")
+            return 1
+        print(f"CAM-40 hosted experiments: PASS; variants={len(summary.runs)}")
+        return 0
     summary = run_offline_evaluation(report_path=cast(Path, args.report))
     status = "PASS" if summary.passed else "FAIL"
     print(f"CAM-38 offline gates: {status}; rows={summary.row_count}; report={summary.report_path}")

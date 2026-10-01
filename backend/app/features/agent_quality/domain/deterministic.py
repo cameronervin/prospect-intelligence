@@ -17,6 +17,15 @@ from app.features.prospect_intelligence.public import (
 )
 
 _NUMBER = re.compile(r"(?<![\w])[-+]?\$?\d[\d,]*(?:\.\d+)?%?")
+_ISO_DATE_OR_DATETIME = re.compile(
+    r"(?<![\w])\d{4}-\d{2}-\d{2}"
+    r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?"
+    r"(?![\w])"
+)
+_ALPHA_PREFIXED_DOTTED_VERSION = re.compile(
+    r"(?<![\w])[A-Za-z][A-Za-z0-9_-]*\d+(?:\.\d+){2,}(?![\w])"
+)
+_ORDERED_LIST_MARKER = re.compile(r"^[ \t]*\d+[.)][ \t]+", re.MULTILINE)
 _MODEL_AUTHORED_PATHS = (
     PROSPECT_FILES.lane_fit_json,
     PROSPECT_FILES.lane_fit_markdown,
@@ -26,7 +35,7 @@ _MODEL_AUTHORED_PATHS = (
 _NUMERIC_EVIDENCE_PATHS = tuple(
     path
     for path in PROSPECT_FILES.required_artifacts()
-    if path.endswith(".json") and path.startswith(("/research/", "/analysis/"))
+    if path.endswith(".json") and path.startswith(("/context/", "/research/", "/analysis/"))
 )
 _REQUIRED_STAGES = (
     "account_context.completed",
@@ -57,7 +66,9 @@ def _decimal_value(value: object, *, percentage: bool = False) -> Decimal:
     return parsed.normalize()
 
 
-def _numeric_evidence(artifacts: Mapping[str, str]) -> tuple[set[Decimal], list[str]]:
+def _numeric_evidence(
+    artifacts: Mapping[str, str],
+) -> tuple[set[Decimal], list[str]]:
     values: set[Decimal] = set()
     invalid: list[str] = []
 
@@ -85,7 +96,19 @@ def _numeric_evidence(artifacts: Mapping[str, str]) -> tuple[set[Decimal], list[
         if not isinstance(decoded, Mapping):
             invalid.append(path)
             continue
-        visit(cast("Mapping[object, object]", decoded))
+        typed = cast("Mapping[object, object]", decoded)
+        visit(typed)
+        evidence = typed.get("evidence")
+        if isinstance(evidence, Sequence) and not isinstance(evidence, (str, bytes, bytearray)):
+            for item in cast("Sequence[object]", evidence):
+                if not isinstance(item, Mapping):
+                    continue
+                claim = cast("Mapping[object, object]", item).get("claim")
+                if isinstance(claim, str):
+                    values.update(
+                        _decimal_value(token, percentage=token.endswith("%"))
+                        for token in _claim_numeric_tokens(claim)
+                    )
     return values, sorted(invalid)
 
 
@@ -102,7 +125,7 @@ def score_numeric_grounding(
     rendered = [
         token
         for path in (PROSPECT_FILES.sales_brief, PROSPECT_FILES.outreach_draft)
-        for token in _NUMBER.findall(artifacts.get(path, ""))
+        for token in _quantitative_tokens(artifacts.get(path, ""))
     ]
     unsupported = [
         token
@@ -121,6 +144,21 @@ def score_numeric_grounding(
             "checked_count": len(rendered),
         },
     )
+
+
+def _quantitative_tokens(content: str) -> list[str]:
+    without_list_markers = _ORDERED_LIST_MARKER.sub("", _strip_non_quantitative_labels(content))
+    return _NUMBER.findall(without_list_markers)
+
+
+def _claim_numeric_tokens(content: str) -> list[str]:
+    without_list_markers = _ORDERED_LIST_MARKER.sub("", _strip_non_quantitative_labels(content))
+    return _NUMBER.findall(without_list_markers)
+
+
+def _strip_non_quantitative_labels(content: str) -> str:
+    without_dates = _ISO_DATE_OR_DATETIME.sub("", content)
+    return _ALPHA_PREFIXED_DOTTED_VERSION.sub("", without_dates)
 
 
 def lane_reference_signals(

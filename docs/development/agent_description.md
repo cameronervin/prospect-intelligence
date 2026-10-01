@@ -197,9 +197,10 @@ verifies the analyst's numbers.
 Principle: offline evals decide whether a version is ready to ship. Online evals tell you
 whether it is still working in production. Production failures become offline test cases.
 
-The repository contains the deterministic dataset, evaluator implementations, experiment
-configuration, and credential-free tests. The baseline LangSmith experiment, judge calibration, and
-online resources below require explicit credentials and must be reported as live evidence rather
+The repository contains the deterministic dataset, evaluator implementations, hosted experiment
+orchestration, and credential-free tests. CAM-40 persists the synthetic dataset and four controlled
+experiments in LangSmith only after an explicit `--live` opt-in; judge calibration and online
+resources below also require explicit credentials. Live evidence must be reported separately rather
 than inferred from repository checks.
 
 ### 7.1 Offline harness (Test)
@@ -252,10 +253,18 @@ Rules:
 
 **Credentialed experiments:**
 
-- Baseline run on all splits, 3 repetitions per example to measure variance.
-- Comparisons: model variants, prompt variants, interpreter on vs off for the analyst.
-- CI remains offline and runs deterministic repository checks. A separate credentialed promotion
-  gate compares LangSmith groundedness and lane precision against the recorded baseline.
+- Run all 16 core and 8 edge examples three times for each variant: baseline Sol/Luna with prompt
+  `v1` and interpreter on; lower-cost Luna/Luna; Sol/Luna with `evidence-self-check-v2`; and Sol/Luna
+  with the interpreter off.
+- Use graph `prospect-intelligence-v1`, evaluator `freight-evaluators-v3`, rubric `semantic-v1`, and
+  Jev `jev-1.13.0`. Upload synthetic inputs and sanitized outputs only; rep metadata is SHA-256 hashed.
+- Keep `experiments.offline.results.gate_results()` as the deterministic promotion authority. Semantic scores
+  remain evidence-only until human calibration. Reject cost or latency regressions over 20% unless
+  the candidate passes every deterministic gate, fixes a deterministic baseline failure, and adds
+  none.
+- CI remains offline. Hosted datasets, traces, evaluator feedback, and experiments persist in
+  LangSmith; repository reports contain sanitized aggregates only. A partial hosted matrix is
+  diagnostic evidence, not a promotion result.
 
 **Harbor (stretch, decide after core harness works):**
 

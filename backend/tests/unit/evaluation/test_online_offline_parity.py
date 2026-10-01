@@ -1,5 +1,6 @@
 """Offline LangSmith wrappers preserve the application-owned scoring semantics."""
 
+import json
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
@@ -8,6 +9,7 @@ from langsmith.evaluation import EvaluationResult
 
 from app.features.agent_quality.contracts.models import QualitySignal
 from app.features.agent_quality.domain.deterministic import (
+    numeric_grounding_signal,
     score_numeric_grounding,
     trajectory_signal,
 )
@@ -136,12 +138,52 @@ def test_reference_wrappers_match_shared_core_on_success_and_failure() -> None:
 
 
 def test_numeric_and_trajectory_wrappers_match_shared_core_on_success_and_failure() -> None:
-    grounded = outputs(artifacts())
+    grounded_values = artifacts()
+    grounded = outputs(grounded_values)
     unsupported_values = artifacts()
     unsupported_values[PROSPECT_FILES.sales_brief] += " Unsupported 2026."
     unsupported = outputs(unsupported_values)
-    for snapshot in (grounded, unsupported):
-        _assert_parity(evaluate_numeric_grounding(snapshot, {}), _numeric_signal(snapshot))
+    structural_values = artifacts()
+    structural_values[PROSPECT_FILES.account_context] = json.dumps({"employee_count": "8765432"})
+    structural_values[PROSPECT_FILES.freight_research] = json.dumps(
+        {
+            "rate": 1250,
+            "share": 0.25,
+            "evidence": [{"claim": "The 2026 plan covers 7654321 annual loads."}],
+        }
+    )
+    structural_values[PROSPECT_FILES.sales_brief] += (
+        "\n1. Published 2026-09-29T00:00:00+00:00 under FAF5.7.1."
+        "\n2) Evidence ev_2026abcdef0123456789abcd covers the 2026 plan,"
+        " 7654321 annual loads, and 8765432 employees."
+    )
+    structural = outputs(structural_values)
+    compact_values = artifacts()
+    compact_values[PROSPECT_FILES.sales_brief] += " Unsupported USD987654.32."
+    compact = outputs(compact_values)
+    list_claim_values = artifacts()
+    list_claim_values[PROSPECT_FILES.freight_research] = json.dumps(
+        {
+            "rate": 1250,
+            "share": 0.25,
+            "evidence": [{"claim": "987654321. Source is available."}],
+        }
+    )
+    list_claim_values[PROSPECT_FILES.sales_brief] += " Unsupported quantity 987654321."
+    list_claim = outputs(list_claim_values)
+    for values, snapshot in (
+        (grounded_values, grounded),
+        (unsupported_values, unsupported),
+        (structural_values, structural),
+        (compact_values, compact),
+        (list_claim_values, list_claim),
+    ):
+        expected = _numeric_signal(snapshot)
+        _assert_parity(evaluate_numeric_grounding(snapshot, {}), expected)
+        _assert_parity(
+            evaluate_numeric_grounding(snapshot, {}),
+            numeric_grounding_signal(values),
+        )
 
     good_events = [
         "account_context.completed",

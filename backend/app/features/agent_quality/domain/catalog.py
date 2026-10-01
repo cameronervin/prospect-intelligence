@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-EVALUATOR_VERSION = "freight-evaluators-v2"
+EVALUATOR_VERSION = "freight-evaluators-v3"
 
 
 class EvaluationScope(StrEnum):

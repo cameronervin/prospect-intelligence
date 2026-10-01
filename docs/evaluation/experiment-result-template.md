@@ -6,7 +6,7 @@ Copy this file for each approved live experiment. Keep only aggregate and synthe
 
 - Date:
 - Dataset version: `freight-prospect-v1`
-- Evaluator version: `freight-evaluators-v2`
+- Evaluator version: `freight-evaluators-v3`
 - Code revision:
 - Graph revision:
 - Prompt revision:

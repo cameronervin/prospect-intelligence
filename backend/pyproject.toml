@@ -63,7 +63,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
 "tests/**/*.py" = ["S101"]
 
 [tool.pyright]
-include = ["app", "scripts", "tests"]
+include = ["app", "evaluation", "scripts", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false

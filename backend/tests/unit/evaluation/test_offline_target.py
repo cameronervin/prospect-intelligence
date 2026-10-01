@@ -1,5 +1,6 @@
 """Compiled-graph target and sanitized snapshot behavior."""
 
+import json
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any, cast
@@ -12,6 +13,7 @@ from evaluation.datasets import langsmith_examples
 from evaluation.evaluators.file_contract import evaluate_file_contract
 from evaluation.targets import prospect_graph
 from evaluation.targets.prospect_graph import ProspectOfflineTarget
+from evaluation.targets.scenario import scenario_artifacts
 from tests.unit.prospect_intelligence.agent_test_support import completed_files, file_data
 
 
@@ -46,6 +48,67 @@ def test_snapshot_observes_unexpected_runtime_file_without_exposing_its_body() -
         result.metadata,  # pyright: ignore[reportUnknownMemberType]
     )
     assert metadata is not None and metadata["passed"] is False
+
+
+def test_snapshot_accepts_the_exact_live_hashed_memory_path() -> None:
+    files = completed_files()
+    memory_path = PROSPECT_FILES.rep_memory("evaluation", "a" * 64)
+    files[memory_path] = file_data("# Synthetic rep preferences\n")
+
+    snapshot = normalize_snapshot(
+        files=cast("Mapping[str, object]", files),
+        analysis={"verdict": "fit"},
+        trajectory_events=(),
+        tool_calls=(),
+        pending_review=True,
+        latency_seconds=0.1,
+        allowed_memory_path=memory_path,
+    ).to_outputs()
+
+    observations = cast("Mapping[str, object]", snapshot["artifact_observations"])
+    contract = cast("Mapping[str, object]", observations["file_contract"])
+    assert contract["unexpected"] == []
+
+
+def test_snapshot_uses_canonical_source_evidence_for_semantic_projection() -> None:
+    files = completed_files()
+    collision = {
+        "coverage": {"source": "synthetic", "status": "complete"},
+        "evidence": [
+            {
+                "claim": "model-authored conflicting support",
+                "provenance": {
+                    "source": "synthetic",
+                    "mode": "fixture",
+                    "endpoint_or_artifact": "fixture://synthetic",
+                    "retrieved_at": "2026-09-29T00:00:00+00:00",
+                    "evidence_location": "record:1",
+                    "source_version": "v1",
+                },
+            }
+        ],
+    }
+    files[PROSPECT_FILES.company_research] = file_data(json.dumps(collision))
+    example = langsmith_examples()[0]
+    assert example.inputs is not None
+    canonical = scenario_artifacts(example.inputs)
+
+    snapshot = normalize_snapshot(
+        files=cast("Mapping[str, object]", files),
+        analysis={"verdict": "fit"},
+        trajectory_events=(),
+        tool_calls=(),
+        pending_review=True,
+        latency_seconds=0.1,
+        semantic_source_artifacts={
+            path: body
+            for path, body in canonical.items()
+            if path.startswith(("/context/", "/research/"))
+        },
+    )
+
+    assert snapshot.semantic_observations
+    assert "model-authored conflicting support" not in repr(snapshot.semantic_observations)
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,8 @@ from typing import cast
 
 from evaluation.datasets import DATASET_VERSION
 from evaluation.evaluators.suite import EVALUATOR_VERSION, GATE_MINIMUMS
-from evaluation.experiments.offline_results import RowSummary, slice_scores
+
+from .results import RowSummary, slice_scores
 
 _SAFE_BOOLEAN_FIELDS = frozenset({"canary_found", "passed"})
 _SAFE_COUNT_FIELDS = frozenset({"actual_count", "checked_count", "expected_count"})

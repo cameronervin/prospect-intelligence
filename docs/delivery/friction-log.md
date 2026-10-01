@@ -20,3 +20,18 @@ alignment, or transient failures. Keep qualifying entries concise and connect th
 | 2026-09-30 | Compose configuration validation | Rendering the base Compose configuration without `--quiet` resolves the optional ignored `deploy/envs/.env.local` and can print local provider credentials. A validation subagent exposed those values in its private tool transcript; no file, container, Linear comment, or provider request received them. | The affected local credentials must be treated as disclosed and rotated even though CAM-37's merged E2E configuration correctly clears the env file and blanks provider keys. | Keep repository validation on `docker compose config --quiet`; inspect only selected key names or boolean assertions when merged configuration details are required. | Rotate the local OpenAI, LangSmith, TypeSafe, Tavily, and FMCSA credentials, then confirm the ignored env file contains only replacements. |
 
 Suggested areas: LangChain/LangGraph API behavior, checkpointing, human review, tool calling, streaming, LangSmith tracing/evaluation, model-provider differences, deployment, and developer experience.
+
+### 2026-09-30 — LangSmith monthly unique-trace quota exhausted during CAM-40
+
+- **Delivery impact:** The hosted matrix completed baseline, lower-cost, and prompt-revision (72
+  rows each), then LangSmith rejected multipart trace ingestion during interpreter-off at 49/72
+  usable outputs with HTTP 429 `Monthly unique traces usage limit exceeded`; 51 roots were eventually
+  visible after in-flight uploads settled, including two empty persistence shells. The strict
+  four-variant aggregate and promotion gate cannot be produced from this partial matrix.
+- **Workaround or decision:** Stopped the live command immediately to avoid OpenAI and Jev spend for
+  rows that LangSmith could not persist. The three complete experiments and partial fourth remain
+  diagnostic evidence only; repository verification remains separate and valid.
+- **Follow-up:** The product owner accepted the retained evidence for the MVP configuration decision,
+  so CAM-40 does not require a paid rerun. Keep the strict runner unchanged. If a later formal
+  promotion decision needs complete evidence, increase or reset the trace allowance and rerun all
+  four variants without merging attempts.

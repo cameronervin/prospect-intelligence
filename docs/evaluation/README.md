@@ -6,6 +6,9 @@ quality changes after release, and reviewed online failures become permanent reg
 See [human-in-the-loop-flow.md](human-in-the-loop-flow.md) for the outreach review checkpoint,
 decision outcomes, durable commit flow, preference learning, and quality feedback signals.
 
+See [experimentation-process.md](experimentation-process.md) for the CAM-40 variants, evaluation
+method, aggregate results, evaluator revisions, and MVP configuration decision.
+
 The credential-free harness provides:
 
 - `freight-prospect-v1`: 16 core and 8 edge examples with deterministic reference outputs.
@@ -39,11 +42,12 @@ CAM-39 adds these narrow semantic metrics without changing the CAM-38 determinis
 | `actionability` | Brief | Native Jev score from 1 through 5 |
 | `tone_fit` | Draft and rep preferences | Native Jev score from 1 through 5; explicitly not applicable when preferences are absent |
 
-Numeric values, counts, and dates remain the responsibility of deterministic code evaluators. A
-semantic result with a provider or validation failure has no score and carries only sanitized error
-metadata. Missing results therefore fail metric coverage closed; GPT-5.6 Sol does not substitute for
-Jev. Human calibration in CAM-41 will set any semantic promotion thresholds. Until then, semantic
-scores are evidence only and do not affect the release decision.
+Numeric values and counts remain the responsibility of deterministic code evaluators. Complete ISO
+date and datetime spans are excluded from quantitative scoring; their support belongs to citation
+and claim review. A semantic result with a provider or validation failure has no score and carries
+only sanitized error metadata. Missing results therefore fail metric coverage closed; GPT-5.6 Sol
+does not substitute for Jev. Human calibration in CAM-41 will set any semantic promotion thresholds.
+Until then, semantic scores are evidence only and do not affect the release decision.
 
 Each judge receives a strict, size-bounded projection rather than a trace or application object.
 Qualitative evidence uses stable `ev_<24 hex>` citation IDs derived from canonical provenance. The
@@ -89,7 +93,7 @@ Application inference and evaluation judging are separate composition roots:
   that one explanation and closes all three evaluation client boundaries. None is borrowed from the
   running application.
 
-For the credential-free run, `evaluation/experiments/offline.py` passes `ProspectOfflineTarget()`
+For the credential-free run, `evaluation/experiments/offline/runner.py` passes `ProspectOfflineTarget()`
 and `OFFLINE_EVALUATORS` to LangSmith `evaluate(...)`. The target executes once per example and its
 sanitized output mapping is passed to every deterministic evaluator with the example's reference
 outputs.
@@ -97,10 +101,10 @@ outputs.
 For semantic runs, the caller creates a judge, calls `semantic_evaluators(judge)`, and passes the
 returned async evaluators to LangSmith `aevaluate(...)` beside a target that emits
 `semantic_observations`. CAM-39's smoke selects one semantic evaluator per provider to prove both
-boundaries without creating a hosted experiment; CAM-40 owns wiring the full semantic suite to the
-versioned dataset and recording hosted experiment evidence. The semantic evaluators are therefore
-not part of CAM-38's `OFFLINE_EVALUATORS` tuple and do not execute inside application API or worker
-runs.
+boundaries without creating a hosted experiment. CAM-40's explicit hosted path runs the full
+deterministic and semantic suites against the versioned LangSmith dataset. The semantic evaluators
+are not part of CAM-38's `OFFLINE_EVALUATORS` tuple and do not execute inside application API or
+worker runs.
 
 The live smoke remains in `evaluation/experiments/semantic_smoke.py` because it is an operator-run
 evaluation command that makes credentialed provider calls. Its credential gating, output redaction,
@@ -112,11 +116,87 @@ three times locally and refresh the sanitized report in
 `backend/evaluation/reports/cam_38_offline.md`. The report is repository evidence from a scripted
 compiled graph, not live-model or hosted LangSmith evidence.
 
+## Hosted CAM-40 experiment suite
+
+From `backend/`, run the hosted matrix only with all three credentials and the explicit opt-in:
+
+```sh
+uv run python -m evaluation.experiments.offline --live
+```
+
+Load `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, and `TYPESAFE_API_KEY` from the ignored
+`backend/.env`; never put credential values on the command line.
+
+The command idempotently publishes `freight-prospect-v1` with seed `28029`, its canonical SHA-256
+checksum, stable example IDs, and exactly 16 `core` plus 8 `edge` examples. Existing controlled
+metadata, example payloads, IDs, or split membership must match byte-stable repository expectations
+or the run fails closed; SDK-added runtime inventory is excluded from the canonical comparison.
+LangSmith persists that dataset and each uploaded experiment according to workspace
+retention policy; the repository receives only a sanitized aggregate report at
+`backend/evaluation/reports/cam_40_hosted.md` after the complete matrix returns.
+
+| Variant | Orchestrator | Specialists | Prompt | Interpreter |
+| --- | --- | --- | --- | --- |
+| `baseline` | `gpt-5.6-sol` | `gpt-5.6-luna` | `v1` | on |
+| `lower-cost` | `gpt-5.6-luna` | `gpt-5.6-luna` | `v1` | on |
+| `prompt-revision` | `gpt-5.6-sol` | `gpt-5.6-luna` | `evidence-self-check-v2` | on |
+| `interpreter-off` | `gpt-5.6-sol` | `gpt-5.6-luna` | `v1` | off |
+
+Each variant runs all 24 examples three times through graph revision
+`prospect-intelligence-v1`, deterministic evaluator revision `freight-evaluators-v3`, semantic rubric
+`semantic-v1`, and Jev `jev-1.13.0`. The `evidence-self-check-v2` prompt adds one bounded
+orchestrator verification pass before drafting/review. The target uses the real compiled graph and
+OpenAI models, but replaces every business-data integration with deterministic synthetic handlers,
+uses in-memory graph persistence, and disables public-source reads. Only synthetic inputs and
+sanitized outputs are uploaded. Rep identity is a per-example SHA-256 digest of the CAM-40 scope;
+experiment metadata also carries a fixed SHA-256 representative-scope digest, never a real rep ID.
+Every invocation is checked against the local canonical synthetic input before execution. After
+each variant, the runner reads LangSmith back and requires all 72 roots, exact repetition coverage,
+rep/code metadata, and all evaluator feedback before continuing. The same commit-plus-worktree
+fingerprint is recorded in experiment metadata and the final report.
+
+The hosted target reports provider-observed tokens, wall latency, and estimated target cost. The
+CAM-40 OpenAI standard price card is `$4.00/M` input, `$0.40/M` cached input, and `$20.00/M` output
+for GPT-5.6 Sol, and `$0.20/M`, `$0.02/M`, and `$1.20/M` respectively for GPT-5.6 Luna. Jev cost is
+reported separately using the CAM-39 TypeSafe 2026-09-15 card (`$0.042/M` input, free output).
+The OpenAI card was pinned on 2026-09-30 from the
+[official pricing reference](https://developers.openai.com/api/docs/pricing). Estimates are not
+invoices and the price cards must be reviewed before later runs.
+Graph and output-normalization exceptions remain represented as sanitized `target_error` rows so
+their elapsed time and provider-observed spend are retained. Their evaluation projections are empty,
+making deterministic coverage fail closed without persisting the exception message in the target
+output or report.
+
+`experiments.offline.results.gate_results()` remains the only deterministic release gate. It enforces exact
+example/repetition and metric coverage plus the CAM-38 thresholds; the seven Jev scores, their
+coverage, latency, and cost remain evidence-only until CAM-41 calibration. Results are aggregated by
+variant, split, dataset tag, metric, and synthetic failure ID. A candidate must pass every
+deterministic gate and introduce no new deterministic failure. A target-cost or mean-latency increase
+over 20% is accepted only when the candidate also fixes at least one baseline deterministic failure.
+Semantic improvement alone never overrides that policy.
+
+Hosted writes occur one variant at a time. If a later variant fails, already completed experiments
+remain in LangSmith, but the strict runner does not issue an automated gate decision from the partial
+matrix and never combines attempts. CAM-40 has one explicit MVP exception: after quota exhaustion,
+the product owner accepted a concise decision memo based on three complete variants and a 51-row
+interpreter-off sample that covered every example at least twice. The memo is retained hosted
+evidence, not proof that the formal four-variant gate completed. Repository tests, the local CAM-38
+report, the CAM-39 provider smoke, and hosted CAM-40 experiments remain distinct evidence classes.
+
 ## Harness architecture
 
 The implementation separates observation from judgment:
 
+- `evaluation/experiments/offline/` owns the credential-free runner, report, and deterministic
+  aggregate/gate helpers.
+- `evaluation/experiments/hosted/` owns dataset publication, the live runner and runtime, persistence
+  checks, the controlled plan, and hosted result/report handling.
+- `evaluation/experiments/semantic_smoke.py` remains separate because it exercises providers without
+  creating a hosted experiment.
+
 See [offline-evaluator-flow.md](offline-evaluator-flow.md) for the short module and data-flow map.
+See [align-evals.md](../development/align-evals.md) for the process used to correct evaluator
+misalignment found in hosted experiments.
 
 - `app/features/agent_quality/` owns the SDK-neutral evaluator catalog, semantic projections,
   rubrics, judge contracts, and app-side runtime. `evaluation/contracts/`, `evaluation/rubrics/`,

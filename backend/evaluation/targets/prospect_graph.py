@@ -24,10 +24,16 @@ from evaluation.contracts.snapshot import decode_artifacts, normalize_snapshot
 from evaluation.targets.scenario import scenario_artifacts
 from evaluation.targets.scripted_model import ScenarioScriptedModel
 
-__all__ = ["ProspectOfflineTarget", "decode_artifacts", "normalize_snapshot"]
+__all__ = [
+    "ProspectOfflineTarget",
+    "decode_artifacts",
+    "normalize_snapshot",
+    "tool_call_names",
+    "trajectory_events",
+]
 
 
-def _trajectory(raw: Mapping[str, object]) -> list[str]:
+def _raw_tool_calls(raw: Mapping[str, object]) -> list[tuple[str, Mapping[str, object]]]:
     messages = raw.get("messages")
     if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
         return []
@@ -38,6 +44,17 @@ def _trajectory(raw: Mapping[str, object]) -> list[str]:
                 (call["name"], cast("Mapping[str, object]", call["args"]))
                 for call in message.tool_calls
             )
+    return calls
+
+
+def tool_call_names(raw: Mapping[str, object]) -> list[str]:
+    """Return sanitized tool names visible in the root graph messages."""
+
+    return [name for name, _args in _raw_tool_calls(raw)]
+
+
+def trajectory_events(raw: Mapping[str, object]) -> list[str]:
+    calls = _raw_tool_calls(raw)
     events: list[str] = []
     event_names = {
         "account-context": "account_context.completed",
@@ -108,7 +125,7 @@ class ProspectOfflineTarget:
         return normalize_snapshot(
             files=result.files,
             analysis=analysis,
-            trajectory_events=_trajectory(result.raw),
+            trajectory_events=trajectory_events(result.raw),
             tool_calls=tool_calls,
             pending_review=result.pending_interrupt == "send_outreach",
             latency_seconds=perf_counter() - started,
