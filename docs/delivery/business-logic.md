@@ -212,3 +212,23 @@ review, and measurement of rep time, replies, meetings, won opportunities, and n
 Evidence: [CAM-40 decision](../evaluation/experimentation-process.md),
 [alignment process](../evaluation/evaluator-alignment-process.md), and the
 [sanitized hosted report](../../backend/evaluation/reports/cam_40_hosted.md).
+
+## Product ROI decision model
+
+The production ROI model supports a controlled-pilot decision only. It assumes the client already
+owns GenLogs, CRM, and carrier-network data. Its base case uses 24,000 completed analyses per year, a
+20% high-fit rate, 60% rep approval, 8% meeting conversion, and 15% close rate. It applies a 75%
+first-year realization discount and a 12% contribution margin to the synthetic dataset's $273,000
+median top-lane opportunity.
+
+Under those assumptions, about 35 wins produce $2.36 million in gross sales and $283,000 in
+contribution against about $90,000 in recurring product spend. Eleven incremental annual wins cover
+recurring spend; 27 cover the estimated $215,000 first-year spend. These values are planning
+assumptions, not guaranteed revenue or production evidence.
+
+A pilot must use matched non-agent accounts and count only incremental conversion and realized loads.
+Broader deployment requires at least 2x annualized contribution to recurring product cost, expected
+first-year payback within 12 months, and approved numeric-grounding and customer-safety results.
+Human review remains mandatory.
+
+Evidence and calculations: [product ROI model](../production/product-roi.md).

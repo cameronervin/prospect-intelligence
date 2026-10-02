@@ -1,5 +1,9 @@
 # Path to production
 
+The [product ROI model](product-roi.md) describes the conversion and cost assumptions that support a
+controlled sales pilot. It is a planning model, not a production-readiness or guaranteed-revenue
+claim.
+
 The current repository is a reviewable MVP, not a production system. It implements a compiled agent
 runtime, durable work and review state, full-component readiness checks, and redacted structured
 stdout logging with correlation across the Next.js and FastAPI server boundaries. A production
