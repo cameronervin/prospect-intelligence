@@ -17,8 +17,8 @@ test("runs the durable rep-review journey through the real application stack", a
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel("Password").fill("prospect-demo");
-  await page.getByRole("button", { name: "Enter dispatch console" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await page.getByRole("button", { name: "Enter" }).click();
+  await expect(page).toHaveURL(/\/$/, { timeout: 30_000 });
   await expect(page.getByText("Alex Morgan · Sales rep")).toBeVisible();
   const account = page.getByRole("button", { name: /Acme Foods/ });
   await account.focus();
@@ -44,16 +44,29 @@ test("runs the durable rep-review journey through the real application stack", a
   const review = page.getByRole("region", { name: /Review the outreach to Acme Foods/ });
   await expect(review).toBeVisible({ timeout: 120_000 });
   await expect(page.getByRole("table", { name: "Top lanes" })).toBeVisible();
-  await expect(page.getByText(/Synthetic fixture/).first()).toBeVisible();
+  const runEvidence = page.getByRole("region", { name: "Run evidence" });
+  await expect(runEvidence).toContainText("GenLogs fixture");
+  await expect(runEvidence.getByText(/^ev_[a-f0-9]{24} ·/).first()).toBeVisible();
+  await expect(page.getByText(/Synthetic fixture/)).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 
   await page.reload();
   await expect(review).toBeVisible();
   await expect(page.getByRole("button", { name: /Acme Foods/ })).toBeDisabled();
-  await review.getByRole("button", { name: "Approve simulated send" }).click();
+  await review.getByRole("button", { name: "Approve send" }).click();
 
-  await expect(page.getByRole("heading", { name: "Simulated send recorded" })).toBeFocused();
-  await expect(page.getByText("No real email or CRM write occurred.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Communications sent" })).toBeFocused();
+  await expect(page.getByText(/was approved\.$/)).toBeVisible();
+  await expect(page.getByText("Simulated send complete")).toHaveCount(0);
+  await expect(
+    page.getByRole("alert").filter({ hasText: /review service is temporarily unavailable/i }),
+  ).toHaveCount(0);
   await expect.poll(() => observedStatuses.has("completed")).toBe(true);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Communications sent" })).toBeVisible();
+  await expect(page.getByText(/was approved\.$/)).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: /review service is temporarily unavailable/i }),
+  ).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });

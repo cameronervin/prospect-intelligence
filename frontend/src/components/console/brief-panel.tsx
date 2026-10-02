@@ -94,7 +94,11 @@ export function WhySummary({
 }
 
 /** The brief as the page's lead content when no decision is pending. */
-export function BriefPanel({ brief, verdict }: Readonly<{ brief: Brief; verdict: Verdict }>) {
+export function BriefPanel({
+  brief,
+  verdict,
+  showRecommendedNextStep = true,
+}: Readonly<{ brief: Brief; verdict: Verdict; showRecommendedNextStep?: boolean }>) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
@@ -103,7 +107,9 @@ export function BriefPanel({ brief, verdict }: Readonly<{ brief: Brief; verdict:
       </h3>
       <VerdictLine brief={brief} verdict={verdict} />
       <p className={cn(typeStyles.body, "max-w-prose text-slate-700")}>{brief.summary}</p>
-      <p className={`${typeStyles.body} max-w-prose`}>{brief.recommended_next_step}</p>
+      {showRecommendedNextStep ? (
+        <p className={`${typeStyles.body} max-w-prose`}>{brief.recommended_next_step}</p>
+      ) : null}
       {brief.lanes.length > 0 ? <Figures brief={brief} /> : null}
     </section>
   );

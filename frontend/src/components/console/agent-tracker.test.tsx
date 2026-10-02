@@ -44,7 +44,8 @@ describe("AgentTracker", () => {
     vi.setSystemTime(new Date(T(15)));
     render(<AgentTracker steps={running} />);
 
-    const tracker = within(screen.getByRole("region", { name: "Agent progress" }));
+    const trackerElement = screen.getByRole("region", { name: "Agent progress" });
+    const tracker = within(trackerElement);
     const rows = tracker.getAllByRole("listitem", { name: /^Step / });
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
       "Step 1: Account context, Done",
@@ -56,6 +57,13 @@ describe("AgentTracker", () => {
     ]);
     expect(within(rows[0]!).getByText("0:06")).toBeInTheDocument();
     expect(within(rows[1]!).getByText("0:14")).toBeInTheDocument();
+    expect(tracker.getAllByText("Pending")).toHaveLength(4);
+    const pendingSpinners = trackerElement.querySelectorAll('[data-agent-motion="pending-step"]');
+    expect(pendingSpinners).toHaveLength(4);
+    for (const spinner of pendingSpinners) {
+      expect(spinner).toHaveAttribute("aria-hidden", "true");
+      expect(spinner).toHaveClass("motion-safe:animate-spin");
+    }
 
     act(() => {
       vi.advanceTimersByTime(2000);
@@ -110,7 +118,7 @@ describe("AgentTracker", () => {
     expect(timers[0]).toHaveTextContent("0:06");
   });
 
-  it("marks only a running non-review step with reduced-motion-safe activity", () => {
+  it("pulses only a running non-review status and leaves its number static", () => {
     const { rerender } = render(<AgentTracker steps={running} />);
     const tracker = screen.getByRole("region", { name: "Agent progress" });
     const rows = within(tracker).getAllByRole("listitem", { name: /^Step / });
@@ -118,8 +126,9 @@ describe("AgentTracker", () => {
 
     expect(cues).toHaveLength(1);
     expect(rows[1]!.querySelector('[data-agent-motion="active-step"]')).toBe(cues[0]);
-    expect(cues[0]).toHaveAttribute("aria-hidden", "true");
     expect(cues[0]).toHaveClass("motion-safe:animate-pulse");
+    expect(cues[0]).toHaveTextContent("Running");
+    expect(within(rows[1]!).getByText("2")).not.toHaveAttribute("data-agent-motion");
 
     rerender(
       <AgentTracker
@@ -137,6 +146,16 @@ describe("AgentTracker", () => {
     expect(
       screen.getByRole("listitem", { name: /Your review, Waiting on you/ }),
     ).toBeInTheDocument();
+  });
+
+  it("omits the redundant orchestrator explanation", () => {
+    render(<AgentTracker steps={running} />);
+
+    expect(
+      screen.queryByText(
+        "The orchestrator records each agent attempt, then pauses for your review.",
+      ),
+    ).not.toBeInTheDocument();
   });
 });
 

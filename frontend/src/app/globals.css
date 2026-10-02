@@ -13,4 +13,9 @@
   .meter::-moz-progress-bar {
     @apply bg-slate-950;
   }
+
+  .meter-active::-webkit-progress-value,
+  .meter-active::-moz-progress-bar {
+    @apply transition-all duration-700 ease-out motion-safe:animate-pulse motion-reduce:transition-none;
+  }
 }

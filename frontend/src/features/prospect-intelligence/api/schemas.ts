@@ -16,6 +16,7 @@ const SourceCoverageSchema = z.object({
   mode: SourceModeSchema.nullable().optional(),
 });
 const EvidenceSchema = z.object({
+  citation_id: z.string().regex(/^ev_[a-f0-9]{24}$/),
   claim: z.string().min(1),
   source: z.string().min(1),
   mode: SourceModeSchema,
@@ -140,6 +141,7 @@ export const RunSchema = z
     progress_percent: z.number().min(0).max(100),
     steps: z.array(RunStepSchema).optional(),
     source_coverage: z.array(SourceCoverageSchema),
+    evidence: z.array(EvidenceSchema),
     verdict: z.enum(["fit", "no_fit", "needs_more_data"]).nullable().optional(),
     brief: BriefSchema.nullable().optional(),
     outreach: OutreachSchema.nullable().optional(),

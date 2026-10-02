@@ -15,6 +15,7 @@ export const account = {
 } satisfies Account;
 
 const evidence = {
+  citation_id: "ev_111111111111111111111111",
   claim: "12 observed loads per week",
   source: "GenLogs fixture",
   mode: "fixture",
@@ -32,6 +33,7 @@ export const fitRun = {
   progress_percent: 100,
   source_coverage: [
     { source: "CRM fixture", status: "complete", mode: "fixture" },
+    { source: "GenLogs fixture", status: "complete", mode: "fixture" },
     {
       source: "SEC EDGAR",
       status: "degraded",
@@ -39,6 +41,7 @@ export const fitRun = {
       detail: "Some provider filings were invalid",
     },
   ],
+  evidence: [evidence],
   verdict: "fit",
   brief: {
     summary: "Atlas has a strong return-lane opportunity into the Dallas network.",
@@ -63,8 +66,8 @@ export const fitRun = {
     ],
   },
   outreach: {
-    subject: "ATL to DAL freight conversation",
-    body: "Would you be open to comparing notes on your ATL-to-DAL freight needs?",
+    subject: "A regional freight conversation",
+    body: "Hi Priya,\n\nI’m Alex, and I work with an asset-based carrier. Atlas Foods’ regional expansion may create a useful lane opportunity.\n\nWould a short conversation next week be useful?",
   },
   pending_review: {
     name: "send_outreach",
@@ -166,6 +169,7 @@ export async function installProspectApi(
   } = {},
 ) {
   const started = options.startRun ?? fitRun;
+  let currentRun = started;
   await page.context().addCookies([
     {
       name: "prospect_session",
@@ -176,6 +180,7 @@ export async function installProspectApi(
     },
   ]);
 
+  await page.route("**/api/auth/refresh", (route) => route.fulfill({ json: {} }));
   await page.route("**/api/v1/accounts", async (route) => {
     await options.accountsReady;
     await route.fulfill({ json: { items: options.accounts ?? [account] } });
@@ -191,11 +196,12 @@ export async function installProspectApi(
     await route.fulfill({ json: started });
   });
   await page.route("**/api/v1/prospect-runs/*", async (route) => {
-    await route.fulfill({ json: options.readRun?.() ?? started });
+    await route.fulfill({ json: options.readRun?.() ?? currentRun });
   });
   await page.route("**/api/v1/prospect-runs/*/review", async (route: Route) => {
     const payload = route.request().postDataJSON() as ReviewPayload;
     const response = options.review ? await options.review(payload) : { json: completedFitRun() };
+    if ((response.status ?? 200) < 400) currentRun = response.json as ProspectRun;
     await route.fulfill(response);
   });
 }

@@ -15,11 +15,9 @@ export default async function LoginPage() {
           <span className={typeStyles.wordmark}>Prospect Intelligence</span>
         </header>
         <div className="px-5 py-7 sm:px-8">
-          <p className={`${typeStyles.utility} uppercase tracking-widest`}>Dispatch access</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Sign in to your desk</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Use the assigned demo account to open the prospect workflow.
-          </p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+            Sign in to the dispatch console
+          </h1>
           <LoginForm />
           <div className="mt-7 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">
             Demo password: <code className="font-mono text-slate-700">prospect-demo</code>

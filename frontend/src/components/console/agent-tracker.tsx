@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 
 import { linkButton, typeStyles } from "@/components/ui/styles";
 import type { RunStep } from "@/lib/prospect-api";
@@ -87,10 +87,8 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
       <div className="flex items-center gap-3">
         <span
           aria-hidden="true"
-          data-agent-motion={agentRunning ? "active-step" : undefined}
           className={cn(
             "grid size-6 place-items-center rounded-full text-xs font-semibold tabular-nums",
-            agentRunning && "motion-safe:animate-pulse",
             step.status === "running"
               ? "bg-white text-slate-950 ring-2 ring-slate-950 ring-inset"
               : step.status === "complete"
@@ -117,13 +115,27 @@ function StepRow({ step, index, now }: Readonly<{ step: RunStep; index: number; 
             </button>
           ) : null}
         </span>
-        <StatusPill
-          tone={
-            step.key === "review" && step.status === "running" ? "review" : statusTone[step.status]
-          }
+        <span
+          data-agent-motion={agentRunning ? "active-step" : undefined}
+          className={cn(agentRunning && "motion-safe:animate-pulse")}
         >
-          {label}
-        </StatusPill>
+          <StatusPill
+            tone={
+              step.key === "review" && step.status === "running"
+                ? "review"
+                : statusTone[step.status]
+            }
+          >
+            {step.status === "pending" ? (
+              <span
+                aria-hidden="true"
+                data-agent-motion="pending-step"
+                className="mr-1.5 size-3 rounded-full border-2 border-slate-400 border-t-transparent motion-safe:animate-spin"
+              />
+            ) : null}
+            {label}
+          </StatusPill>
+        </span>
         <span
           data-elapsed
           aria-hidden={step.status === "running" || undefined}
@@ -163,14 +175,9 @@ export function AgentTracker({ steps }: Readonly<{ steps: RunStep[] }>) {
       aria-labelledby={headingId}
       className="rounded border border-slate-300 px-4 pt-3 pb-1 sm:px-6"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1">
-        <h2 id={headingId} className={typeStyles.heading}>
-          Agent progress
-        </h2>
-        <p className={typeStyles.utility}>
-          The orchestrator records each agent attempt, then pauses for your review.
-        </p>
-      </div>
+      <h2 id={headingId} className={`${typeStyles.heading} pb-1`}>
+        Agent progress
+      </h2>
       <ol>
         {steps.map((step, index) => (
           <StepRow key={step.key} step={step} index={index} now={now} />
@@ -181,10 +188,15 @@ export function AgentTracker({ steps }: Readonly<{ steps: RunStep[] }>) {
 }
 
 /** One-line record of a finished run that expands back into the full tracker. */
-export function AgentRunSummary({ steps }: Readonly<{ steps: RunStep[] }>) {
+export function AgentRunSummary({
+  steps,
+  metadata,
+}: Readonly<{ steps: RunStep[]; metadata?: ReactNode }>) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  if (steps.length === 0) return null;
+  if (steps.length === 0) {
+    return metadata ? <div>{metadata}</div> : null;
+  }
 
   const agentSteps = steps.filter((step) => step.key !== "review");
   const done = agentSteps.filter((step) => step.status === "complete").length;
@@ -202,19 +214,27 @@ export function AgentRunSummary({ steps }: Readonly<{ steps: RunStep[] }>) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-3">
-        <span
-          className={`${typeStyles.utility} tabular-nums`}
-        >{`Agent run · ${counted}${failed > 0 ? ` · ${failed} failed` : ""} · ${duration}`}</span>
-        <button
-          type="button"
-          className={linkButton}
-          aria-expanded={open}
-          aria-controls={open ? panelId : undefined}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? "Hide steps" : "View steps"}
-        </button>
+      <div className="flex flex-wrap items-center justify-start gap-x-2 gap-y-1">
+        {metadata}
+        {metadata ? (
+          <span aria-hidden="true" className={`${typeStyles.utility} self-center`}>
+            ·
+          </span>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-x-3 self-center">
+          <span className={`${typeStyles.utility} self-center`}>
+            {`Agent run · ${counted}${failed > 0 ? ` · ${failed} failed` : ""} · ${duration}`}
+          </span>
+          <button
+            type="button"
+            className={linkButton}
+            aria-expanded={open}
+            aria-controls={open ? panelId : undefined}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? "Hide steps" : "View steps"}
+          </button>
+        </div>
       </div>
       {open ? (
         <div id={panelId}>

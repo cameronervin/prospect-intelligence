@@ -8,7 +8,12 @@ type AccountsState =
   { kind: "loading" } | { kind: "error" } | { kind: "ready"; accounts: Account[] };
 
 function shouldRestore(run: ProspectRun) {
-  return run.status === "queued" || run.status === "running" || run.status === "awaiting_review";
+  return (
+    run.status === "queued" ||
+    run.status === "running" ||
+    run.status === "awaiting_review" ||
+    (run.status === "completed" && run.verdict === "fit")
+  );
 }
 
 type Options = {
@@ -27,12 +32,25 @@ export function useRunRestoration({
   selectAccount,
   subject = "test-user",
 }: Options) {
-  const [restoring, setRestoring] = useState(() => Boolean(storedRunId(subject)));
+  const [storageChecked, setStorageChecked] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [restoreFailed, setRestoreFailed] = useState(false);
   const [restoreAttempt, setRestoreAttempt] = useState(0);
 
   useEffect(() => {
-    if (accounts.kind === "loading") return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setRestoring(Boolean(storedRunId(subject)));
+      setStorageChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [subject]);
+
+  useEffect(() => {
+    if (!storageChecked || accounts.kind === "loading") return;
     let cancelled = false;
     void Promise.resolve().then(async () => {
       const runId = storedRunId(subject);
@@ -80,7 +98,7 @@ export function useRunRestoration({
     return () => {
       cancelled = true;
     };
-  }, [accounts, api, restoreAttempt, selectAccount, show, subject]);
+  }, [accounts, api, restoreAttempt, selectAccount, show, storageChecked, subject]);
 
   function retryRestore() {
     setRestoreFailed(false);
@@ -88,5 +106,5 @@ export function useRunRestoration({
     setRestoreAttempt((attempt) => attempt + 1);
   }
 
-  return { restoring, restoreFailed, retryRestore };
+  return { storageChecked, restoring, restoreFailed, retryRestore };
 }

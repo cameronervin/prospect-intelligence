@@ -90,7 +90,7 @@ export function LoginForm() {
         aria-busy={busy}
         className={`${buttonStyles.primary} w-full justify-center bg-orange-600 hover:bg-orange-700`}
       >
-        {busy ? "Checking access…" : "Enter dispatch console"}
+        {busy ? "Checking access…" : "Enter"}
       </button>
     </form>
   );

@@ -44,7 +44,7 @@ test("redirects unauthenticated users and keeps invalid login generic", async ({
     route.fulfill({ status: 401, json: { error: "invalid_credentials" } }),
   );
   await page.getByLabel("Password").fill("wrong-password");
-  await page.getByRole("button", { name: "Enter dispatch console" }).click();
+  await page.getByRole("button", { name: "Enter" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.locator("#login-error")).toHaveText("Email or password is incorrect.");
   await expect(page.getByLabel("Email")).toBeFocused();
@@ -134,6 +134,12 @@ test("preserves an unsafe edit and lets the rep recover with a safe draft", asyn
   await startRun(page);
   const review = page.getByRole("region", { name: /Review the outreach to Atlas Foods/ });
   await expect(review).toBeVisible();
+  await expect(review.getByLabel("Subject")).toHaveValue("A regional freight conversation");
+  await expect(review.getByLabel("Message")).toHaveValue(fitRun.outreach.body);
+  await expect(review.getByLabel("Message")).toHaveAttribute("rows", "8");
+  await expect(page.getByRole("region", { name: "Run evidence" })).toContainText(
+    "12 observed loads per week",
+  );
   await page.reload();
   await expect(review).toBeVisible();
   await expect(page.getByRole("button", { name: /Atlas Foods/ })).toBeDisabled();
@@ -158,8 +164,20 @@ test("preserves an unsafe edit and lets the rep recover with a safe draft", asyn
   await review.getByLabel("Subject").fill("Freight conversation");
   await review.getByLabel("Message").fill("Could we compare freight needs?");
   await review.getByRole("button", { name: "Submit edit" }).click();
-  await expect(page.getByRole("heading", { name: "Simulated send recorded" })).toBeFocused();
-  await expect(page.getByText("No real email or CRM write occurred.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Communications sent" })).toBeFocused();
+  await expect(page.getByText("“Freight conversation” was approved.")).toBeVisible();
+  await expect(page.getByText("Simulated send complete")).toHaveCount(0);
+  await expect(page.getByText("Pitch the Atlanta to Dallas lane.")).toHaveCount(0);
+  await expect(page.getByText("No real email or CRM write occurred.")).toHaveCount(0);
+  await expect(
+    page.getByRole("alert").filter({ hasText: /review service is temporarily unavailable/i }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Communications sent" })).toBeVisible();
+  await expect(page.getByText("“Freight conversation” was approved.")).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: /review service is temporarily unavailable/i }),
+  ).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
@@ -178,7 +196,7 @@ test("requires rejection confirmation and records that no simulated send occurre
   await startRun(page);
 
   const review = page.getByRole("region", { name: /Review the outreach to Atlas Foods/ });
-  await review.getByRole("button", { name: "Reject…" }).click();
+  await review.getByRole("button", { name: "Reject" }).click();
   const rejection = page.getByRole("region", { name: "Reject this draft?" });
   const confirm = rejection.getByRole("button", { name: "Reject draft" });
   await expect(confirm).toBeFocused();
@@ -190,7 +208,7 @@ test("requires rejection confirmation and records that no simulated send occurre
 
   await expect(page.getByRole("heading", { name: "Draft rejected" })).toBeFocused();
   await expect(page.getByText("No message was sent. Your decision was recorded.")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Simulated send recorded" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Communications sent" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
@@ -242,8 +260,8 @@ test("keeps primary desktop controls keyboard-ready across selection and review"
   const review = page.getByRole("region", { name: /Review the outreach to Atlas Foods/ });
   await expectKeyboardReady(review.getByLabel("Subject"));
   await expectKeyboardReady(review.getByLabel("Message"));
-  await expectKeyboardReady(review.getByRole("button", { name: "Approve simulated send" }));
-  await expectKeyboardReady(review.getByRole("button", { name: "Reject…" }));
+  await expectKeyboardReady(review.getByRole("button", { name: "Approve send" }));
+  await expectKeyboardReady(review.getByRole("button", { name: "Reject" }));
   await expectNoHorizontalOverflow(page);
 });
 
@@ -363,14 +381,17 @@ test("tracks every drafting and quality-review attempt, then hands off to review
   });
 
   await startRun(page);
-  await expect(page.getByText("Queued", { exact: true })).toBeVisible();
-  await expect(page.locator('[data-agent-motion="run-status"]')).toBeVisible();
+  await expect(page.getByText("Queued", { exact: true })).toHaveCount(0);
+  const progressMeter = page.locator('[data-agent-motion="progress-meter"]');
+  await expect(progressMeter).toBeVisible();
+  await expect(progressMeter).toHaveClass(/meter-active/);
+  await expect(page.locator('[data-agent-motion="pending-step"]')).toHaveCount(6);
   phase = 0;
   const tracker = page.getByRole("region", { name: "Agent progress" });
   await expect(
     tracker.getByRole("listitem", { name: /Step 1: Account context, Running/ }),
   ).toBeVisible();
-  await expect(page.locator('[data-agent-motion="run-status"]')).toBeVisible();
+  await expect(progressMeter).toBeVisible();
   await expect(page.locator('[data-agent-motion="active-step"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "Agent running…" })).toBeDisabled();
   phase = 2;
@@ -398,8 +419,34 @@ test("tracks every drafting and quality-review attempt, then hands off to review
     page.getByRole("region", { name: /Review the outreach to Atlas Foods/ }),
   ).toBeVisible();
   await expect(tracker).toBeHidden();
-  await expect(page.getByText(/Agent run · 7 steps/)).toBeVisible();
-  await page.getByRole("button", { name: "View steps" }).click();
+  await expect(page.getByText("Ready for your review")).toHaveCount(0);
+  const evidenceDate = page.getByText("Evidence as of Sep 29, 2026");
+  const metadataSeparator = page.getByText("·", { exact: true });
+  const agentRun = page.getByText(/Agent run · 7 steps/);
+  const viewSteps = page.getByRole("button", { name: "View steps" });
+  await expect(evidenceDate).toBeVisible();
+  await expect(agentRun).toBeVisible();
+  const centerY = async (locator: typeof evidenceDate) =>
+    locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return box.top + box.height / 2;
+    });
+  const evidenceCenter = await centerY(evidenceDate);
+  expect(Math.abs((await centerY(agentRun)) - evidenceCenter)).toBeLessThanOrEqual(1);
+  expect(Math.abs((await centerY(viewSteps)) - evidenceCenter)).toBeLessThanOrEqual(1);
+  const evidenceBox = await evidenceDate.boundingBox();
+  const separatorBox = await metadataSeparator.boundingBox();
+  const agentRunBox = await agentRun.boundingBox();
+  expect(evidenceBox).not.toBeNull();
+  expect(separatorBox).not.toBeNull();
+  expect(agentRunBox).not.toBeNull();
+  const evidenceGap = separatorBox!.x - (evidenceBox!.x + evidenceBox!.width);
+  const agentRunGap = agentRunBox!.x - (separatorBox!.x + separatorBox!.width);
+  expect(evidenceGap).toBeGreaterThanOrEqual(0);
+  expect(evidenceGap).toBeLessThanOrEqual(8);
+  expect(agentRunGap).toBeGreaterThanOrEqual(0);
+  expect(agentRunGap).toBeLessThanOrEqual(8);
+  await viewSteps.click();
   await expect(
     page.getByRole("listitem", { name: /Step 8: Your review, Waiting on you/ }),
   ).toBeVisible();
@@ -428,9 +475,7 @@ test("keeps active status legible without animation when reduced motion is reque
 
   await startRun(page);
   await expect(
-    page.locator('[data-agent-motion="run-status"]').locator("..").getByText("Running", {
-      exact: true,
-    }),
+    page.getByRole("listitem", { name: /Step 1: Account context, Running/ }).getByText("Running"),
   ).toBeVisible();
   for (const cue of await page.locator("[data-agent-motion]").all()) {
     await expect(cue).toBeVisible();

@@ -12,15 +12,21 @@ import {
   formatRetrievedDate,
   formatRetrievedTimestamp,
   formatScore,
-  sourceModeLabel,
+  visibleSourceModeLabel,
 } from "./format";
 
 function EvidenceItem({ item }: Readonly<{ item: Evidence }>) {
+  const metadata = [
+    item.source,
+    visibleSourceModeLabel(item.mode),
+    `Retrieved ${formatRetrievedDate(item.retrieved_at)}`,
+  ].filter((value): value is string => Boolean(value));
+
   return (
     <li className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0">
       <span className="text-sm">{item.claim}</span>
       <span className={typeStyles.utility} title={formatRetrievedTimestamp(item.retrieved_at)}>
-        {`${item.source} · ${sourceModeLabel[item.mode]} · Retrieved ${formatRetrievedDate(item.retrieved_at)}`}
+        {metadata.join(" · ")}
       </span>
       <span className={`${typeStyles.utility} break-all text-slate-500`}>
         {`${item.source_version} · ${item.evidence_location} · ${item.endpoint_or_artifact}`}

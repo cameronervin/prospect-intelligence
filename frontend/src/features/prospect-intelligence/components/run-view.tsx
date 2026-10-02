@@ -54,10 +54,19 @@ export function RunView({
   onRefresh: () => Promise<void>;
 }>) {
   const active = isActive(run.status);
-  const dated = run.brief ? briefDate(run.brief) : undefined;
+  const evidenceTimes = run.evidence
+    .map((item) => Date.parse(item.retrieved_at))
+    .filter((time) => !Number.isNaN(time));
+  const dated =
+    evidenceTimes.length > 0
+      ? new Date(Math.max(...evidenceTimes)).toISOString()
+      : run.brief
+        ? briefDate(run.brief)
+        : undefined;
   const evidenceId = useId();
   const evidenceHeadingId = useId();
   const deciding = awaitingDecision(run);
+  const completedFit = run.status === "completed" && run.verdict === "fit";
   const hasLanes = Boolean(run.brief && run.brief.lanes.length > 0);
   const steps = run.steps ?? [];
 
@@ -66,16 +75,7 @@ export function RunView({
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className={typeStyles.display}>{run.account.name}</h2>
-          <span className="inline-flex items-center gap-2">
-            {active ? (
-              <span
-                aria-hidden="true"
-                data-agent-motion="run-status"
-                className={`size-2 rounded-full motion-safe:animate-pulse ${
-                  run.status === "running" ? "bg-slate-950" : "bg-slate-400"
-                }`}
-              />
-            ) : null}
+          {!active ? (
             <StatusPill
               tone={
                 run.status === "completed" && run.verdict !== "fit"
@@ -85,24 +85,39 @@ export function RunView({
             >
               {deciding ? "Awaiting your review" : runStatusLabel[run.status]}
             </StatusPill>
-          </span>
+          ) : null}
         </div>
-        <p className={typeStyles.utility}>
-          <span role="status" aria-label="Run progress" aria-live="polite">
-            {run.stage}
-          </span>
-          {active ? <span aria-hidden="true">{` · ${run.progress_percent}%`}</span> : null}
-          {!active && dated ? ` · Evidence as of ${formatRetrievedDate(dated)}` : ""}
-        </p>
+        {active ? (
+          <p className={typeStyles.utility}>
+            <span role="status" aria-label="Run progress" aria-live="polite">
+              {run.stage}
+            </span>
+            <span aria-hidden="true">{` · ${run.progress_percent}%`}</span>
+          </p>
+        ) : !deciding && !completedFit ? (
+          <p className={typeStyles.utility}>{run.stage}</p>
+        ) : null}
         {active ? (
           <progress
-            className="meter"
+            className="meter meter-active"
             max={100}
             value={run.progress_percent}
             aria-label="Research progress"
+            data-agent-motion="progress-meter"
           />
         ) : null}
-        {!active ? <AgentRunSummary steps={steps} /> : null}
+        {!active ? (
+          <AgentRunSummary
+            steps={steps}
+            metadata={
+              dated ? (
+                <span className={`${typeStyles.utility} self-center`}>
+                  {`Evidence as of ${formatRetrievedDate(dated)}`}
+                </span>
+              ) : undefined
+            }
+          />
+        ) : null}
       </header>
 
       {active && steps.length > 0 ? <AgentTracker steps={steps} /> : null}
@@ -145,7 +160,11 @@ export function RunView({
 
       {!deciding ? <ReviewOutcome run={run} decided={decided} /> : null}
       {!deciding && run.brief && run.verdict ? (
-        <BriefPanel brief={run.brief} verdict={run.verdict} />
+        <BriefPanel
+          brief={run.brief}
+          verdict={run.verdict}
+          showRecommendedNextStep={!completedFit}
+        />
       ) : null}
 
       <section
@@ -163,7 +182,7 @@ export function RunView({
           </div>
         ) : null}
         {run.brief && hasLanes ? <LaneTable lanes={run.brief.lanes} /> : null}
-        <SourceCoverage coverage={run.source_coverage} />
+        <SourceCoverage coverage={run.source_coverage} evidence={run.evidence} />
       </section>
     </div>
   );

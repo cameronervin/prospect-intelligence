@@ -21,6 +21,7 @@ describe("prospect API boundary", () => {
         stage: "Preparing research",
         progress_percent: 0,
         source_coverage: [],
+        evidence: [],
       }),
     );
     const client = createProspectClient({ fetcher });
@@ -55,6 +56,7 @@ describe("prospect API boundary", () => {
         stage: "Preparing research",
         progress_percent: 0,
         source_coverage: [],
+        evidence: [],
         verdict: null,
         brief: null,
         outreach: null,
@@ -76,6 +78,7 @@ describe("prospect API boundary", () => {
         stage: "Ready for review",
         progress_percent: 100,
         source_coverage: [],
+        evidence: [],
         verdict: "fit",
         brief: reviewBrief,
         outreach: { subject: "Freight conversation", body: "Could we discuss your freight needs?" },
@@ -106,6 +109,7 @@ describe("prospect API boundary", () => {
         stage: "Ready for review",
         progress_percent: 100,
         source_coverage: [],
+        evidence: [],
         verdict: "fit",
         brief: reviewBrief,
         outreach: { subject: "Freight conversation", body: "Could we discuss your freight needs?" },
@@ -126,6 +130,7 @@ describe("prospect API boundary", () => {
         stage: "Ready for review",
         progress_percent: 100,
         source_coverage: [],
+        evidence: [],
         verdict: "fit",
         brief: null,
         outreach: null,
@@ -197,6 +202,7 @@ describe("prospect API boundary", () => {
           { source: "FAF5.7.1 snapshot", status: "complete", detail: null, mode: "snapshot" },
           { source: "Legacy source", status: "degraded" },
         ],
+        evidence: [],
         verdict: "no_fit",
         brief: {
           summary: "No fit.",
@@ -234,6 +240,52 @@ describe("prospect API boundary", () => {
     });
   });
 
+  it("parses citation-backed run evidence and rejects evidence without an opaque citation", async () => {
+    const response = {
+      id: "run-1",
+      account: { id: "acct-1", name: "Atlas Foods" },
+      status: "completed",
+      stage: "Research complete",
+      progress_percent: 100,
+      source_coverage: [{ source: "Web research", status: "complete", mode: "live" }],
+      evidence: [
+        {
+          citation_id: "ev_111111111111111111111111",
+          claim: "Atlas operates a regional distribution network.",
+          source: "Web research",
+          mode: "live",
+          endpoint_or_artifact: "https://example.test/atlas",
+          retrieved_at: "2026-09-30T12:00:00Z",
+          source_version: "page-v1",
+          evidence_location: "paragraph:2",
+        },
+      ],
+      verdict: "no_fit",
+      brief: reviewBrief,
+    } as const;
+    const validFetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(response));
+
+    await expect(
+      createProspectClient({ fetcher: validFetcher }).getRun("run-1"),
+    ).resolves.toMatchObject({
+      evidence: [{ citation_id: "ev_111111111111111111111111", source: "Web research" }],
+    });
+
+    const uncited = { ...response.evidence[0], citation_id: undefined };
+    const invalidFetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ ...response, evidence: [uncited] }));
+    await expect(createProspectClient({ fetcher: invalidFetcher }).getRun("run-1")).rejects.toThrow(
+      "invalid response",
+    );
+
+    const withoutEvidence = { ...response, evidence: undefined };
+    const missingFetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(withoutEvidence));
+    await expect(createProspectClient({ fetcher: missingFetcher }).getRun("run-1")).rejects.toThrow(
+      "invalid response",
+    );
+  });
+
   it("parses repeated drafting and quality-review attempts as actual history", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
@@ -243,6 +295,7 @@ describe("prospect API boundary", () => {
         stage: "Ready for review",
         progress_percent: 100,
         source_coverage: [],
+        evidence: [],
         verdict: "fit",
         brief: reviewBrief,
         outreach: { subject: "Freight conversation", body: "Could we discuss freight needs?" },
@@ -316,6 +369,7 @@ describe("prospect API boundary", () => {
         stage: "Reviewing",
         progress_percent: 80,
         source_coverage: [],
+        evidence: [],
         steps: [
           {
             key: "quality-reviewer:1",
@@ -340,6 +394,7 @@ describe("prospect API boundary", () => {
         stage: "Reviewing",
         progress_percent: 80,
         source_coverage: [],
+        evidence: [],
         steps: [
           {
             key: "quality-reviewer:4",
@@ -367,6 +422,7 @@ describe("prospect API boundary", () => {
         stage: "Researching",
         progress_percent: 20,
         source_coverage: [],
+        evidence: [],
         steps: [
           {
             key: "external-research",
@@ -391,6 +447,7 @@ describe("prospect API boundary", () => {
         stage: "Researching",
         progress_percent: 20,
         source_coverage: [{ source: "CRM", status: "complete", mode: "scraped" }],
+        evidence: [],
       }),
     );
     const client = createProspectClient({ fetcher });

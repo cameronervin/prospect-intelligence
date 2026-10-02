@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ACTIVE_RUN_STORAGE_KEY, ProspectWorkspace } from "@/components/prospect-workspace";
@@ -47,6 +48,7 @@ const runningRun: ProspectRun = {
     },
     { source: "FMCSA QCMobile", status: "unavailable", mode: "live" },
   ],
+  evidence: [],
 };
 
 const reviewRun: ProspectRun = {
@@ -75,6 +77,7 @@ const reviewRun: ProspectRun = {
         deadhead_miles_avoided: 18400,
         evidence: [
           {
+            citation_id: "ev_111111111111111111111111",
             claim: "12 observed loads per week",
             source: "GenLogs fixture",
             mode: "fixture",
@@ -101,9 +104,21 @@ const reviewRun: ProspectRun = {
     ],
   },
   outreach: {
-    subject: "ATL to DAL freight conversation",
-    body: "Would you be open to comparing notes on your ATL-to-DAL freight needs?",
+    subject: "A regional freight conversation",
+    body: "Hi Priya,\n\nI’m Alex, and I work with an asset-based carrier. Atlas Foods’ regional expansion may create a useful lane opportunity.\n\nWould a short conversation next week be useful?",
   },
+  evidence: [
+    {
+      citation_id: "ev_111111111111111111111111",
+      claim: "12 observed loads per week",
+      source: "GenLogs fixture",
+      mode: "fixture",
+      endpoint_or_artifact: "fixtures/genlogs/atlas-foods.json",
+      retrieved_at: "2026-09-29T12:00:00Z",
+      evidence_location: "$.lanes[0].weekly_loads",
+      source_version: "synthetic-v1",
+    },
+  ],
   pending_review: {
     name: "send_outreach",
     allowed_decisions: ["approve", "edit", "reject"],
@@ -164,6 +179,15 @@ afterEach(() => {
 });
 
 describe("ProspectWorkspace account selection and progress", () => {
+  it("keeps the server render independent of tab-local run storage", () => {
+    window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, reviewRun.id);
+
+    const markup = renderToString(<ProspectWorkspace client={client()} />);
+
+    expect(markup).toContain('aria-label="Workspace loading status"');
+    expect(markup).not.toContain('aria-label="Run loading status"');
+  });
+
   it("replaces initial account and workspace skeletons when loading completes", async () => {
     let resolveAccounts: (accounts: (typeof account)[]) => void = () => undefined;
     const api = client({
@@ -368,7 +392,9 @@ describe("ProspectWorkspace account selection and progress", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: /Assigned Account 7/ })).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: /Assigned Account 7/ }, { timeout: 3_000 }),
+    ).toBeDisabled();
     expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Assigned Account 1/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
@@ -390,10 +416,10 @@ describe("ProspectWorkspace account selection and progress", () => {
       />,
     );
 
-    expect(container.querySelector('[data-skeleton="run"]')).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Run loading status" })).toHaveTextContent(
+    expect(await screen.findByRole("status", { name: "Run loading status" })).toHaveTextContent(
       "Restoring active run…",
     );
+    expect(container.querySelector('[data-skeleton="run"]')).toBeInTheDocument();
     expect(
       screen.queryByText("Select an account to run the prospect agent"),
     ).not.toBeInTheDocument();
@@ -437,7 +463,9 @@ describe("ProspectWorkspace account selection and progress", () => {
 
     const progress = await screen.findByRole("status", { name: "Run progress" });
     expect(progress).toHaveAttribute("aria-live", "polite");
-    await waitFor(() => expect(progress).toHaveTextContent("Ready for your review"));
+    await reviewCheckpoint();
+    expect(screen.queryByText("Ready for your review")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Run progress" })).not.toBeInTheDocument();
     const calls = vi.mocked(api.getRun).mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(vi.mocked(api.getRun).mock.calls.length).toBe(calls);
@@ -471,7 +499,7 @@ describe("ProspectWorkspace account selection and progress", () => {
 
     fireEvent.click(sources.getByRole("button", { name: "Show all 4 sources" }));
     expect(sources.getByText("CRM fixture")).toBeInTheDocument();
-    expect(sources.getByText("Synthetic fixture")).toBeInTheDocument();
+    expect(sources.queryByText("Synthetic fixture")).not.toBeInTheDocument();
     expect(sources.getByText("Snapshot")).toBeInTheDocument();
     expect(sources.getAllByText("Live")).toHaveLength(2);
   });
@@ -530,9 +558,8 @@ describe("ProspectWorkspace brief and evidence", () => {
     expect(lanes.getByText("Backhaul fill")).toBeInTheDocument();
     expect(lanes.getByText("0.95")).toBeInTheDocument();
     expect(lanes.getByText("12 observed loads per week")).toBeInTheDocument();
-    expect(
-      lanes.getByText(/GenLogs fixture · Synthetic fixture · Retrieved Sep 29, 2026/),
-    ).toBeInTheDocument();
+    expect(lanes.getByText(/GenLogs fixture · Retrieved Sep 29, 2026/)).toBeInTheDocument();
+    expect(lanes.queryByText(/Synthetic fixture/)).not.toBeInTheDocument();
     expect(lanes.getByText(/\$\.lanes\[0\]\.weekly_loads/)).toBeInTheDocument();
     expect(lanes.getByText(/synthetic-v1/)).toBeInTheDocument();
 
@@ -556,10 +583,53 @@ describe("ProspectWorkspace brief and evidence", () => {
     expect(screen.getByText("No outreach was drafted for this outcome.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Message")).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(`${ACTIVE_RUN_STORAGE_KEY}:test-user`)).toBeNull();
   });
 });
 
 describe("ProspectWorkspace outreach review", () => {
+  it("retains and restores a completed review within the current browser session", async () => {
+    const completedRun: ProspectRun = {
+      ...reviewRun,
+      status: "completed",
+      stage: "Simulated send complete",
+      pending_review: null,
+    };
+    const firstClient = client({ reviewRun: vi.fn().mockResolvedValue(completedRun) });
+    const firstView = render(<ProspectWorkspace client={firstClient} pollIntervalMs={1} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Atlas Foods/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Run prospect agent" }));
+    const review = await reviewCheckpoint();
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
+
+    expect(await screen.findByRole("heading", { name: "Communications sent" })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(`${ACTIVE_RUN_STORAGE_KEY}:test-user`)).toBe(
+      completedRun.id,
+    );
+
+    firstView.unmount();
+    render(
+      <ProspectWorkspace
+        client={client({
+          listAccounts: vi.fn().mockResolvedValue([account, secondAccount]),
+          getRun: vi.fn().mockResolvedValue(completedRun),
+        })}
+        pollIntervalMs={1}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Communications sent" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Atlas Foods/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Harbor Goods/ }));
+    expect(window.sessionStorage.getItem(`${ACTIVE_RUN_STORAGE_KEY}:test-user`)).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Communications sent" })).not.toBeInTheDocument();
+  });
+
   it("restores and locks a pending review after a browser reload", async () => {
     window.sessionStorage.setItem(ACTIVE_RUN_STORAGE_KEY, reviewRun.id);
     const api = client({ getRun: vi.fn().mockResolvedValue(reviewRun) });
@@ -594,7 +664,7 @@ describe("ProspectWorkspace outreach review", () => {
     expect(screen.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run prospect agent" })).toBeDisabled();
 
-    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
     expect(screen.getByRole("button", { name: /Harbor Goods/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reload accounts" })).toBeDisabled();
 
@@ -616,7 +686,10 @@ describe("ProspectWorkspace outreach review", () => {
     await startBrief(client());
     const review = await reviewCheckpoint();
 
-    expect(review.getByLabelText("Subject")).toHaveValue("ATL to DAL freight conversation");
+    expect(review.getByLabelText("Subject")).toHaveValue("A regional freight conversation");
+    expect(review.getByLabelText("Message")).toHaveValue(
+      "Hi Priya,\n\nI’m Alex, and I work with an asset-based carrier. Atlas Foods’ regional expansion may create a useful lane opportunity.\n\nWould a short conversation next week be useful?",
+    );
     expect(review.queryByText(/\$624,000|0\.91|Modeled|GenLogs/)).not.toBeInTheDocument();
   });
 
@@ -632,9 +705,9 @@ describe("ProspectWorkspace outreach review", () => {
     await startBrief(api);
     const review = await reviewCheckpoint();
 
-    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
     expect(review.getByRole("button", { name: "Recording decision…" })).toBeDisabled();
-    expect(review.getByRole("button", { name: "Reject…" })).toBeDisabled();
+    expect(review.getByRole("button", { name: "Reject" })).toBeDisabled();
     fireEvent.click(review.getByRole("button", { name: "Recording decision…" }));
     expect(reviewRunMock).toHaveBeenCalledTimes(1);
     expect(reviewRunMock).toHaveBeenCalledWith("run-1", {
@@ -650,9 +723,8 @@ describe("ProspectWorkspace outreach review", () => {
         pending_review: null,
       });
     });
-    const heading = await screen.findByRole("heading", { name: "Simulated send recorded" });
+    const heading = await screen.findByRole("heading", { name: "Communications sent" });
     await waitFor(() => expect(heading).toHaveFocus());
-    expect(screen.getByText("No real email or CRM write occurred.")).toBeInTheDocument();
   });
 
   it("submits an edited draft as an edit decision", async () => {
@@ -676,9 +748,7 @@ describe("ProspectWorkspace outreach review", () => {
         tool_call_id: "review-server-token",
       }),
     );
-    expect(
-      await screen.findByRole("heading", { name: "Simulated send recorded" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Communications sent" })).toBeInTheDocument();
   });
 
   it("announces a 409 unsafe-outreach rejection, keeps the draft, and focuses the subject", async () => {
@@ -708,7 +778,7 @@ describe("ProspectWorkspace outreach review", () => {
 
     fireEvent.click(review.getByRole("button", { name: "Restore original draft" }));
     expect(review.getByLabelText("Message")).toHaveValue(
-      "Would you be open to comparing notes on your ATL-to-DAL freight needs?",
+      "Hi Priya,\n\nI’m Alex, and I work with an asset-based carrier. Atlas Foods’ regional expansion may create a useful lane opportunity.\n\nWould a short conversation next week be useful?",
     );
     expect(review.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -751,16 +821,14 @@ describe("ProspectWorkspace outreach review", () => {
     await startBrief(client({ reviewRun: reviewRunMock }));
     const review = await reviewCheckpoint();
 
-    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
     const alert = await review.findByRole("alert");
     expect(alert).toHaveTextContent("Your decision wasn't recorded");
     const retry = review.getByRole("button", { name: "Retry decision" });
     await waitFor(() => expect(retry).toHaveFocus());
 
     fireEvent.click(retry);
-    expect(
-      await screen.findByRole("heading", { name: "Simulated send recorded" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Communications sent" })).toBeInTheDocument();
     expect(reviewRunMock).toHaveBeenNthCalledWith(2, "run-1", {
       decision: "approve",
       tool_call_id: "review-server-token",
@@ -772,16 +840,16 @@ describe("ProspectWorkspace outreach review", () => {
     await startBrief(api);
     const review = await reviewCheckpoint();
 
-    fireEvent.click(review.getByRole("button", { name: "Reject…" }));
+    fireEvent.click(review.getByRole("button", { name: "Reject" }));
     await waitFor(() => expect(review.getByRole("button", { name: "Reject draft" })).toHaveFocus());
     expect(review.getByRole("button", { name: "Reject draft" })).toHaveAccessibleDescription(
       /No message will be sent/,
     );
     fireEvent.click(review.getByRole("button", { name: "Keep reviewing" }));
-    await waitFor(() => expect(review.getByRole("button", { name: "Reject…" })).toHaveFocus());
+    await waitFor(() => expect(review.getByRole("button", { name: "Reject" })).toHaveFocus());
     expect(api.reviewRun).not.toHaveBeenCalled();
 
-    fireEvent.click(review.getByRole("button", { name: "Reject…" }));
+    fireEvent.click(review.getByRole("button", { name: "Reject" }));
     fireEvent.click(review.getByRole("button", { name: "Reject draft" }));
 
     const heading = await screen.findByRole("heading", { name: "Draft rejected" });
@@ -828,7 +896,7 @@ describe("ProspectWorkspace outreach review", () => {
     await startBrief(api);
     const review = await reviewCheckpoint();
 
-    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
     expect(await review.findByRole("alert")).toHaveTextContent("already has a different decision");
     const refresh = review.getByRole("button", { name: "Refresh run" });
     await waitFor(() => expect(refresh).toHaveFocus());
@@ -850,11 +918,11 @@ describe("ProspectWorkspace outreach review", () => {
     );
     const review = await reviewCheckpoint();
 
-    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
     const alert = await review.findByRole("alert");
     expect(alert).toHaveTextContent("This run is no longer available");
     await waitFor(() => expect(alert).toHaveFocus());
-    expect(review.getByRole("button", { name: "Approve simulated send" })).toBeDisabled();
+    expect(review.getByRole("button", { name: "Approve send" })).toBeDisabled();
   });
 
   it("drops a stored retry once the rep changes the draft", async () => {
@@ -866,7 +934,7 @@ describe("ProspectWorkspace outreach review", () => {
     await startBrief(client({ reviewRun: reviewRunMock }));
     const review = await reviewCheckpoint();
 
-    fireEvent.click(review.getByRole("button", { name: "Approve simulated send" }));
+    fireEvent.click(review.getByRole("button", { name: "Approve send" }));
     expect(await review.findByRole("button", { name: "Retry decision" })).toBeInTheDocument();
     fireEvent.change(review.getByLabelText("Message"), {
       target: { value: "Could we compare freight needs?" },

@@ -53,11 +53,15 @@ export function briefDate(brief: Brief): string | undefined {
   return times.length > 0 ? new Date(Math.max(...times)).toISOString() : undefined;
 }
 
-export const sourceModeLabel: Record<SourceMode, string> = {
+const sourceModeLabel: Partial<Record<SourceMode, string>> = {
   live: "Live",
   snapshot: "Snapshot",
-  fixture: "Synthetic fixture",
 };
+
+/** Fixture provenance remains in the source name and artifact path without a redundant mode label. */
+export function visibleSourceModeLabel(mode: SourceMode): string | undefined {
+  return mode === "fixture" ? undefined : sourceModeLabel[mode];
+}
 
 export const coverageStatusLabel: Record<SourceCoverage["status"], string> = {
   complete: "Complete",

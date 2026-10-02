@@ -2,7 +2,12 @@ import type { ProspectRun } from "../api/schemas";
 import { ACTIVE_RUN_STORAGE_KEY } from "./constants";
 
 function shouldRemember(run: ProspectRun) {
-  return run.status === "queued" || run.status === "running" || run.status === "awaiting_review";
+  return (
+    run.status === "queued" ||
+    run.status === "running" ||
+    run.status === "awaiting_review" ||
+    (run.status === "completed" && run.verdict === "fit")
+  );
 }
 
 function key(subject: string) {

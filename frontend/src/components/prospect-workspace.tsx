@@ -105,7 +105,7 @@ export function ProspectWorkspace({
     [accounts],
   );
 
-  const { restoring, restoreFailed, retryRestore } = useRunRestoration({
+  const { storageChecked, restoring, restoreFailed, retryRestore } = useRunRestoration({
     accounts,
     api,
     show,
@@ -183,6 +183,7 @@ export function ProspectWorkspace({
   const locked =
     starting ||
     deciding ||
+    !storageChecked ||
     restoring ||
     restoreFailed ||
     Boolean(run && (isActive(run.status) || run.status === "awaiting_review"));
@@ -253,7 +254,7 @@ export function ProspectWorkspace({
             </div>
           ) : restoring ? (
             <RunLoading message="Restoring active run…" />
-          ) : accounts.kind === "loading" ? (
+          ) : !storageChecked || accounts.kind === "loading" ? (
             <WorkspaceLoading />
           ) : (
             <div className="max-w-xl rounded border border-dashed border-slate-300 px-4 py-5">

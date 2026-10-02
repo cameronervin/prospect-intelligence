@@ -11,6 +11,11 @@ export const sessionCookieOptions = {
   secure: process.env.NODE_ENV !== "development",
 };
 
+export const authResponseHeaders = {
+  "Cache-Control": "no-store, max-age=0",
+  Pragma: "no-cache",
+} as const;
+
 export async function backendAuth(path: string, token?: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   headers.set("content-type", "application/json");
@@ -19,6 +24,7 @@ export async function backendAuth(path: string, token?: string, init: RequestIni
     ...init,
     headers,
     cache: "no-store",
+    redirect: "manual",
   });
 }
 

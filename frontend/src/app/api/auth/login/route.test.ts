@@ -6,6 +6,10 @@ vi.mock("@/server/auth-session", async () => {
   return {
     BackendTokenSchema,
     SESSION_COOKIE: "prospect_session",
+    authResponseHeaders: {
+      "Cache-Control": "no-store, max-age=0",
+      Pragma: "no-cache",
+    },
     backendAuth,
     sessionCookieOptions: { httpOnly: true, sameSite: "strict", path: "/", secure: true },
   };
@@ -29,7 +33,10 @@ const payload = {
 };
 
 describe("login BFF", () => {
-  afterEach(() => backendAuth.mockReset());
+  afterEach(() => {
+    backendAuth.mockReset();
+    vi.restoreAllMocks();
+  });
 
   it("stores the bearer only in a hardened HttpOnly cookie", async () => {
     backendAuth.mockResolvedValue(Response.json(payload));
@@ -51,6 +58,20 @@ describe("login BFF", () => {
     expect(cookie).toContain("SameSite=strict");
     expect(cookie).toContain("Path=/");
     expect(cookie).toContain("Secure");
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+    expect(response.headers.get("location")).toBeNull();
+    expect(backendAuth).toHaveBeenCalledWith(
+      "token",
+      undefined,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          email: "alex.morgan@example.test",
+          password: "prospect-demo",
+        }),
+      }),
+    );
   });
 
   it("maps all backend credential failures to one public error", async () => {
@@ -64,5 +85,27 @@ describe("login BFF", () => {
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "invalid_credentials" });
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("does not log credentials or put them in response headers", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    backendAuth.mockResolvedValue(Response.json({}, { status: 401 }));
+
+    const request = new Request("http://localhost/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "alex.morgan@example.test", password: "private-value" }),
+    });
+    const response = await POST(request);
+
+    expect(new URL(request.url).search).toBe("");
+    expect([...response.headers.values()].join(" ")).not.toContain("private-value");
+    expect(log).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,10 @@ vi.mock("@/server/auth-session", async () => {
   return {
     BackendTokenSchema,
     SESSION_COOKIE: "prospect_session",
+    authResponseHeaders: {
+      "Cache-Control": "no-store, max-age=0",
+      Pragma: "no-cache",
+    },
     backendAuth,
     currentToken,
     sessionCookieOptions: { httpOnly: true, sameSite: "strict", path: "/", secure: true },
@@ -31,6 +35,8 @@ describe("refresh BFF", () => {
 
     expect(response.status).toBe(503);
     expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
   });
 
   it("clears the cookie only when the backend rejects the session", async () => {
@@ -42,5 +48,7 @@ describe("refresh BFF", () => {
     expect(response.status).toBe(401);
     expect(response.headers.get("set-cookie")).toContain("prospect_session=");
     expect(response.headers.get("set-cookie")).toContain("Expires=Thu, 01 Jan 1970");
+    expect(response.headers.get("cache-control")).toBe("no-store, max-age=0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
   });
 });

@@ -43,11 +43,10 @@ function Outcome({
 export function ReviewOutcome({ run, decided }: Readonly<{ run: ProspectRun; decided: boolean }>) {
   if (run.status === "completed" && run.verdict === "fit") {
     return (
-      <Outcome title="Simulated send recorded" tone="ready" focusOnMount={decided}>
+      <Outcome title="Communications sent" tone="ready" focusOnMount={decided}>
         {run.outreach ? (
           <p className="text-sm">{`“${run.outreach.subject}” was approved.`}</p>
         ) : null}
-        <p className={typeStyles.utility}>No real email or CRM write occurred.</p>
       </Outcome>
     );
   }

@@ -140,7 +140,7 @@ export function ReviewCheckpoint({
             {confirmingReject ? "Reject this draft?" : `Review the outreach to ${accountName}`}
           </h2>
           <p className="mt-1 text-sm text-slate-700">
-            Approve it as written or correct it. Sending is simulated: no email or CRM write.
+            Approve or edit either field to correct the agent.
           </p>
         </div>
 
@@ -212,7 +212,7 @@ export function ReviewCheckpoint({
             <textarea
               id={`${ids}-body`}
               className={`${fieldStyle} resize-y`}
-              rows={4}
+              rows={8}
               value={draft.body}
               maxLength={10000}
               readOnly={Boolean(failure?.final)}
@@ -258,11 +258,7 @@ export function ReviewCheckpoint({
                 className={cn(buttonStyles.review, largeButton)}
                 disabled={locked}
               >
-                {pending
-                  ? "Recording decision…"
-                  : edited
-                    ? "Submit edit"
-                    : "Approve simulated send"}
+                {pending ? "Recording decision…" : edited ? "Submit edit" : "Approve send"}
               </button>
               <button
                 ref={rejectRef}
@@ -275,13 +271,8 @@ export function ReviewCheckpoint({
                   focusTarget.current = "confirm";
                 }}
               >
-                Reject…
+                Reject
               </button>
-              <span className={typeStyles.utility}>
-                {edited
-                  ? "Your correction replaces the draft."
-                  : "Edit either field to correct it."}
-              </span>
             </div>
           )}
         </form>
