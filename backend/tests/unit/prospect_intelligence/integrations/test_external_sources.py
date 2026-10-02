@@ -10,6 +10,7 @@ from typing import cast
 from uuid import UUID
 
 import httpx
+from structlog.testing import capture_logs
 
 from app.features.prospect_intelligence.contracts.models import SourceCoverageStatus, SourceMode
 from app.features.prospect_intelligence.contracts.sources import (
@@ -55,19 +56,32 @@ def test_retry_policy_retries_only_timeout_rate_limit_and_server_errors() -> Non
         return httpx.Response(503, request=request)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    outcome = request_with_retries(
-        client,
-        "GET",
-        "https://provider.example/resource",
-        timeout_seconds=3,
-        retry_attempts=99,
-        sleeper=sleeps.append,
-    )
+    with capture_logs() as logs:
+        outcome = request_with_retries(
+            client,
+            "GET",
+            "https://provider.example/resource?api_key=private",
+            provider="synthetic",
+            operation="lookup",
+            timeout_seconds=3,
+            retry_attempts=99,
+            sleeper=sleeps.append,
+        )
 
     assert outcome.response is None
     assert outcome.failure == "server_error"
     assert calls == 3
     assert sleeps == [0.25, 0.5]
+    assert logs[0] == {
+        "attempts": 3,
+        "duration_ms": logs[0]["duration_ms"],
+        "event": "external_request_failed",
+        "failure": "server_error",
+        "log_level": "warning",
+        "operation": "lookup",
+        "provider": "synthetic",
+    }
+    assert "private" not in repr(logs)
 
 
 def test_retry_policy_does_not_retry_non_timeout_transport_or_client_errors() -> None:
@@ -82,6 +96,8 @@ def test_retry_policy_does_not_retry_non_timeout_transport_or_client_errors() ->
         httpx.Client(transport=httpx.MockTransport(handler)),
         "GET",
         "https://provider.example/resource",
+        provider="synthetic",
+        operation="lookup",
         timeout_seconds=3,
         retry_attempts=2,
         sleeper=lambda _: None,
@@ -100,18 +116,24 @@ def test_retry_policy_recovers_from_a_transient_server_error() -> None:
         calls += 1
         return httpx.Response(503 if calls == 1 else 200, request=request)
 
-    outcome = request_with_retries(
-        httpx.Client(transport=httpx.MockTransport(handler)),
-        "GET",
-        "https://provider.example/resource",
-        timeout_seconds=3,
-        retry_attempts=2,
-        sleeper=lambda _: None,
-    )
+    with capture_logs() as logs:
+        outcome = request_with_retries(
+            httpx.Client(transport=httpx.MockTransport(handler)),
+            "GET",
+            "https://provider.example/resource",
+            provider="synthetic",
+            operation="lookup",
+            timeout_seconds=3,
+            retry_attempts=2,
+            sleeper=lambda _: None,
+        )
 
     assert outcome.response is not None
     assert outcome.response.status_code == 200
     assert calls == 2
+    assert logs[0]["event"] == "external_request_recovered"
+    assert logs[0]["attempts"] == 2
+    assert logs[0]["provider"] == "synthetic"
 
 
 def test_tavily_normalizes_safe_bounded_results_and_caches_per_run() -> None:

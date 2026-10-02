@@ -80,6 +80,8 @@ class FmcsaCarrierRegistrySource:
             self._client,
             "GET",
             url,
+            provider="fmcsa",
+            operation="carrier_lookup",
             timeout_seconds=self._timeout_seconds,
             retry_attempts=self._retry_attempts,
             sleeper=self._sleeper,

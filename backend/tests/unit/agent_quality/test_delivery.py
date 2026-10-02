@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+from structlog.testing import capture_logs
 
 from app.features.agent_quality.services.delivery import (
     OnlineQualityDeliverySupervisor,
@@ -33,7 +34,17 @@ async def test_delivery_worker_backs_off_when_a_pending_event_failed() -> None:
 
     worker = OnlineQualityDeliveryWorker(dispatch, batch_size=10)
 
-    assert await worker.run_once() is False
+    with capture_logs() as logs:
+        assert await worker.run_once() is False
+
+    assert logs == [
+        {
+            "attempted": 1,
+            "event": "online_quality_delivery_incomplete",
+            "failed": 1,
+            "log_level": "warning",
+        }
+    ]
 
 
 @pytest.mark.asyncio

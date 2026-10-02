@@ -127,6 +127,28 @@ Evidence: [human-review flow](../evaluation/human-in-the-loop-flow.md).
 Production requires enterprise identity, authorization provisioning, retention, deletion/export,
 consent, and audit policies before customer data is introduced.
 
+## Operational logging safety boundary
+
+- Operational records use opaque run, event, and correlation identifiers plus bounded status,
+  duration, retry, provider, and workflow fields. Incoming correlation identifiers are accepted only
+  when they match the bounded safe-character contract; otherwise the server replaces them.
+- Logs exclude request and response bodies, query strings, credentials, session identifiers,
+  customer/account/contact names, prompts, model outputs, provider payloads, and exception messages.
+  Authentication outcomes identify the operation and generic reason but not the user.
+- FastAPI emits a canonical request-completion record using the normalized route template. The
+  Next.js server forwards the same correlation identifier and records only startup, framework
+  request errors, rejected proxy paths, and backend dependency failures. No browser telemetry is
+  enabled.
+- LangSmith remains the agent tracing and evaluation system under its separate fail-closed privacy
+  defaults; application logs do not duplicate trace content.
+
+This policy favors diagnosable lifecycle and failure signals over payload-level debugging. A future
+production logging provider requires a separate privacy, retention, access-control, and incident
+response decision.
+
+Evidence: backend and frontend logging privacy, request-correlation, worker, provider-retry,
+lifecycle, authentication, and proxy tests.
+
 ## Evaluation authority and evidence limits
 
 Deterministic evaluators are authoritative for computable behavior: numeric grounding, lane ranking

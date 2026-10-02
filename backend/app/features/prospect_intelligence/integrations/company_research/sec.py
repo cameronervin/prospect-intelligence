@@ -102,6 +102,8 @@ class SecEdgarSource:
                 self._client,
                 "GET",
                 url,
+                provider="sec_edgar",
+                operation="company_research",
                 timeout_seconds=self._timeout_seconds,
                 retry_attempts=self._retry_attempts,
                 sleeper=self._sleeper,

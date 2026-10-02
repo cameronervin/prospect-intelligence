@@ -3,7 +3,10 @@
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from time import perf_counter
 from uuid import UUID
+
+import structlog
 
 from app.features.authentication.public import AuthContext
 
@@ -17,6 +20,8 @@ from ..contracts.workflow import review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
 from ..domain.outreach import validate_customer_outreach
 from .runs import ProspectRunService
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -38,15 +43,24 @@ class ProspectAgentReviewHandler:
     ) -> ProspectRun:
         if tool_call_id != review_tool_call_id(run_id):
             raise InvalidRunTransitionError("review token does not match this run")
+        started = perf_counter()
         lock = self._run_locks.setdefault(run_id, asyncio.Lock())
         async with lock:
-            return await self._review(
+            reviewed = await self._review(
                 run_id,
                 action,
                 tool_call_id=tool_call_id,
                 edited_outreach=edited_outreach,
                 auth=auth,
             )
+        await logger.ainfo(
+            "prospect_review_completed",
+            run_id=str(run_id),
+            action=action.value,
+            status=reviewed.status.value,
+            duration_ms=round((perf_counter() - started) * 1000, 3),
+        )
+        return reviewed
 
     async def _review(
         self,

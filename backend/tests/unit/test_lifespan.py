@@ -3,6 +3,7 @@
 from typing import Any, cast
 
 import pytest
+from structlog.testing import capture_logs
 
 from app.bootstrap.container import Container, ProspectComponent
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectAgentRuntime
@@ -106,12 +107,19 @@ async def test_lifespan_marks_ready_and_closes_dependencies() -> None:
     container = Container(settings=settings, database=database)
     app = create_app(settings, container=container)
 
-    async with app.router.lifespan_context(app):
-        assert container.started is True
-        assert await container.is_ready() is True
+    with capture_logs() as logs:
+        async with app.router.lifespan_context(app):
+            assert container.started is True
+            assert await container.is_ready() is True
 
     assert container.started is False
     assert database.closed is True
+    assert [record["event"] for record in logs] == [
+        "application_starting",
+        "application_started",
+        "application_stopping",
+        "application_stopped",
+    ]
 
 
 @pytest.mark.asyncio
@@ -129,13 +137,25 @@ async def test_lifespan_fails_closed_when_database_is_unavailable() -> None:
     )
     app = create_app(settings, container=container)
 
-    with pytest.raises(RuntimeError, match="database failed startup readiness check"):
+    with (
+        capture_logs() as logs,
+        pytest.raises(RuntimeError, match="database failed startup readiness check"),
+    ):
         async with app.router.lifespan_context(app):
             pass
 
     assert container.started is False
     assert database.closed is True
     assert source_client.closed is True
+    assert [record["event"] for record in logs] == [
+        "application_starting",
+        "application_startup_failed",
+        "application_stopping",
+        "application_stopped",
+    ]
+    assert logs[1]["stage"] == "database_readiness"
+    assert logs[1]["error_type"] == "RuntimeError"
+    assert "database failed" not in repr(logs)
 
 
 @pytest.mark.asyncio

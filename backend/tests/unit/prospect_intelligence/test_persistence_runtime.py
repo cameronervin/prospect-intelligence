@@ -120,11 +120,18 @@ async def test_worker_completes_only_the_fenced_claim() -> None:
         clock=lambda: NOW,
     )
 
-    assert await worker.run_once() is True
+    with capture_logs() as logs:
+        assert await worker.run_once() is True
 
     assert handled == [(RUN_ID, CLAIM_TOKEN)]
     assert jobs.completed == [(7, CLAIM_TOKEN)]
     assert jobs.failed == []
+    assert [record["event"] for record in logs] == [
+        "prospect_job_started",
+        "prospect_job_completed",
+    ]
+    assert logs[0]["attempt"] == 1
+    assert logs[1]["duration_ms"] >= 0
 
 
 @pytest.mark.asyncio
@@ -148,16 +155,21 @@ async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() 
 
     assert jobs.completed == []
     assert jobs.failed == [(7, CLAIM_TOKEN, "execution_failed", True)]
-    assert logs == [
-        {
-            "event": "prospect_run_execution_failed",
-            "log_level": "warning",
-            "worker_id": "worker-1",
-            "run_id": str(RUN_ID),
-            "error_code": "execution_failed",
-            "error_type": "RuntimeError",
-        }
+    assert [record["event"] for record in logs] == [
+        "prospect_job_started",
+        "prospect_run_execution_failed",
     ]
+    assert logs[1] == {
+        "attempt": 3,
+        "duration_ms": logs[1]["duration_ms"],
+        "error_code": "execution_failed",
+        "error_type": "RuntimeError",
+        "event": "prospect_run_execution_failed",
+        "log_level": "error",
+        "retrying": False,
+        "run_id": str(RUN_ID),
+        "worker_id": "worker-1",
+    }
     assert "customer secret" not in repr(logs)
 
 

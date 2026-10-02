@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -18,6 +19,7 @@ _NO_CACHE_HEADERS = {
     "Cache-Control": "no-store, max-age=0",
     "Pragma": "no-cache",
 }
+logger = structlog.get_logger(__name__)
 
 
 def session_user_response(user: SessionUser) -> SessionUserResponse:
@@ -36,10 +38,20 @@ def build_authenticated_user(service: AuthenticationService) -> AuthenticatedUse
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_BEARER)],
     ) -> SessionUser:
         if credentials is None or credentials.scheme.casefold() != "bearer":
+            logger.warning(
+                "authentication_failed",
+                operation="verify",
+                reason="missing_credentials",
+            )
             raise _unauthorized()
         try:
             return service.verify(credentials.credentials)
         except AuthenticationError as error:
+            logger.warning(
+                "authentication_failed",
+                operation="verify",
+                reason="invalid_token",
+            )
             raise _unauthorized() from error
 
     return authenticated_user
@@ -49,6 +61,11 @@ def require_sales_rep(user: SessionUser) -> SessionUser:
     try:
         user.auth.require(UserRole.SALES_REP)
     except PermissionError as error:
+        logger.warning(
+            "authorization_failed",
+            operation="require_sales_rep",
+            reason="missing_role",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The authenticated user is not permitted to use this application.",
@@ -72,7 +89,13 @@ def build_router(
         try:
             session = service.login(str(request.email), request.password)
         except AuthenticationError as error:
+            logger.warning(
+                "authentication_failed",
+                operation="login",
+                reason="invalid_credentials",
+            )
             raise _unauthorized("Email or password is incorrect.") from error
+        logger.info("authentication_succeeded", operation="login")
         return TokenResponse(
             access_token=session.access_token,
             user=session_user_response(session.user),
@@ -87,11 +110,22 @@ def build_router(
     ) -> TokenResponse:
         _disable_caching(response)
         if credentials is None or credentials.scheme.casefold() != "bearer":
+            logger.warning(
+                "authentication_failed",
+                operation="refresh",
+                reason="missing_credentials",
+            )
             raise _unauthorized()
         try:
             session = service.refresh(credentials.credentials)
         except AuthenticationError as error:
+            logger.warning(
+                "authentication_failed",
+                operation="refresh",
+                reason="invalid_token",
+            )
             raise _unauthorized("The session has expired. Sign in again.") from error
+        logger.info("authentication_succeeded", operation="refresh")
         return TokenResponse(
             access_token=session.access_token,
             user=session_user_response(session.user),

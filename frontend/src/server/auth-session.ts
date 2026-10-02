@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { SESSION_COOKIE } from "@/features/auth/constants";
 import { BackendSessionSchema, BackendTokenSchema } from "@/features/auth/schemas";
 import { backendBaseUrl } from "@/server/env";
+import { serverLog } from "@/server/logging";
 
 export const sessionCookieOptions = {
   httpOnly: true,
@@ -32,7 +33,7 @@ export async function currentToken() {
   return (await cookies()).get(SESSION_COOKIE)?.value;
 }
 
-export async function currentSession() {
+export async function currentSession(correlationId?: string) {
   const token = await currentToken();
   if (!token) return undefined;
   const localMockSession =
@@ -49,10 +50,26 @@ export async function currentSession() {
     };
   }
   try {
-    const response = await backendAuth("me", token);
-    if (!response.ok) return undefined;
+    const response = await backendAuth("me", token, {
+      headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
+    });
+    if (!response.ok) {
+      if (response.status >= 500) {
+        serverLog("warning", "backend_auth_dependency_failed", {
+          correlation_id: correlationId,
+          operation: "session",
+          status_code: response.status,
+        });
+      }
+      return undefined;
+    }
     return BackendSessionSchema.parse(await response.json()).user;
-  } catch {
+  } catch (caught) {
+    serverLog("error", "backend_auth_proxy_failed", {
+      correlation_id: correlationId,
+      operation: "session",
+      error_type: caught instanceof Error ? caught.name : "UnknownError",
+    });
     return undefined;
   }
 }

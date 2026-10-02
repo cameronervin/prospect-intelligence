@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
 
 from app.bootstrap.exception_handlers import register_exception_handlers
 from app.features.authentication.api import build_authenticated_user, build_router
@@ -42,7 +43,7 @@ def _authentication_app() -> tuple[FastAPI, AuthenticationService]:
 def test_login_response_disables_caching() -> None:
     app, _ = _authentication_app()
 
-    with TestClient(app) as client:
+    with capture_logs() as logs, TestClient(app) as client:
         response = client.post(
             "/api/v1/auth/token",
             json={"email": "alex.morgan@example.test", "password": "prospect-demo"},
@@ -58,6 +59,21 @@ def test_login_response_disables_caching() -> None:
     assert rejected.status_code == 401
     assert rejected.headers["cache-control"] == "no-store, max-age=0"
     assert rejected.headers["pragma"] == "no-cache"
+    assert logs == [
+        {
+            "event": "authentication_succeeded",
+            "log_level": "info",
+            "operation": "login",
+        },
+        {
+            "event": "authentication_failed",
+            "log_level": "warning",
+            "operation": "login",
+            "reason": "invalid_credentials",
+        },
+    ]
+    assert "alex.morgan" not in repr(logs)
+    assert "wrong-password" not in repr(logs)
 
 
 def test_auth_validation_error_disables_caching() -> None:

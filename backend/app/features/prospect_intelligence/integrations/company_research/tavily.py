@@ -63,6 +63,8 @@ class TavilySearchSource:
             self._client,
             "POST",
             _ENDPOINT,
+            provider="tavily",
+            operation="company_search",
             timeout_seconds=self._timeout_seconds,
             retry_attempts=self._retry_attempts,
             sleeper=self._sleeper,

@@ -8,10 +8,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+import structlog
+
 from ..contracts.quality_events import QualityEventOutbox, QualityEventSink
 
 QUALITY_EVENT_DELIVERY_FAILURE = "quality_event_delivery_failed"
 DEFAULT_QUALITY_EVENT_PUBLISH_TIMEOUT_SECONDS = 10.0
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,8 +58,13 @@ class QualityEventDispatcher:
                     event.event_id,
                     self._clock(),
                 )
-            except Exception:
+            except Exception as error:
                 failed += 1
+                await logger.awarning(
+                    "online_quality_event_delivery_failed",
+                    event_id=str(event.event_id),
+                    error_type=type(error).__name__,
+                )
                 await self._record_failure(event.event_id)
             else:
                 delivered += 1

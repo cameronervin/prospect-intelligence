@@ -43,6 +43,7 @@ describe("login BFF", () => {
     const response = await POST(
       new Request("http://localhost/api/auth/login", {
         method: "POST",
+        headers: { "x-correlation-id": "login-request-123" },
         body: JSON.stringify({
           email: "alex.morgan@example.test",
           password: "prospect-demo",
@@ -66,12 +67,14 @@ describe("login BFF", () => {
       undefined,
       expect.objectContaining({
         method: "POST",
+        headers: { "x-correlation-id": "login-request-123" },
         body: JSON.stringify({
           email: "alex.morgan@example.test",
           password: "prospect-demo",
         }),
       }),
     );
+    expect(response.headers.get("x-correlation-id")).toBe("login-request-123");
   });
 
   it("maps all backend credential failures to one public error", async () => {

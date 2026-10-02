@@ -7,6 +7,7 @@ from typing import cast
 from uuid import UUID
 
 import pytest
+from structlog.testing import capture_logs
 
 from app.features.agent_quality.contracts.models import (
     EvaluationSamplingDecision,
@@ -253,10 +254,16 @@ async def test_agent_job_handler_commits_validated_graph_output_to_review() -> N
         sources=synthetic_prospect_sources(),
     )
 
-    await handler(run.id, UUID("10000000-0000-0000-0000-000000000032"))
+    with capture_logs() as logs:
+        await handler(run.id, UUID("10000000-0000-0000-0000-000000000032"))
 
     completed = service.get_run(run.id)
     assert completed.status is RunStatus.AWAITING_REVIEW
+    completion = next(record for record in logs if record["event"] == "prospect_analysis_completed")
+    assert completion["run_id"] == str(run.id)
+    assert completion["verdict"] == "fit"
+    assert completion["status"] == "awaiting_review"
+    assert completion["duration_ms"] >= 0
     assert completed.output is not None
     assert completed.output.brief.markdown == (
         "Evidence supports the reviewed ATL to DAL opportunity."
@@ -527,19 +534,30 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
         else None
     )
 
-    reviewed = await handler(
-        run.id,
-        action,
-        tool_call_id=review_tool_call_id(run.id),
-        edited_outreach=edited,
-        auth=auth_context(rep_id="rep-demo"),
-    )
+    with capture_logs() as logs:
+        reviewed = await handler(
+            run.id,
+            action,
+            tool_call_id=review_tool_call_id(run.id),
+            edited_outreach=edited,
+            auth=auth_context(rep_id="rep-demo"),
+        )
 
     assert runtime.decisions == [ProspectReviewDecision(action, edited)]
     assert runtime.context is not None
     assert runtime.context.thread_id == run.thread_id
     assert "Northstar Retail" not in repr(runtime.context)
     assert reviewed.review_action is action
+    assert logs == [
+        {
+            "action": action.value,
+            "duration_ms": logs[0]["duration_ms"],
+            "event": "prospect_review_completed",
+            "log_level": "info",
+            "run_id": str(run.id),
+            "status": reviewed.status.value,
+        }
+    ]
 
 
 @pytest.mark.asyncio

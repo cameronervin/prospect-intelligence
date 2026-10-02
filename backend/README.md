@@ -18,6 +18,21 @@ uv run uvicorn app.main:create_app --factory --reload
 The API exposes `/health/live` and `/health/ready`. Readiness requires PostgreSQL and the fully
 started prospect runtime when prospect routes are enabled.
 
+## Operational logging
+
+The backend writes structured logs to stdout: readable console records by default and JSON when
+`TAKEHOME_LOG_JSON=true`. Application, standard-library, and Uvicorn error records share UTC
+timestamps, severity, logger, service, and environment fields. The application replaces Uvicorn's
+access log with one canonical `http_request_completed` event containing only the HTTP method,
+normalized route template, status, outcome, duration, and validated `x-correlation-id`. Successful
+health probes are omitted.
+
+Startup, authentication outcomes, prospect jobs, analysis and review completion, provider retries,
+readiness failures, and online-quality delivery failures add bounded operational fields. Logs never
+include request or response bodies, query strings, credentials, account or contact names, prompts,
+model output, provider payloads, or exception messages. LangSmith traces remain a separate evidence
+and observability channel with inputs, outputs, and metadata hidden by default.
+
 ## Prospect API
 
 Prospect routes require an HS256 demo bearer token from `POST /api/v1/auth/token`; tenant, rep,

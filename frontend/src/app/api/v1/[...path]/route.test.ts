@@ -24,6 +24,7 @@ describe("same-origin API proxy", () => {
           authorization: "Bearer browser-controlled",
           "x-tenant-id": "tenant-other",
           "x-rep-id": "other",
+          "x-correlation-id": "browser-request-123",
           cookie: "prospect_session=signed-token; secret=1",
         },
       }),
@@ -38,9 +39,12 @@ describe("same-origin API proxy", () => {
     expect(headers.get("x-tenant-id")).toBeNull();
     expect(headers.get("x-rep-id")).toBeNull();
     expect(headers.get("cookie")).toBeNull();
+    expect(headers.get("x-correlation-id")).toBe("browser-request-123");
+    expect(response.headers.get("x-correlation-id")).toBe("browser-request-123");
   });
 
   it("does not expose backend authentication endpoints to browser JavaScript", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetcher = vi.fn<typeof fetch>();
     vi.stubGlobal("fetch", fetcher);
 
@@ -52,9 +56,16 @@ describe("same-origin API proxy", () => {
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ error: { code: "not_found" } });
     expect(fetcher).not.toHaveBeenCalled();
+    const record = JSON.parse(String(warning.mock.calls[0]?.[0])) as Record<string, unknown>;
+    expect(record).toMatchObject({
+      event: "backend_proxy_path_rejected",
+      reason: "route_not_allowed",
+    });
+    expect(JSON.stringify(record)).not.toContain("auth/token");
   });
 
   it("returns the typed retryable envelope when the backend is unreachable", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockRejectedValue(new TypeError("ECONNREFUSED")));
 
     const response = await POST(
@@ -76,6 +87,14 @@ describe("same-origin API proxy", () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain("ECONNREFUSED");
+    const record = JSON.parse(String(error.mock.calls[0]?.[0])) as Record<string, unknown>;
+    expect(record).toMatchObject({
+      event: "backend_proxy_failed",
+      level: "error",
+      error_type: "TypeError",
+      operation: "prospect_api",
+    });
+    expect(JSON.stringify(record)).not.toContain("ECONNREFUSED");
   });
 
   it.each([[["..", "..", "docs"]], [["prospect-runs", "..", "..", "health"]], [["."]]])(

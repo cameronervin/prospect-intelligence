@@ -68,9 +68,11 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, error: Exception) -> JSONResponse:
+        route = request.scope.get("route")
+        route_template = getattr(route, "path", None)
         await logger.aerror(
             "unhandled_request_error",
-            path=request.url.path,
+            route=route_template if isinstance(route_template, str) else "unmatched",
             error_type=type(error).__name__,
         )
         return _response(

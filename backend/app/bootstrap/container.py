@@ -4,6 +4,8 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
+import structlog
+
 from app.features.authentication.public import AuthenticationService
 from app.features.prospect_intelligence.agents.compiler import build_prospect_agent_runtime
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectAgentRuntime
@@ -22,6 +24,8 @@ from app.features.prospect_intelligence.services.worker import (
 )
 from app.platform.config.settings import Settings
 from app.platform.llm import ManagedModelRuntime
+
+logger = structlog.get_logger(__name__)
 
 
 class DatabaseLifecycle(Protocol):
@@ -194,7 +198,12 @@ class Container:
             return False
         try:
             return await self.database.ping()
-        except Exception:
+        except Exception as error:
+            await logger.awarning(
+                "readiness_check_failed",
+                component="database",
+                error_type=type(error).__name__,
+            )
             return False
 
     async def start_resources(self) -> None:

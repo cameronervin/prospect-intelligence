@@ -44,6 +44,7 @@ from app.features.prospect_intelligence.services.agent_output import (
 )
 from app.features.prospect_intelligence.services.identity import persisted_auth
 from app.features.prospect_intelligence.services.lane_analysis import analyze_lanes
+from app.features.prospect_intelligence.services.observability import log_analysis_completed
 from app.features.prospect_intelligence.services.progress import RunProgressSink
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 
@@ -137,7 +138,7 @@ class ProspectAgentJobHandler:
             if self.quality_projector is not None
             else None
         )
-        await asyncio.to_thread(
+        completed = await asyncio.to_thread(
             self.service.submit_analysis,
             run.id,
             output,
@@ -147,6 +148,7 @@ class ProspectAgentJobHandler:
                 quality_projection.sampling if quality_projection is not None else None
             ),
         )
+        await log_analysis_completed(run, output, completed, pending_interrupt, started)
 
     def _tool_handlers(
         self,

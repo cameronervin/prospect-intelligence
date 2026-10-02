@@ -6,6 +6,10 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from typing import Protocol, cast
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 
 class DispatchResultLike(Protocol):
     attempted: int
@@ -26,14 +30,24 @@ class OnlineQualityDeliveryWorker:
 
     async def run_once(self) -> bool:
         result = cast(DispatchResultLike, await self._dispatch(limit=self._batch_size))
+        if result.failed:
+            await logger.awarning(
+                "online_quality_delivery_incomplete",
+                attempted=result.attempted,
+                failed=result.failed,
+            )
         return result.attempted > 0 and result.failed == 0
 
     async def run_forever(self, stop: asyncio.Event, *, poll_seconds: float) -> None:
         while not stop.is_set():
             try:
                 handled = await self.run_once()
-            except Exception:
+            except Exception as error:
                 handled = False
+                await logger.awarning(
+                    "online_quality_worker_iteration_failed",
+                    error_type=type(error).__name__,
+                )
             if handled:
                 continue
             with suppress(TimeoutError):

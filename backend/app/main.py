@@ -29,7 +29,12 @@ def create_app(
 
     configure_trace_privacy()
     resolved_settings = settings or Settings()
-    configure_logging(level=resolved_settings.log_level, json_output=resolved_settings.log_json)
+    configure_logging(
+        level=resolved_settings.log_level,
+        json_output=resolved_settings.log_json,
+        service=resolved_settings.service_name,
+        environment=resolved_settings.environment.value,
+    )
     docs_url = "/docs" if resolved_settings.docs_enabled else None
     openapi_url = "/openapi.json" if resolved_settings.docs_enabled else None
     app = FastAPI(

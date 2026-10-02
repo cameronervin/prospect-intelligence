@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
+from time import perf_counter
 from uuid import UUID, uuid4
 
 import structlog
@@ -44,6 +45,13 @@ class ProspectJobWorker:
         if claim is None:
             return False
 
+        started = perf_counter()
+        await logger.ainfo(
+            "prospect_job_started",
+            worker_id=self._worker_id,
+            run_id=str(claim.run_id),
+            attempt=claim.attempts,
+        )
         stop_heartbeat = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat(claim, stop_heartbeat))
         try:
@@ -58,13 +66,18 @@ class ProspectJobWorker:
             else:
                 error_code = "execution_failed"
                 retryable = True
+            retrying = retryable and claim.attempts < self._max_attempts
             # Exception text can carry model output or source data; log only its class.
-            await logger.awarning(
+            log = logger.awarning if retrying else logger.aerror
+            await log(
                 "prospect_run_execution_failed",
                 worker_id=self._worker_id,
                 run_id=str(claim.run_id),
+                attempt=claim.attempts,
                 error_code=error_code,
                 error_type=type(error).__name__,
+                retrying=retrying,
+                duration_ms=round((perf_counter() - started) * 1000, 3),
             )
             await asyncio.to_thread(
                 self._jobs.fail,
@@ -83,7 +96,16 @@ class ProspectJobWorker:
                 await logger.awarning(
                     "prospect_worker_claim_lost",
                     worker_id=self._worker_id,
+                    run_id=str(claim.run_id),
                     error_code="claim_not_active",
+                )
+            else:
+                await logger.ainfo(
+                    "prospect_job_completed",
+                    worker_id=self._worker_id,
+                    run_id=str(claim.run_id),
+                    attempt=claim.attempts,
+                    duration_ms=round((perf_counter() - started) * 1000, 3),
                 )
         finally:
             stop_heartbeat.set()
@@ -122,6 +144,12 @@ class ProspectJobWorker:
                     self._lease_duration,
                 )
                 if not renewed:
+                    await logger.awarning(
+                        "prospect_worker_heartbeat_lost",
+                        worker_id=self._worker_id,
+                        run_id=str(claim.run_id),
+                        attempt=claim.attempts,
+                    )
                     return
 
 
