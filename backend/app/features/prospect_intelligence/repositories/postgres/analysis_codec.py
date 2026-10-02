@@ -53,6 +53,7 @@ def serialize_analysis_output(output: AnalysisOutput | None) -> dict[str, object
             }
             for coverage in output.source_coverage
         ],
+        "evidence": [_serialize_evidence(item) for item in output.evidence],
     }
 
 
@@ -92,6 +93,10 @@ def deserialize_analysis_output(raw: Mapping[str, Any] | None) -> AnalysisOutput
                 mode=_optional_source_mode(item.get("mode")),
             )
             for item in raw["source_coverage"]
+        ),
+        evidence=tuple(
+            _deserialize_evidence(cast("Mapping[str, Any]", item))
+            for item in cast("list[object]", raw.get("evidence", []))
         ),
     )
 

@@ -11,6 +11,7 @@ from typing import TypedDict, cast
 from app.features.prospect_intelligence.public import PROSPECT_FILES, LaneAnalysisArtifact
 
 REQUIRED_ARTIFACTS = PROSPECT_FILES.required_artifacts()
+_REVIEW_ARTIFACTS = frozenset({PROSPECT_FILES.outreach_draft, PROSPECT_FILES.review_findings})
 _PROVENANCE_FIELDS = frozenset(
     {
         "source",
@@ -48,6 +49,7 @@ class FileContractObservation(TypedDict):
     invalid_schema: list[str]
     expected_count: int
     actual_count: int
+    review_required: bool
 
 
 class NumericEvidenceObservation(TypedDict):
@@ -121,6 +123,15 @@ def file_contract_observation(
         path: body for path, body in artifacts.items() if path not in allowed_non_artifact_paths
     }
     required = set(REQUIRED_ARTIFACTS)
+    review_required = True
+    try:
+        analysis = LaneAnalysisArtifact.from_json(inspected[PROSPECT_FILES.lane_fit_json])
+    except (KeyError, TypeError, ValueError):
+        pass
+    else:
+        review_required = analysis.verdict.value == "fit"
+        if not review_required:
+            required.difference_update(_REVIEW_ARTIFACTS)
     missing = sorted(path for path in required if not inspected.get(path, "").strip())
     unexpected = sorted(set(inspected).difference(required))
     invalid_json: list[str] = []
@@ -145,8 +156,9 @@ def file_contract_observation(
         "unexpected": unexpected,
         "invalid_json": sorted(invalid_json),
         "invalid_schema": sorted(invalid_schema),
-        "expected_count": len(REQUIRED_ARTIFACTS),
+        "expected_count": len(required),
         "actual_count": len(inspected),
+        "review_required": review_required,
     }
 
 

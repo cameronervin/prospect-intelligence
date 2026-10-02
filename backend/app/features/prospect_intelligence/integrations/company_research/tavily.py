@@ -90,6 +90,8 @@ class TavilySearchSource:
         if not isinstance(raw_results, list):
             return put_cached(context, key, self._unavailable("provider response was invalid"))
         results = cast(list[object], raw_results)
+        if not results:
+            return put_cached(context, key, self._unavailable("provider returned no results"))
 
         retrieved_at = self._now()
         signals: list[CompanySignal] = []

@@ -11,7 +11,12 @@ import httpx
 from ...contracts.models import SourceCoverage, SourceCoverageStatus, SourceMode
 from ...contracts.sources import CompanySignal, SourceCallContext, SourceResult
 from ..http import put_cached, request_with_retries
-from .sec_payloads import declared_agent, normalize_filings, select_company
+from .sec_payloads import (
+    declared_agent,
+    has_valid_company_entry,
+    normalize_filings,
+    select_company,
+)
 
 _SOURCE = "SEC EDGAR"
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -68,7 +73,13 @@ class SecEdgarSource:
             return put_cached(context, key, self._unavailable("provider request failed"))
         match = select_company(tickers, query)
         if match is None:
-            return put_cached(context, key, self._complete_empty())
+            if tickers and not has_valid_company_entry(tickers):
+                return put_cached(
+                    context,
+                    key,
+                    self._unavailable("provider response was invalid"),
+                )
+            return put_cached(context, key, self._unavailable("no matching company found"))
         cik, title = match
 
         submissions_url = f"{_SUBMISSIONS_ROOT}/CIK{cik:010d}.json"
@@ -125,16 +136,6 @@ class SecEdgarSource:
                 source=_SOURCE,
                 status=SourceCoverageStatus.UNAVAILABLE,
                 detail=detail,
-            ),
-            evidence=(),
-        )
-
-    @staticmethod
-    def _complete_empty() -> SourceResult[tuple[CompanySignal, ...]]:
-        return SourceResult(
-            value=(),
-            coverage=SourceCoverage(
-                mode=SourceMode.LIVE, source=_SOURCE, status=SourceCoverageStatus.COMPLETE
             ),
             evidence=(),
         )

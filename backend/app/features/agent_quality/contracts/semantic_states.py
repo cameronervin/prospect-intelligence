@@ -34,8 +34,8 @@ class ToneFitState(TypedDict):
 
 class SemanticObservations(TypedDict):
     claim_supported: list[ClaimSupportState]
-    internal_data_leak: DraftState
-    draft_matches_brief: BriefDraftState
+    internal_data_leak: DraftState | None
+    draft_matches_brief: BriefDraftState | None
     next_step: BriefState
     entity_resolution_ok: EntityResolutionState
     actionability: BriefState

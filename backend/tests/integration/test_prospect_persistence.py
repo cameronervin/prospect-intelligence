@@ -22,6 +22,7 @@ from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from app.bootstrap.exception_handlers import register_exception_handlers
+from app.features.authentication.models import MembershipRecord, UserRecord
 from app.features.authentication.public import build_authenticated_user
 from app.features.prospect_intelligence.agents.graphs import build_prospect_workflow
 from app.features.prospect_intelligence.agents.runtime import CompiledProspectAgentRuntime
@@ -31,8 +32,8 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectReviewDecision,
     ProspectRuntimeContext,
 )
+from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
 from app.features.prospect_intelligence.contracts.models import (
-    OutreachDraft,
     QualityEventType,
     RepPreference,
     ReviewAction,
@@ -47,6 +48,7 @@ from app.features.prospect_intelligence.domain.errors import InvalidRunTransitio
 from app.features.prospect_intelligence.domain.progress import SourceCalled, StepStarted
 from app.features.prospect_intelligence.domain.quality_events import build_quality_event
 from app.features.prospect_intelligence.models.records import (
+    AccountAssignmentRecord,
     ApprovalRecord,
     ProspectRunRecord,
     QualityEventOutboxRecord,
@@ -70,36 +72,50 @@ from app.features.prospect_intelligence.services.worker import (
 )
 from app.platform.agent_runtime import PostgresAgentRuntime
 from app.platform.config.settings import Settings
+from scripts.seed_demo_data import seed_demo_data
 from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import (
+    TEST_PASSWORD_HASH,
     auth_context,
     authentication_service,
     authentication_user,
     synthetic_prospect_sources,
 )
+from tests.prospect_repositories import outreach_v2
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 
 
 def _source_artifact(payload: Mapping[str, object], source: str) -> dict[str, str]:
+    provenance = {
+        "source": source,
+        "mode": "fixture",
+        "endpoint_or_artifact": f"fixture://{source}",
+        "retrieved_at": "2026-09-29T00:00:00+00:00",
+        "evidence_location": "record:1",
+        "source_version": "v1",
+    }
     content = {
         **payload,
         "coverage": {"source": source, "status": "complete"},
         "evidence": [
             {
                 "claim": "supported claim",
-                "provenance": {
-                    "source": source,
-                    "mode": "fixture",
-                    "endpoint_or_artifact": f"fixture://{source}",
-                    "retrieved_at": "2026-09-29T00:00:00+00:00",
-                    "evidence_location": "record:1",
-                    "source_version": "v1",
-                },
+                "citation_id": evidence_citation_id(provenance),
+                "provenance": provenance,
             }
         ],
     }
     return {"content": json.dumps(content), "encoding": "utf-8"}
+
+
+def test_source_artifact_helper_emits_matching_citation_id() -> None:
+    artifact = _source_artifact({}, "crm")
+    payload = cast("dict[str, object]", json.loads(artifact["content"]))
+    evidence = cast("list[dict[str, object]]", payload["evidence"])
+    provenance = cast("Mapping[str, object]", evidence[0]["provenance"])
+
+    assert evidence[0]["citation_id"] == evidence_citation_id(provenance)
 
 
 def _feature_graph_files() -> dict[str, dict[str, str]]:
@@ -131,8 +147,12 @@ def _feature_graph_files() -> dict[str, dict[str, str]]:
         },
         "/output/outreach_draft.md": {
             "content": (
-                "Subject: ATL to DAL freight conversation\n\n"
-                "Would you be open to comparing notes on your ATL-to-DAL freight needs?"
+                "Subject: A freight conversation for Acme Foods\n\n"
+                "Hi Jordan,\n\n"
+                "I'm Alex Morgan, and I represent an asset-based truckload carrier.\n\n"
+                "Acme Foods' distribution footprint and ATL-to-DAL freight activity may align "
+                "with lanes our team supports.\n\n"
+                "Would you be open to a brief conversation next week to compare network needs?"
             ),
             "encoding": "utf-8",
         },
@@ -163,6 +183,38 @@ def postgres_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     config = Config("alembic.ini")
     command.downgrade(config, "base")
     command.upgrade(config, "head")
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(url)))
+    seed_demo_data(store.engine)
+    with Session(store.engine) as session, session.begin():
+        for rep_id in ("rep-a", "rep-b"):
+            session.add(
+                UserRecord(
+                    subject=rep_id,
+                    email=f"{rep_id}@example.test",
+                    display_name=rep_id,
+                    password_hash=TEST_PASSWORD_HASH,
+                )
+            )
+        session.flush()
+        for rep_id in ("rep-a", "rep-b"):
+            session.add(
+                MembershipRecord(
+                    subject=rep_id,
+                    tenant_id="tenant-demo",
+                    rep_id=rep_id,
+                    roles=["sales_rep"],
+                )
+            )
+            for account_id in ("acme-foods", "northstar-retail"):
+                session.add(
+                    AccountAssignmentRecord(
+                        tenant_id="tenant-demo",
+                        subject=rep_id,
+                        rep_id=rep_id,
+                        account_id=account_id,
+                    )
+                )
+    store.close()
     yield url
     command.downgrade(config, "base")
 
@@ -183,6 +235,7 @@ def build_api(service: ProspectRunService) -> TestClient:
     register_exception_handlers(app)
     auth = authentication_service(
         authentication_user(
+            subject="usr_alex_morgan",
             email="alex.morgan@example.test",
             display_name="Alex Morgan",
             rep_id="alex-morgan",
@@ -299,9 +352,8 @@ def test_run_enqueue_restart_and_concurrent_edit_are_atomic_and_idempotent(
             run.id,
             ReviewAction.EDIT,
             tool_call_id=tool_call_id,
-            edited_outreach=OutreachDraft(
-                subject="Freight conversation",
-                body="Could we discuss your freight needs?",
+            edited_outreach=outreach_v2(
+                question="Could we discuss transportation priorities next week?"
             ),
         )
 
@@ -505,9 +557,8 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
         edited_run.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(edited_run.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we compare freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we compare transportation priorities next week?"
         ),
     )
     assert edited.status is RunStatus.COMPLETED
@@ -520,14 +571,13 @@ def test_rejection_replays_and_edit_persists_scoped_preference(postgres_url: str
         replacement_run.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(replacement_run.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we discuss your freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we discuss transportation priorities next week?"
         ),
     )
     preferences = service.get_preferences("tenant-demo", "rep-a")
     assert [preference.summary for preference in preferences] == [
-        "Tone: direct. Length: about 6 words. Format: generic invitation."
+        "Tone: consultative. Length: about 34 words. Format: route-specific invitation."
     ]
 
     PostgresPreferenceRepository(store).add(
@@ -591,24 +641,22 @@ def test_delayed_older_edit_cannot_replace_the_current_preference(postgres_url: 
         newer_run.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(newer_run.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we compare freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we compare transportation priorities next week?"
         ),
     )
     older_service.review_run(
         older_run.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(older_run.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we discuss your freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we discuss transportation priorities next week?"
         ),
     )
 
     assert [
         preference.summary for preference in newer_service.get_preferences("tenant-demo", "rep-a")
-    ] == ["Tone: comparative. Length: about 5 words. Format: generic invitation."]
+    ] == ["Tone: consultative. Length: about 34 words. Format: route-specific invitation."]
     store.close()
 
 
@@ -769,6 +817,10 @@ async def test_feature_review_interrupt_survives_postgres_restart(
     context = ProspectRuntimeContext(
         run_id=UUID("00000000-0000-0000-0000-000000000032"),
         auth=auth_context(tenant_id="tenant-demo", rep_id="rep-a"),
+        account_name="Acme Foods",
+        contact_name="Jordan Lee",
+        contact_role="Director of Transportation",
+        rep_display_name="Alex Morgan",
     )
     first_persistence = PostgresAgentRuntime(postgres_url)
     await first_persistence.start()
@@ -808,7 +860,13 @@ async def test_feature_review_interrupt_survives_postgres_restart(
     )
 
     assert completed.pending_interrupt is None
-    assert completed.completed_stages == ("prepare", "root", "finalize")
+    assert completed.completed_stages == (
+        "prepare",
+        "input_jev_guardrail",
+        "root",
+        "output_jev_guardrail",
+        "finalize",
+    )
     assert restarted_root.calls == 0
     await restarted_persistence.close()
 

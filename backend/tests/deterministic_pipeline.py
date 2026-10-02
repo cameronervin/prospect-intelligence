@@ -74,23 +74,21 @@ class DeterministicProspectPipeline:
         has_direct_match = bool(ranked)
         verdict = FitVerdict.FIT if has_direct_match else FitVerdict.NO_FIT
         top_lane = ranked[0] if ranked else None
-        outreach = (
-            OutreachDraft(
-                subject=(
-                    f"{top_lane.origin} to {top_lane.destination} freight conversation"
-                    if top_lane is not None
-                    else "Freight conversation"
-                ),
+        outreach = None
+        if verdict is FitVerdict.FIT:
+            assert top_lane is not None
+            outreach = OutreachDraft(
+                subject=f"A freight conversation for {running.account.name}",
                 body=(
-                    f"Would you be open to comparing notes on your {top_lane.origin}-to-"
-                    f"{top_lane.destination} freight needs?"
-                    if top_lane is not None
-                    else "Would you be open to comparing notes on your freight needs?"
+                    f"Hi {running.account.contact_name.split(maxsplit=1)[0]},\n\n"
+                    f"I'm {running.created_by_display_name}, and I represent an asset-based "
+                    "truckload carrier.\n\n"
+                    f"{running.account.name}' distribution footprint and {top_lane.origin}-to-"
+                    f"{top_lane.destination} freight activity may align with lanes our team "
+                    "supports.\n\n"
+                    "Would you be open to a brief conversation next week to compare network needs?"
                 ),
             )
-            if verdict is FitVerdict.FIT
-            else None
-        )
         self._service.submit_analysis(
             run_id,
             AnalysisOutput(
@@ -125,6 +123,7 @@ class DeterministicProspectPipeline:
                 ),
                 outreach=outreach,
                 source_coverage=(freight.coverage, network.coverage),
+                evidence=freight.evidence + network.evidence,
             ),
             claim_token=claim_token,
         )

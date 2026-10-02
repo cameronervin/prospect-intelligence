@@ -4,55 +4,12 @@ from dataclasses import replace
 from uuid import UUID
 
 from ..contracts.models import (
-    Account,
-    AccountRelationship,
     ProspectRun,
     QualityEvent,
     RepPreference,
     RunStatus,
     SendReceipt,
 )
-
-
-class InMemoryAccountRepository:
-    def __init__(self, accounts: tuple[Account, ...] = ()) -> None:
-        self._accounts = accounts
-
-    @classmethod
-    def seeded(cls) -> "InMemoryAccountRepository":
-        return cls(
-            (
-                Account(
-                    id="acme-foods",
-                    tenant_id="tenant-demo",
-                    name="Acme Foods",
-                    relationship=AccountRelationship.PROSPECT,
-                    industry="Food distribution",
-                    location="Dallas, TX",
-                ),
-                Account(
-                    id="northstar-retail",
-                    tenant_id="tenant-demo",
-                    name="Northstar Retail",
-                    relationship=AccountRelationship.CUSTOMER,
-                    industry="Retail",
-                    location="Atlanta, GA",
-                ),
-            )
-        )
-
-    def list_for_tenant(self, tenant_id: str) -> tuple[Account, ...]:
-        return tuple(account for account in self._accounts if account.tenant_id == tenant_id)
-
-    def get(self, tenant_id: str, account_id: str) -> Account | None:
-        return next(
-            (
-                account
-                for account in self._accounts
-                if account.tenant_id == tenant_id and account.id == account_id
-            ),
-            None,
-        )
 
 
 class InMemoryRunRepository:

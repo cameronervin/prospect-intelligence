@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.platform.api.errors import ErrorResponse
@@ -14,6 +14,10 @@ from .services.auth import AuthenticationError, AuthenticationService
 
 _BEARER = HTTPBearer(auto_error=False)
 AuthenticatedUser = Callable[..., SessionUser]
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, max-age=0",
+    "Pragma": "no-cache",
+}
 
 
 def session_user_response(user: SessionUser) -> SessionUserResponse:
@@ -48,6 +52,7 @@ def require_sales_rep(user: SessionUser) -> SessionUser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The authenticated user is not permitted to use this application.",
+            headers=_NO_CACHE_HEADERS,
         ) from error
     return user
 
@@ -62,7 +67,8 @@ def build_router(
     )
 
     @router.post("/token", response_model=TokenResponse)
-    def login(request: LoginRequest) -> TokenResponse:
+    def login(request: LoginRequest, response: Response) -> TokenResponse:
+        _disable_caching(response)
         try:
             session = service.login(str(request.email), request.password)
         except AuthenticationError as error:
@@ -76,8 +82,10 @@ def build_router(
 
     @router.post("/refresh", response_model=TokenResponse)
     def refresh(
+        response: Response,
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_BEARER)],
     ) -> TokenResponse:
+        _disable_caching(response)
         if credentials is None or credentials.scheme.casefold() != "bearer":
             raise _unauthorized()
         try:
@@ -93,16 +101,22 @@ def build_router(
 
     @router.get("/me", response_model=SessionResponse)
     def me(
+        response: Response,
         user: Annotated[SessionUser, Depends(authenticated_user)],
     ) -> SessionResponse:
+        _disable_caching(response)
         return SessionResponse(user=session_user_response(user))
 
     return router
+
+
+def _disable_caching(response: Response) -> None:
+    response.headers.update(_NO_CACHE_HEADERS)
 
 
 def _unauthorized(message: str = "A valid bearer token is required.") -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=message,
-        headers={"WWW-Authenticate": "Bearer"},
+        headers={"WWW-Authenticate": "Bearer", **_NO_CACHE_HEADERS},
     )

@@ -146,10 +146,10 @@ def build_container(
     quality_projector = (
         OnlineQualityProjector(
             evaluator_version=EVALUATOR_VERSION,
-            graph_revision="prospect-intelligence-v1",
+            graph_revision="prospect-intelligence-v2",
             rubric_version=RUBRIC_VERSION,
-            agent_version="prospect-intelligence-v1",
-            prompt_version="v1",
+            agent_version="prospect-intelligence-v2",
+            prompt_version="outreach-v2",
             evaluation_sample_rate=quality_config.evaluation_sample_rate,
         )
         if quality_config is not None

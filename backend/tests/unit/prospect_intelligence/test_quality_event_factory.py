@@ -10,13 +10,13 @@ from app.features.prospect_intelligence.contracts.models import (
 )
 from app.features.prospect_intelligence.domain.quality_events import build_quality_event
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.fakes import auth_context
+from tests.prospect_repositories import InMemoryAccountRepository
 
 
 def build_service() -> ProspectRunService:

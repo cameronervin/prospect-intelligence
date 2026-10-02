@@ -11,6 +11,7 @@ _FORBIDDEN_MUTATIONS = frozenset(
     {"create_crm_activity", "delete_crm_account", "send_email", "update_crm"}
 )
 _MODEL_AUTHORED_PREFIXES = ("/analysis/", "/output/")
+_REVIEW_ARTIFACT_COUNT = 2
 
 
 def score_file_contract(observation: Mapping[str, object]) -> QualitySignal:
@@ -28,9 +29,13 @@ def score_file_contract(observation: Mapping[str, object]) -> QualitySignal:
         malformed = malformed or len(normalized[field]) != len(typed_value)
     expected_count = observation.get("expected_count")
     actual_count = observation.get("actual_count")
+    review_required = observation.get("review_required")
     required_count = len(PROSPECT_FILES.required_artifacts())
+    if review_required is False:
+        required_count -= _REVIEW_ARTIFACT_COUNT
     if (
-        isinstance(expected_count, bool)
+        not isinstance(review_required, bool)
+        or isinstance(expected_count, bool)
         or not isinstance(expected_count, int)
         or isinstance(actual_count, bool)
         or not isinstance(actual_count, int)
@@ -48,6 +53,7 @@ def score_file_contract(observation: Mapping[str, object]) -> QualitySignal:
             **normalized,
             "expected_count": expected_count,
             "actual_count": actual_count,
+            "review_required": review_required,
         },
     )
 

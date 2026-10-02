@@ -90,6 +90,7 @@ class OnlineQualityProjector:
             files,
             artifacts,
             invalid_encoding=invalid_encoding,
+            review_required=analysis_output.verdict.value == "fit",
         )
         return QualityEvaluationProjection(
             sampling=sampling,
@@ -107,6 +108,7 @@ class OnlineQualityProjector:
                         events,
                         pending_review=pending_review(raw_state),
                         latency_seconds=safe_latency,
+                        review_required=analysis_output.verdict.value == "fit",
                     ),
                     injection_signal(
                         artifacts,

@@ -1,7 +1,9 @@
 """Map prospect-run domain state to the public HTTP response contract."""
 
-from ..contracts.models import FitVerdict, ProspectRun, ReviewAction, RunStatus
+from ..contracts.citations import evidence_citation_id
+from ..contracts.models import Evidence, FitVerdict, ProspectRun, ReviewAction, RunStatus
 from ..contracts.workflow import review_tool_call_id
+from ..domain.progress import COMPLETED_REVIEW_STAGE
 from ..schemas.api import (
     AccountSummary,
     BriefResponse,
@@ -34,7 +36,46 @@ def _step_responses(run: ProspectRun) -> list[RunStepResponse]:
     ]
 
 
-def run_response(run: ProspectRun) -> ProspectRunResponse:
+def _evidence_response(item: Evidence) -> EvidenceResponse:
+    provenance = item.provenance
+    return EvidenceResponse(
+        citation_id=evidence_citation_id(
+            {
+                "source": provenance.source,
+                "mode": provenance.mode.value,
+                "endpoint_or_artifact": provenance.endpoint_or_artifact,
+                "retrieved_at": provenance.retrieved_at.isoformat(),
+                "evidence_location": provenance.evidence_location,
+                "source_version": provenance.source_version,
+            }
+        ),
+        claim=item.claim,
+        source=provenance.source,
+        mode=provenance.mode,
+        endpoint_or_artifact=provenance.endpoint_or_artifact,
+        retrieved_at=provenance.retrieved_at.isoformat(),
+        evidence_location=provenance.evidence_location,
+        source_version=provenance.source_version,
+    )
+
+
+def _response_stage(run: ProspectRun, *, has_simulated_send_receipt: bool) -> str:
+    """Normalize only reviewed legacy fit rows that predate the terminal stage value."""
+
+    if (
+        run.stage == ""
+        and run.status is RunStatus.COMPLETED
+        and run.output is not None
+        and run.output.verdict is FitVerdict.FIT
+        and has_simulated_send_receipt
+    ):
+        return COMPLETED_REVIEW_STAGE
+    return run.stage
+
+
+def run_response(
+    run: ProspectRun, *, has_simulated_send_receipt: bool = False
+) -> ProspectRunResponse:
     account = run.account
     output = run.output
     coverage = (
@@ -71,18 +112,7 @@ def run_response(run: ProspectRun) -> ProspectRunResponse:
                     equipment_match=float(lane.equipment_match),
                     modeled_annual_revenue=float(lane.modeled_annual_revenue),
                     deadhead_miles_avoided=lane.deadhead_miles_avoided,
-                    evidence=[
-                        EvidenceResponse(
-                            claim=item.claim,
-                            source=item.provenance.source,
-                            mode=item.provenance.mode,
-                            endpoint_or_artifact=item.provenance.endpoint_or_artifact,
-                            retrieved_at=item.provenance.retrieved_at.isoformat(),
-                            evidence_location=item.provenance.evidence_location,
-                            source_version=item.provenance.source_version,
-                        )
-                        for item in scored_lane.evidence
-                    ],
+                    evidence=[_evidence_response(item) for item in scored_lane.evidence],
                 )
             )
         brief = BriefResponse(
@@ -104,10 +134,16 @@ def run_response(run: ProspectRun) -> ProspectRunResponse:
         id=run.id,
         account=AccountSummary(id=account.id, name=account.name),
         status=run.status,
-        stage=run.stage,
+        stage=_response_stage(
+            run,
+            has_simulated_send_receipt=has_simulated_send_receipt,
+        ),
         progress_percent=run.progress_percent,
         steps=_step_responses(run),
         source_coverage=coverage,
+        evidence=(
+            [_evidence_response(item) for item in output.evidence] if output is not None else []
+        ),
         verdict=verdict,
         brief=brief,
         outreach=outreach,

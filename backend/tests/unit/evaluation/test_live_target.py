@@ -94,7 +94,7 @@ async def test_live_target_uses_synthetic_handlers_and_hashes_rep_metadata(
                 cast("Mapping[str, object]", context.tool_handlers["get_crm_account"]({}))[
                     "account_name"
                 ]
-                == "Synthetic Core Shipper 01"
+                == "Synthetic Core Shipper One"
             )
             for name in (
                 "get_crm_account",
@@ -173,17 +173,21 @@ async def test_live_target_uses_synthetic_handlers_and_hashes_rep_metadata(
     target = ProspectLiveTarget(
         orchestrator_model=model,
         specialist_model=model,
-        prompt_revision="evidence-self-check-v2",
+        prompt_revision="outreach-v2",
         interpreter_enabled=False,
     )
     example = langsmith_examples()[0]
     assert example.inputs is not None
     outputs = await target.ainvoke(example.inputs)
 
-    assert build_options[0]["prompt_revision"] == "evidence-self-check-v2"
+    assert build_options[0]["prompt_revision"] == "outreach-v2"
     assert build_options[0]["interpreter_enabled"] is False
     expected_hash = hashlib.sha256(b"cam-40:core_01").hexdigest()
     assert contexts[0].rep_id == expected_hash
+    assert contexts[0].account_name == "Synthetic Core Shipper One"
+    assert contexts[0].contact_name == "Jordan Lee"
+    assert contexts[0].contact_role == "Logistics Manager"
+    assert contexts[0].rep_display_name == "Alex Morgan"
     assert outputs["run_metadata"] == {"rep_id_hash": expected_hash}
     assert trace_metadata == [{"rep_id_hash": expected_hash}]
     assert run_metadata == [{"rep_id_hash": expected_hash}]
@@ -203,6 +207,17 @@ async def test_live_target_rejects_incomplete_inputs() -> None:
     target = ProspectLiveTarget(orchestrator_model=model, specialist_model=model)
     with pytest.raises(ValueError, match="incomplete"):
         await target.ainvoke({"example_id": "core_01"})
+
+
+def test_live_target_rejects_archived_prompt_revisions() -> None:
+    model = FakeListChatModel(responses=["unused"])
+
+    with pytest.raises(ValueError, match="outreach-v2"):
+        ProspectLiveTarget(
+            orchestrator_model=model,
+            specialist_model=model,
+            prompt_revision="v1",
+        )
 
 
 @pytest.mark.asyncio

@@ -23,12 +23,14 @@ from ..contracts.models import (
 )
 from ..contracts.workflow import checkpoint_thread_id, review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
-from ..domain.outreach import validate_customer_outreach
+from ..domain.outreach import OutreachContext, validate_customer_outreach
 from ..domain.progress import analysis_outcome, complete_review, finish_analysis, initial_steps
 from ..domain.quality_events import build_quality_event
-from .identity import require_run_scope
+from .identity import require_run_scope, require_run_status
+from .outreach_scope import build_outreach_validation_context
 from .progress import RunProgressRecorder
 from .review_outcomes import prepare_review_outcome
+from .review_receipts import has_verified_simulated_receipt
 
 
 class ProspectRunService:
@@ -56,15 +58,25 @@ class ProspectRunService:
         return RunProgressRecorder(runs=self._runs, clock=self._clock)
 
     def list_accounts(self, auth: AuthContext) -> tuple[Account, ...]:
-        return self._accounts.list_for_tenant(auth.tenant_id)
+        return self._accounts.list_for_actor(auth.tenant_id, auth.subject, auth.rep_id)
+
+    def outreach_validation_context(self, run: ProspectRun) -> OutreachContext:
+        return build_outreach_validation_context(self._accounts, run)
 
     def create_run(
         self,
         auth: AuthContext,
         account_id: str,
+        *,
+        actor_display_name: str = "Sales representative",
     ) -> ProspectRun:
         tenant_id, rep_id = auth.tenant_id, auth.rep_id
-        account = self._accounts.get(tenant_id, account_id)
+        account = self._accounts.get_for_actor(
+            tenant_id,
+            auth.subject,
+            rep_id,
+            account_id,
+        )
         if account is None:
             raise LookupError(f"unknown account: {account_id}")
         now, run_id = self._clock(), self._id_factory()
@@ -82,19 +94,17 @@ class ProspectRunService:
                 "account_id": account.id,
                 "tenant_id": tenant_id,
                 "rep_id": rep_id,
-                "agent_version": "prospect-intelligence-v1",
-                "prompt_version": "v1",
+                "agent_version": "prospect-intelligence-v2",
+                "prompt_version": "outreach-v2",
             },
             thread_id=checkpoint_thread_id(tenant_id, rep_id, run_id),
             steps=initial_steps(),
             created_by_subject=auth.subject,
             created_by_roles=tuple(sorted(role.value for role in auth.roles)),
+            created_by_display_name=actor_display_name,
         )
         if self._workflows is not None:
-            self._workflows.create_run(
-                run,
-                build_quality_event(run, QualityEventType.RUN_CREATED),
-            )
+            self._workflows.create_run(run, build_quality_event(run, QualityEventType.RUN_CREATED))
         else:
             self._runs.add(run)
         return run
@@ -105,16 +115,15 @@ class ProspectRunService:
             raise LookupError(f"unknown run: {run_id}")
         return run
 
-    def get_scoped_run(
-        self,
-        run_id: UUID,
-        auth: AuthContext,
-    ) -> ProspectRun:
+    def get_scoped_run(self, run_id: UUID, auth: AuthContext) -> ProspectRun:
         return require_run_scope(self.get_run(run_id), auth)
+
+    def has_simulated_send_receipt(self, run: ProspectRun) -> bool:
+        return has_verified_simulated_receipt(self._receipts, run)
 
     def start_run(self, run_id: UUID, *, claim_token: UUID | None = None) -> ProspectRun:
         run = self.get_run(run_id)
-        self._require(run, RunStatus.QUEUED)
+        require_run_status(run, RunStatus.QUEUED)
         updated = replace(
             run,
             status=RunStatus.RUNNING,
@@ -135,9 +144,12 @@ class ProspectRunService:
         evaluation_sampling: EvaluationSamplingDecision | None = None,
     ) -> ProspectRun:
         run = self.get_run(run_id)
-        self._require(run, RunStatus.RUNNING)
+        require_run_status(run, RunStatus.RUNNING)
         if output.outreach is not None:
-            validate_customer_outreach(output.outreach)
+            validate_customer_outreach(
+                output.outreach,
+                self.outreach_validation_context(replace(run, output=output)),
+            )
         status, stage = analysis_outcome(output.verdict)
         now = self._clock()
         updated = replace(
@@ -179,9 +191,8 @@ class ProspectRunService:
                 raise InvalidRunTransitionError("review token has a different review decision")
             return run
         if self._workflows is not None:
-            if (
-                replayed := self._workflows.replay_review(run_id, action, tool_call_id)
-            ) is not None:
+            replayed = self._workflows.replay_review(run_id, action, tool_call_id)
+            if replayed is not None:
                 return replayed
         else:
             existing = self._receipts.get(run_id, tool_call_id)
@@ -189,20 +200,18 @@ class ProspectRunService:
                 if run.review_action is not action:
                     raise InvalidRunTransitionError("review token has a different review decision")
                 return replace(run, send_receipt_id=existing.id)
-        self._require(run, RunStatus.AWAITING_REVIEW)
+        require_run_status(run, RunStatus.AWAITING_REVIEW)
         now = self._clock()
         outcome = prepare_review_outcome(
             run,
             action,
             tool_call_id=tool_call_id,
             edited_outreach=edited_outreach,
+            outreach_scope=self.outreach_validation_context(run),
             now=now,
             id_factory=self._id_factory,
         )
-        outcome = replace(
-            outcome,
-            run=replace(outcome.run, steps=complete_review(run.steps, now)),
-        )
+        outcome = replace(outcome, run=replace(outcome.run, steps=complete_review(run.steps, now)))
         if self._workflows is not None:
             return self._workflows.commit_review(
                 original=run,
@@ -238,9 +247,3 @@ class ProspectRunService:
             return
         if not self._runs.save_claimed(run, claim_token, quality_event):
             raise InvalidRunTransitionError("worker claim is no longer active")
-
-    @staticmethod
-    def _require(run: ProspectRun, expected: RunStatus) -> None:
-        if run.status is not expected:
-            detail = f"expected {expected.value!r}, got {run.status.value!r}"
-            raise InvalidRunTransitionError(detail)

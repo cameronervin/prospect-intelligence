@@ -14,6 +14,7 @@ from ..contracts.review import MAX_REVIEW_ROUNDS
 
 MAX_STEP_ACTIVITY = 12
 REVIEW_STEP_KEY = "review"
+COMPLETED_REVIEW_STAGE = "Simulated send complete"
 
 AGENT_STEPS: tuple[tuple[str, str], ...] = (
     ("account-context", "Account context"),

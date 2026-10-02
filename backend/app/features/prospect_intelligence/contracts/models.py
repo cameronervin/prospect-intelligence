@@ -50,6 +50,8 @@ class Account:
     relationship: AccountRelationship
     industry: str
     location: str | None = None
+    contact_name: str = "Operations team"
+    contact_role: str = "Transportation contact"
 
 
 class RunStatus(StrEnum):
@@ -128,6 +130,7 @@ class AnalysisOutput:
     brief: ProspectBrief
     outreach: OutreachDraft | None
     source_coverage: tuple[SourceCoverage, ...]
+    evidence: tuple[Evidence, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +153,7 @@ class ProspectRun:
     updated_at: datetime
     created_by_subject: str
     created_by_roles: tuple[str, ...]
+    created_by_display_name: str = "Sales representative"
     output: AnalysisOutput | None = None
     reviewed_outreach: OutreachDraft | None = None
     review_action: ReviewAction | None = None
@@ -180,11 +184,7 @@ class RepPreference:
 
 @dataclass(frozen=True, slots=True)
 class QualityEvent:
-    """Sanitized event safe for online quality processing.
-
-    Raw tenant/rep identifiers, prompts, drafts, contacts, credentials, provider payloads,
-    and model outputs are deliberately absent from this cross-feature contract.
-    """
+    """Sanitized event safe for online quality processing and durable storage."""
 
     event_id: UUID
     run_id: UUID

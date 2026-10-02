@@ -3,7 +3,7 @@
 import asyncio
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
@@ -27,15 +27,14 @@ from .state import ProspectDeepAgentState
 
 def _json_safe(value: object) -> object:
     if isinstance(value, Evidence):
-        provenance = cast("dict[str, object]", asdict(value.provenance))
-        safe_provenance = cast("Mapping[str, object]", _json_safe(provenance))
+        safe_provenance = cast("Mapping[str, object]", _json_safe(value.provenance))
         return {
             "claim": value.claim,
             "citation_id": evidence_citation_id(safe_provenance),
             "provenance": safe_provenance,
         }
     if is_dataclass(value) and not isinstance(value, type):
-        return _json_safe(cast("dict[object, object]", asdict(value)))
+        return _json_safe({field.name: getattr(value, field.name) for field in fields(value)})
     if isinstance(value, Mapping):
         return {
             str(key): _json_safe(item)

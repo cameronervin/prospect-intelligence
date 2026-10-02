@@ -54,6 +54,33 @@ class _RootAgent:
         }
 
 
+class _NonReviewRootAgent(_RootAgent):
+    def __init__(self, verdict: str) -> None:
+        super().__init__()
+        self.verdict = verdict
+
+    async def ainvoke(
+        self,
+        state: Mapping[str, object],
+        config: Mapping[str, object] | None = None,
+        *,
+        context: ProspectRuntimeContext,
+    ) -> Mapping[str, object]:
+        del config, context
+        self.calls += 1
+        self.input_files = cast("Mapping[str, object]", state["files"])
+        files = completed_files()
+        files.pop("/output/outreach_draft.md")
+        files.pop("/review/findings.json")
+        files["/analysis/lane_fit.json"] = {
+            "content": (
+                f'{{"method_version":"lane_fit_v1","verdict":"{self.verdict}","top_lanes":[]}}'
+            ),
+            "encoding": "utf-8",
+        }
+        return {"files": {**self.input_files, **files}}
+
+
 def _root_runnable(
     root: _RootAgent,
 ) -> RunnableLambda[dict[str, object], Mapping[str, object]]:
@@ -131,6 +158,28 @@ async def test_outer_graph_only_prepares_invokes_root_and_finalizes_review() -> 
         "finalize",
     )
     assert resumed.raw["review_decision"] == {"action": "approve", "edited_draft": None}
+    assert root.calls == 1
+
+
+@pytest.mark.parametrize("verdict", ("no_fit", "needs_more_data"))
+@pytest.mark.asyncio
+async def test_non_fit_graph_completes_without_outreach_or_human_interrupt(verdict: str) -> None:
+    root = _NonReviewRootAgent(verdict)
+    compiled = build_prospect_workflow(_root_runnable(root)).compile(  # pyright: ignore[reportUnknownMemberType]
+        checkpointer=InMemorySaver(), store=InMemoryStore()
+    )
+    runtime = CompiledProspectAgentRuntime(cast(Any, compiled))
+    context = runtime_context()
+
+    result = await runtime.execute(
+        ProspectAgentInput(task_brief="Research Acme freight fit.", account_id="account-acme"),
+        context=context,
+    )
+
+    assert result.pending_interrupt is None
+    assert "complete_without_review" in result.completed_stages
+    assert "/output/outreach_draft.md" not in result.files
+    assert "/review/findings.json" not in result.files
     assert root.calls == 1
 
 
@@ -316,8 +365,14 @@ async def test_review_edit_is_allowlisted_and_persisted_without_replaying_root()
     )
 
     edited = OutreachDraft(
-        subject="Freight conversation",
-        body="Would you be open to comparing notes on your freight needs?",
+        subject="A freight conversation for Acme Foods",
+        body=(
+            "Hi Jordan,\n\n"
+            "I'm Alex Morgan, and I represent an asset-based truckload carrier.\n\n"
+            "Acme Foods' distribution footprint and ATL-to-DAL freight activity may align "
+            "with lanes our team supports.\n\n"
+            "Would you be open to comparing transportation needs next week?"
+        ),
     )
     result = await runtime.resume_review(
         ProspectReviewDecision(action=ReviewAction.EDIT, edited_draft=edited), context=context
@@ -325,8 +380,12 @@ async def test_review_edit_is_allowlisted_and_persisted_without_replaying_root()
 
     draft = cast(Mapping[str, object], result.files["/output/outreach_draft.md"])
     assert draft["content"] == (
-        "Subject: Freight conversation\n\n"
-        "Would you be open to comparing notes on your freight needs?"
+        "Subject: A freight conversation for Acme Foods\n\n"
+        "Hi Jordan,\n\n"
+        "I'm Alex Morgan, and I represent an asset-based truckload carrier.\n\n"
+        "Acme Foods' distribution footprint and ATL-to-DAL freight activity may align "
+        "with lanes our team supports.\n\n"
+        "Would you be open to comparing transportation needs next week?"
     )
     assert root.calls == 1
 

@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import asdict
 
+from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
 from app.features.prospect_intelligence.public import PROSPECT_FILES
 from evaluation.contracts.observations import (
     file_contract_observation,
@@ -13,6 +14,14 @@ from evaluation.datasets import generate_dataset
 
 
 def source_artifact(**values: object) -> str:
+    provenance = {
+        "source": "synthetic",
+        "mode": "fixture",
+        "endpoint_or_artifact": "fixture://synthetic",
+        "retrieved_at": "2026-09-29T00:00:00+00:00",
+        "evidence_location": "record:1",
+        "source_version": "v1",
+    }
     return json.dumps(
         {
             **values,
@@ -20,14 +29,8 @@ def source_artifact(**values: object) -> str:
             "evidence": [
                 {
                     "claim": "synthetic evidence",
-                    "provenance": {
-                        "source": "synthetic",
-                        "mode": "fixture",
-                        "endpoint_or_artifact": "fixture://synthetic",
-                        "retrieved_at": "2026-09-29T00:00:00+00:00",
-                        "evidence_location": "record:1",
-                        "source_version": "v1",
-                    },
+                    "citation_id": evidence_citation_id(provenance),
+                    "provenance": provenance,
                 }
             ],
         }

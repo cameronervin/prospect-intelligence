@@ -40,6 +40,7 @@ from app.features.prospect_intelligence.agents.specs import (
 )
 from app.features.prospect_intelligence.agents.tools import build_tool_registry
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
+from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from tests.fakes import auth_context
 from tests.unit.prospect_intelligence.agent_test_support import file_data, runtime_context
@@ -58,8 +59,14 @@ _PROVENANCE = {
 def _sourced_payload() -> str:
     return json.dumps(
         {
-            "coverage": {"status": "complete"},
-            "evidence": [{"claim": "sourced claim", "provenance": _PROVENANCE}],
+            "coverage": {"source": "crm", "status": "complete"},
+            "evidence": [
+                {
+                    "claim": "sourced claim",
+                    "citation_id": evidence_citation_id(_PROVENANCE),
+                    "provenance": _PROVENANCE,
+                }
+            ],
         }
     )
 
@@ -287,6 +294,26 @@ async def test_account_context_writes_its_artifacts_from_the_prompt_alone() -> N
     validate_agent_artifacts(_account_spec(), files)
     assert model.calls == 2
     assert model.reminders == []
+
+
+def test_artifact_guardrail_rejects_missing_citation_id() -> None:
+    payload = cast("dict[str, Any]", json.loads(_sourced_payload()))
+    evidence = cast("list[dict[str, object]]", payload["evidence"])
+    del evidence[0]["citation_id"]
+    files = {path: file_data(json.dumps(payload)) for path in _account_spec().required_artifacts}
+
+    with pytest.raises(ValueError, match="citation id"):
+        validate_agent_artifacts(_account_spec(), files)
+
+
+def test_artifact_guardrail_rejects_mismatched_citation_id() -> None:
+    payload = cast("dict[str, Any]", json.loads(_sourced_payload()))
+    evidence = cast("list[dict[str, object]]", payload["evidence"])
+    evidence[0]["citation_id"] = "ev_000000000000000000000000"
+    files = {path: file_data(json.dumps(payload)) for path in _account_spec().required_artifacts}
+
+    with pytest.raises(ValueError, match="citation id"):
+        validate_agent_artifacts(_account_spec(), files)
 
 
 @pytest.mark.asyncio

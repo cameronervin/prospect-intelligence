@@ -1,6 +1,7 @@
 """SQLAlchemy records owned by prospect intelligence."""
 
 from .records import (
+    AccountAssignmentRecord,
     AccountRecord,
     ApprovalRecord,
     ProspectRunRecord,
@@ -11,6 +12,7 @@ from .records import (
 )
 
 __all__ = [
+    "AccountAssignmentRecord",
     "AccountRecord",
     "ApprovalRecord",
     "ProspectRunRecord",

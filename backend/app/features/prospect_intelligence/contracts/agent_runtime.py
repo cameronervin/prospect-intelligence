@@ -44,6 +44,9 @@ class ProspectRuntimeContext:
     rep_preferences: tuple[str, ...] = ()
     progress: Callable[[ProgressSignal], Awaitable[None]] | None = None
     account_name: str = ""
+    contact_name: str = ""
+    contact_role: str = ""
+    rep_display_name: str = ""
     runtime_guardrail: RuntimeGuardrail | None = None
     injection_canary: Callable[[], str | None] | None = None
 

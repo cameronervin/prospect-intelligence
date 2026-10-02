@@ -14,7 +14,6 @@ from pydantic import SecretStr
 from app.bootstrap.container import Container, ProspectComponent, QualityComponent
 from app.bootstrap.wiring import build_container
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
@@ -30,6 +29,7 @@ from tests.fakes import (
     authentication_user,
     synthetic_prospect_sources,
 )
+from tests.prospect_repositories import InMemoryAccountRepository
 
 
 class _NoLiveModelRuntime:
@@ -205,6 +205,9 @@ async def test_production_container_shares_configured_evaluation_sample_rate(
     assert container.quality is not None
     projector = cast(Any, container.prospect.quality_projector)
     service = cast(Any, container.quality.provisioner)
+    assert projector._prompt_version == "outreach-v2"
+    assert projector._graph_revision == "prospect-intelligence-v2"
+    assert projector._agent_version == "prospect-intelligence-v2"
     assert projector._evaluation_sample_rate == 0.37
     assert service._config.evaluation_sample_rate == 0.37
 
@@ -272,6 +275,7 @@ def test_offline_demo_runs_to_human_review_without_credentials() -> None:
     assert polled.json()["brief"]["lanes"][0]["matched_loads_per_week"] == 31
     assert polled.json()["brief"]["recommended_next_step_code"] == "new_lane_pitch"
     assert polled.json()["brief"]["lanes"][0]["evidence"][0] == {
+        "citation_id": "ev_f3760d20490e8ef6b174dc4e",
         "claim": "Synthetic observed shipper lanes and facilities",
         "source": "GenLogs fixture",
         "mode": "fixture",

@@ -66,10 +66,15 @@ def test_runner_uses_local_sequential_langsmith_evaluation_and_writes_report(
     assert calls[0]["num_repetitions"] == 3
     assert calls[0]["disable_evaluator_tracing"] is True
     assert calls[0]["client"] is not None
+    metadata = cast("Mapping[str, object]", calls[0]["metadata"])
+    assert metadata["graph_revision"] == "prospect-compiled-script-v2"
+    assert metadata["prompt_revision"] == "outreach-v2"
     report = report_path.read_text()
     assert "# CAM-38 Offline Evaluation Report" in report
     assert "raw trace" not in report.casefold()
     assert "task_brief" not in report
+    assert "prospect-compiled-script-v2" in report
+    assert "outreach-v2" in report
 
 
 def test_runner_fails_closed_when_a_required_metric_is_missing(tmp_path: Path) -> None:

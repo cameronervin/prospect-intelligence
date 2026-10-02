@@ -4,7 +4,17 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +32,41 @@ class AccountRecord(Base):
     relationship: Mapped[str] = mapped_column(String(32))
     industry: Mapped[str] = mapped_column(String(200))
     location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    contact_name: Mapped[str] = mapped_column(String(200))
+    contact_role: Mapped[str] = mapped_column(String(200))
+
+
+class AccountAssignmentRecord(Base):
+    """An account explicitly visible to one verified tenant/subject/rep actor."""
+
+    __tablename__ = "prospect_account_assignments"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "account_id"],
+            ["prospect_accounts.tenant_id", "prospect_accounts.account_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "subject", "rep_id"],
+            [
+                "auth_memberships.tenant_id",
+                "auth_memberships.subject",
+                "auth_memberships.rep_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_prospect_account_assignments_actor",
+            "tenant_id",
+            "subject",
+            "rep_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(200), primary_key=True)
+    rep_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(100), primary_key=True)
 
 
 class ProspectRunRecord(Base):
@@ -33,6 +78,7 @@ class ProspectRunRecord(Base):
     rep_id: Mapped[str] = mapped_column(String(100))
     created_by_subject: Mapped[str] = mapped_column(String(200))
     created_by_roles: Mapped[list[str]] = mapped_column(JSONB)
+    created_by_display_name: Mapped[str] = mapped_column(String(200))
     thread_id: Mapped[str] = mapped_column(String(400), unique=True)
     account_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(32), index=True)

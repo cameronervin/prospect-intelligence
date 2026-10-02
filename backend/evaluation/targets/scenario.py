@@ -7,6 +7,8 @@ from decimal import Decimal, InvalidOperation
 from typing import cast
 
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from app.features.prospect_intelligence.contracts.models import OutreachDraft
+from app.features.prospect_intelligence.domain.outreach import validate_customer_outreach
 from app.features.prospect_intelligence.public import (
     FitVerdict,
     LaneFitResult,
@@ -15,6 +17,7 @@ from app.features.prospect_intelligence.public import (
     rank_lane_fits,
 )
 from evaluation.contracts.semantic import citation_id
+from evaluation.targets.scenario_identity import synthetic_v2_identity
 
 _COVERAGE_STATES = frozenset({"complete", "degraded", "unavailable"})
 
@@ -133,7 +136,9 @@ def _runtime_lane_fit(
 
 def scenario_artifacts(inputs: Mapping[str, object]) -> dict[str, str]:
     payload = cast("Mapping[str, object]", inputs["input_payload"])
-    crm = cast("Mapping[str, object]", payload["crm"])
+    identity = synthetic_v2_identity(inputs)
+    raw_crm = cast("Mapping[str, object]", payload["crm"])
+    crm = {**raw_crm, "account_name": identity.account_name}
     freight = cast("Mapping[str, object]", payload["genlogs"])
     network = cast("Mapping[str, object]", payload["carrier_network"])
     market = cast("Mapping[str, object]", payload["faf_market"])
@@ -186,7 +191,7 @@ def scenario_artifacts(inputs: Mapping[str, object]) -> dict[str, str]:
         "## Recommended next step\n"
         f"{next_step}\n"
     )
-    return {
+    artifacts = {
         PROSPECT_FILES.account_context: _source_artifact(crm, source="crm"),
         PROSPECT_FILES.network_context: _source_artifact(network, source="network"),
         PROSPECT_FILES.freight_research: _source_artifact(freight, source="genlogs"),
@@ -199,8 +204,23 @@ def scenario_artifacts(inputs: Mapping[str, object]) -> dict[str, str]:
         ),
         PROSPECT_FILES.lane_fit_markdown: "\n".join(lane_lines) + "\n",
         PROSPECT_FILES.sales_brief: brief,
-        PROSPECT_FILES.outreach_draft: (
-            "Subject: Freight conversation\n\n"
-            "Would you be open to comparing notes on your freight needs?"
-        ),
     }
+    if lanes:
+        top = lanes[0]
+        draft = OutreachDraft(
+            subject=f"{identity.account_name} freight conversation",
+            body=(
+                f"Hi {identity.contact_name.split(maxsplit=1)[0]},\n\n"
+                f"I'm {identity.rep_display_name}, and I represent an asset-based truckload "
+                "carrier.\n\n"
+                f"{identity.account_name} may benefit from support on the "
+                f"{top['origin']}-to-{top['destination']} lane.\n\n"
+                "Would comparing upcoming freight priorities be useful?"
+            ),
+        )
+        validate_customer_outreach(
+            draft,
+            identity.outreach_context(str(top["origin"]), str(top["destination"])),
+        )
+        artifacts[PROSPECT_FILES.outreach_draft] = f"Subject: {draft.subject}\n\n{draft.body}"
+    return artifacts

@@ -37,14 +37,17 @@ _NUMERIC_EVIDENCE_PATHS = tuple(
     for path in PROSPECT_FILES.required_artifacts()
     if path.endswith(".json") and path.startswith(("/context/", "/research/", "/analysis/"))
 )
-_REQUIRED_STAGES = (
+_RESEARCH_STAGES = (
     "account_context.completed",
     "external_research.completed",
     "lane_analyst.completed",
+)
+_REVIEW_STAGES = (
     "outreach_drafter.completed",
     "quality_review.completed",
     "review.requested",
 )
+_REQUIRED_STAGES = (*_RESEARCH_STAGES, *_REVIEW_STAGES)
 _REPEATABLE = frozenset({"outreach_drafter.completed", "quality_review.completed"})
 _MAX_REVIEWS = 3
 
@@ -168,15 +171,26 @@ def lane_reference_signals(
 
 
 def trajectory_signal(
-    events: Sequence[str], *, pending_review: bool, latency_seconds: float
+    events: Sequence[str],
+    *,
+    pending_review: bool,
+    latency_seconds: float,
+    review_required: bool = True,
 ) -> QualitySignal:
     positions: dict[str, int] = {}
     for index, event in enumerate(events):
         positions.setdefault(event, index)
     violations: list[str] = []
-    missing = [event for event in _REQUIRED_STAGES if event not in positions]
+    required_stages = _REQUIRED_STAGES if review_required else _RESEARCH_STAGES
+    missing = [event for event in required_stages if event not in positions]
     if missing:
         violations.append(f"missing stages: {', '.join(missing)}")
+    if not review_required:
+        unexpected = [event for event in _REVIEW_STAGES if event in positions]
+        if unexpected:
+            violations.append(f"unexpected non-fit stages: {', '.join(unexpected)}")
+        if pending_review:
+            violations.append("non-fit analysis cannot remain pending review")
     for event in _REQUIRED_STAGES:
         if event not in _REPEATABLE and events.count(event) > 1:
             violations.append(f"stage repeated: {event}")

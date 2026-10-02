@@ -41,6 +41,18 @@ def select_company(payload: Mapping[str, object], company_name: str) -> tuple[in
     return min(candidates, key=lambda item: (len(item[1]), item[1])) if candidates else None
 
 
+def has_valid_company_entry(payload: Mapping[str, object]) -> bool:
+    for raw in payload.values():
+        if not isinstance(raw, dict):
+            continue
+        item = cast(dict[str, object], raw)
+        if normalize_text(item.get("title"), limit=200) is not None and isinstance(
+            item.get("cik_str"), int
+        ):
+            return True
+    return False
+
+
 def normalize_filings(
     payload: Mapping[str, object], cik: int, fallback_title: str, retrieved_at: datetime
 ) -> SourceResult[tuple[CompanySignal, ...]] | None:

@@ -30,12 +30,11 @@ from evaluation.contracts.snapshot import decode_artifacts, normalize_snapshot
 from evaluation.datasets import langsmith_examples
 from evaluation.targets.prospect_graph import tool_call_names, trajectory_events
 from evaluation.targets.scenario import scenario_artifacts
+from evaluation.targets.scenario_identity import synthetic_v2_identity
 
 
 @dataclass(frozen=True, slots=True)
 class ModelTokenPrice:
-    """Standard USD rates per million tokens for one model."""
-
     input: float
     cached_input: float
     output: float
@@ -128,12 +127,12 @@ class ProspectLiveTarget:
         orchestrator_model: BaseChatModel,
         specialist_model: BaseChatModel,
         *,
-        prompt_revision: str = "v1",
+        prompt_revision: str = "outreach-v2",
         interpreter_enabled: bool = True,
         prices: Mapping[str, ModelTokenPrice] = STANDARD_MODEL_PRICES,
     ) -> None:
-        if prompt_revision not in ("v1", "evidence-self-check-v2"):
-            raise ValueError(f"unsupported prompt revision: {prompt_revision}")
+        if prompt_revision != "outreach-v2":
+            raise ValueError("active live targets require prompt revision outreach-v2")
         self._runtime = build_prospect_agent_runtime(
             orchestrator_model=orchestrator_model,
             specialist_model=specialist_model,
@@ -171,6 +170,7 @@ class ProspectLiveTarget:
         ):
             raise ValueError("live target identifiers must be non-empty strings")
         payload = _mapping(inputs["input_payload"], field="input_payload")
+        identity = synthetic_v2_identity(inputs)
         rep_id_hash = hashlib.sha256(f"cam-40:{example_id}".encode()).hexdigest()
         context = ProspectRuntimeContext(
             run_id=uuid4(),
@@ -181,6 +181,10 @@ class ProspectLiveTarget:
                 roles=frozenset({UserRole.SALES_REP}),
             ),
             tool_handlers=_handlers(payload),
+            account_name=identity.account_name,
+            contact_name=identity.contact_name,
+            contact_role=identity.contact_role,
+            rep_display_name=identity.rep_display_name,
         )
         set_run_metadata(rep_id_hash=rep_id_hash)
         started = perf_counter()
@@ -192,7 +196,7 @@ class ProspectLiveTarget:
                 result = await self._runtime.execute(
                     ProspectAgentInput(
                         account_id=cast(str, account_id),
-                        task_brief=f"Evaluate synthetic freight fit for {account_name}.",
+                        task_brief="Evaluate the selected synthetic account's freight fit.",
                     ),
                     context=context,
                 )
@@ -210,7 +214,7 @@ class ProspectLiveTarget:
                     tool_calls=tool_call_names(result.raw),
                     pending_review=result.pending_interrupt == "send_outreach",
                     latency_seconds=latency_seconds,
-                    account_name=cast(str, account_name),
+                    account_name=identity.account_name,
                     semantic_source_artifacts={
                         path: body
                         for path, body in scenario_artifacts({"input_payload": payload}).items()

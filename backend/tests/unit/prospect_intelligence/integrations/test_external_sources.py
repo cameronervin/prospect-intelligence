@@ -214,6 +214,34 @@ def test_tavily_missing_key_and_malformed_results_are_disclosed() -> None:
     assert malformed.coverage.detail == "provider response contained no valid results"
 
 
+def test_tavily_empty_success_is_cached_unavailable_without_evidence() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"results": []}, request=request)
+
+    source = TavilySearchSource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        api_key="synthetic-key",
+        now=lambda: NOW,
+        sleeper=lambda _: None,
+    )
+    context = source_context()
+
+    first = source.search_company(context, "Acme Foods")
+    second = source.search_company(context, " Acme Foods ")
+
+    assert first is second
+    assert first.value is None
+    assert first.coverage.status is SourceCoverageStatus.UNAVAILABLE
+    assert first.coverage.detail == "provider returned no results"
+    assert first.evidence == ()
+    assert calls == 1
+
+
 def test_tavily_cache_does_not_cross_run_boundary() -> None:
     calls = 0
 
@@ -320,6 +348,60 @@ def test_sec_rejects_blank_company_name_without_provider_io() -> None:
 
     assert result.value is None
     assert result.coverage.detail == "company name is required"
+
+
+def test_sec_no_company_match_is_cached_unavailable_without_evidence() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={"0": {"cik_str": 1234, "title": "Different Company Inc"}},
+            request=request,
+        )
+
+    source = SecEdgarSource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        user_agent="Freight Prospect research@example.com",
+        now=lambda: NOW,
+        sleeper=lambda _: None,
+    )
+    context = source_context()
+
+    first = source.search_company(context, "Acme Foods")
+    second = source.search_company(context, " Acme Foods ")
+
+    assert first is second
+    assert first.value is None
+    assert first.coverage.status is SourceCoverageStatus.UNAVAILABLE
+    assert first.coverage.detail == "no matching company found"
+    assert first.evidence == ()
+    assert calls == 1
+
+
+def test_sec_nonempty_malformed_company_index_is_not_treated_as_no_match() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"0": {"title": "Acme Foods Inc", "cik_str": "not-an-integer"}},
+            request=request,
+        )
+
+    result = SecEdgarSource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        user_agent="Freight Prospect research@example.com",
+        now=lambda: NOW,
+        sleeper=lambda _: None,
+    ).search_company(source_context(), "Acme Foods")
+
+    assert result.value is None
+    assert result.coverage.status is SourceCoverageStatus.UNAVAILABLE
+    assert result.coverage.detail == "provider response was invalid"
+    assert result.evidence == ()
 
 
 def test_sec_discloses_nonempty_malformed_filing_rows() -> None:

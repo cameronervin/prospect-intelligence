@@ -76,12 +76,19 @@ class ProspectAgentReviewHandler:
         if action is ReviewAction.EDIT:
             if edited_outreach is None:
                 raise InvalidRunTransitionError("edited outreach is required for an edit decision")
-            validate_customer_outreach(edited_outreach)
+            validate_customer_outreach(
+                edited_outreach,
+                self.service.outreach_validation_context(run),
+            )
 
         decision = ProspectReviewDecision(action=action, edited_draft=edited_outreach)
         context = ProspectRuntimeContext(
             run_id=run.id,
             auth=actor,
+            account_name=run.account.name,
+            contact_name=run.account.contact_name,
+            contact_role=run.account.contact_role,
+            rep_display_name=run.created_by_display_name,
         )
         checkpoint = await self.runtime.checkpoint(context=context)
         if checkpoint.pending_interrupt is not None:

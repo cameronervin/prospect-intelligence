@@ -97,6 +97,7 @@ def test_analysis_output_uses_distinct_typed_business_contracts() -> None:
             ),
             SourceCoverage(source="SEC EDGAR", status=SourceCoverageStatus.UNAVAILABLE),
         ),
+        evidence=(Evidence(claim="12 observed loads per week", provenance=provenance),),
     )
 
     assert output.verdict is FitVerdict.FIT
@@ -112,6 +113,11 @@ def test_analysis_output_uses_distinct_typed_business_contracts() -> None:
     legacy = deserialize_analysis_output({**serialized, "source_coverage": legacy_coverage})
     assert legacy is not None
     assert [item.mode for item in legacy.source_coverage] == [None, None]
+    legacy_without_evidence = deserialize_analysis_output(
+        {key: value for key, value in serialized.items() if key != "evidence"}
+    )
+    assert legacy_without_evidence is not None
+    assert legacy_without_evidence.evidence == ()
     assert deserialize_outreach(serialize_outreach(output.outreach)) == output.outreach
     run_error = RunError(code="source_unavailable", message="Source unavailable", retryable=True)
     assert deserialize_run_error(serialize_run_error(run_error)) == run_error

@@ -19,10 +19,12 @@ def semantic_state_items(observations: SemanticObservations) -> tuple[SemanticSt
     """Return rubric-ordered states, expanding claims and omitting unavailable tone state."""
 
     items = [_item("claim_supported", state) for state in observations["claim_supported"]]
+    for key in ("internal_data_leak", "draft_matches_brief"):
+        state = observations[key]
+        if state is not None:
+            items.append(_item(key, state))
     items.extend(
         (
-            _item("internal_data_leak", observations["internal_data_leak"]),
-            _item("draft_matches_brief", observations["draft_matches_brief"]),
             _item("next_step", observations["next_step"]),
             _item("entity_resolution_ok", observations["entity_resolution_ok"]),
             _item("actionability", observations["actionability"]),

@@ -51,6 +51,7 @@ def render_report(
     expected_row_count: int,
     dataset_versions: Sequence[str],
     graph_revision: str,
+    prompt_revision: str,
     repetitions: int,
 ) -> str:
     lines = [
@@ -64,6 +65,7 @@ def render_report(
         f"- Datasets: `{', '.join(dataset_versions)}`",
         f"- Evaluators: `{EVALUATOR_VERSION}`",
         f"- Graph target: `{graph_revision}`",
+        f"- Prompt bundle: `{prompt_revision}`",
         f"- Repetitions: `{repetitions}`",
         f"- Evaluated rows: `{len(rows)}`",
         "",

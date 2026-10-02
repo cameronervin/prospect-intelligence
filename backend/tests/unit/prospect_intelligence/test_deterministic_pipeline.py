@@ -15,7 +15,6 @@ from app.features.prospect_intelligence.contracts.sources import (
 from app.features.prospect_intelligence.domain.models import NetworkLane
 from app.features.prospect_intelligence.fixtures.synthetic import SyntheticSourceCatalog
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
@@ -23,6 +22,7 @@ from app.features.prospect_intelligence.repositories.memory import (
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import auth_context, synthetic_prospect_sources
+from tests.prospect_repositories import InMemoryAccountRepository
 
 
 class _DuplicateNetworkSource:
@@ -75,13 +75,10 @@ def test_pipeline_produces_reviewable_fit_from_seeded_evidence() -> None:
     assert completed.output.brief.lanes[0].evidence[0].provenance.mode.value == "fixture"
     top_lane = completed.output.brief.lanes[0].score
     assert completed.output.outreach is not None
-    assert completed.output.outreach.subject == (
-        f"{top_lane.origin} to {top_lane.destination} freight conversation"
-    )
-    assert completed.output.outreach.body == (
-        f"Would you be open to comparing notes on your {top_lane.origin}-to-"
-        f"{top_lane.destination} freight needs?"
-    )
+    assert completed.output.outreach.subject == "A freight conversation for Acme Foods"
+    assert "Hi Jordan," in completed.output.outreach.body
+    assert f"{top_lane.origin}-to-{top_lane.destination}" in completed.output.outreach.body
+    assert completed.output.outreach.body.count("\n\n") == 3
 
 
 def test_pipeline_returns_needs_more_data_without_lane_evidence() -> None:

@@ -3,7 +3,6 @@
 import pytest
 
 from app.features.prospect_intelligence.contracts.models import OutreachDraft
-from app.features.prospect_intelligence.domain.errors import UnsafeOutreachError
 from app.features.prospect_intelligence.domain.preference_learning import (
     canonical_outreach_text,
     normalized_edit_distance,
@@ -84,11 +83,13 @@ def test_preference_summary_contains_only_the_bounded_taxonomy(
     assert "DAL" not in summary
 
 
-def test_preference_summary_rejects_unapproved_copy_instead_of_retaining_it() -> None:
+def test_preference_summary_never_retains_customer_copy() -> None:
     outreach = OutreachDraft(
         subject="Freight conversation",
         body="Could we discuss Acme Foods freight needs?",
     )
 
-    with pytest.raises(UnsafeOutreachError, match="internal-only"):
-        preference_summary(outreach)
+    summary = preference_summary(outreach)
+
+    assert "Acme Foods" not in summary
+    assert outreach.body not in summary

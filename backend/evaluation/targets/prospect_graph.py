@@ -23,6 +23,7 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from evaluation.contracts.snapshot import decode_artifacts, normalize_snapshot
 from evaluation.targets.scenario import scenario_artifacts
+from evaluation.targets.scenario_identity import synthetic_v2_identity
 from evaluation.targets.scripted_model import ScenarioScriptedModel
 
 __all__ = [
@@ -96,7 +97,25 @@ class ProspectOfflineTarget:
         if not isinstance(inputs["input_payload"], Mapping):
             raise ValueError("offline target input_payload must be an object")
 
-        scripted = ScenarioScriptedModel(artifacts=scenario_artifacts(inputs))
+        identity = synthetic_v2_identity(inputs)
+        artifacts = scenario_artifacts(inputs)
+        analysis = cast(
+            "dict[str, object]",
+            json.loads(artifacts[PROSPECT_FILES.lane_fit_json]),
+        )
+        raw_lanes = analysis.get("top_lanes", [])
+        if not isinstance(raw_lanes, list):
+            raise ValueError("offline target lane analysis is invalid")
+        outreach_context = None
+        if raw_lanes:
+            lane = cast("Mapping[str, object]", raw_lanes[0])
+            outreach_context = identity.outreach_context(
+                str(lane["origin"]), str(lane["destination"])
+            )
+        scripted = ScenarioScriptedModel(
+            artifacts=artifacts,
+            outreach_context=outreach_context,
+        )
         runtime = build_prospect_agent_runtime(
             orchestrator_model=scripted,
             specialist_model=scripted,
@@ -111,13 +130,17 @@ class ProspectOfflineTarget:
                 rep_id="runner",
                 roles=frozenset({UserRole.SALES_REP}),
             ),
+            account_name=identity.account_name,
+            contact_name=identity.contact_name,
+            contact_role=identity.contact_role,
+            rep_display_name=identity.rep_display_name,
         )
         started = perf_counter()
         with tracing_context(enabled=False):
             result = await runtime.execute(
                 ProspectAgentInput(
                     account_id=cast(str, account_id),
-                    task_brief=f"Evaluate synthetic freight fit for {account_name}.",
+                    task_brief="Evaluate the selected synthetic account's freight fit.",
                 ),
                 context=context,
             )
@@ -134,6 +157,6 @@ class ProspectOfflineTarget:
             tool_calls=tool_calls,
             pending_review=result.pending_interrupt == "send_outreach",
             latency_seconds=perf_counter() - started,
-            account_name=cast(str, account_name),
+            account_name=identity.account_name,
             rep_preferences=context.rep_preferences,
         ).to_outputs()

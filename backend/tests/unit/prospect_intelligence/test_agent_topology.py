@@ -42,10 +42,9 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectAgentInput,
     ProspectRuntimeContext,
 )
-from app.features.prospect_intelligence.contracts.models import OutreachDraft, ReviewAction
+from app.features.prospect_intelligence.contracts.models import ReviewAction
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
@@ -53,6 +52,7 @@ from app.features.prospect_intelligence.repositories.memory import (
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import auth_context, synthetic_prospect_sources
+from tests.prospect_repositories import InMemoryAccountRepository, outreach_v2
 from tests.unit.prospect_intelligence.agent_test_support import (
     TrajectoryModel,
     completed_files,
@@ -350,9 +350,8 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
         learned_run.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(learned_run.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we compare freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we compare transportation priorities next week?"
         ),
     )
     later_run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
@@ -364,6 +363,10 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
         run_id=later_run.id,
         auth=auth_context(tenant_id=later_run.tenant_id, rep_id=later_run.rep_id),
         rep_preferences=learned_preferences,
+        account_name=later_run.account.name,
+        contact_name=later_run.account.contact_name,
+        contact_role=later_run.account.contact_role,
+        rep_display_name="Alex Morgan",
     )
     model = TrajectoryModel()
     store = InMemoryStore()
@@ -403,6 +406,14 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
     assert "/output/brief.md" in model.system_prompts["outreach-drafter"][0]
     assert "/analysis/lane_fit.json" in model.system_prompts["quality-reviewer"][0]
     assert "/output/outreach_draft.md" in model.system_prompts["quality-reviewer"][0]
+    assert "Selected account: Acme Foods" in model.system_prompts["outreach-drafter"][0]
+    assert "Selected fictional contact: Jordan Lee" in model.system_prompts["outreach-drafter"][0]
+    assert "Initiating representative: Alex Morgan" in model.system_prompts["outreach-drafter"][0]
+    assert all(
+        "Northstar Retail" not in prompt
+        for prompts in model.system_prompts.values()
+        for prompt in prompts
+    )
     specialist_tool_sets = [
         names for names in model.bound_tool_sets if "send_outreach" not in names
     ]
@@ -430,7 +441,7 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
     memory_result = await cast(Any, compiled_memory).ainvoke({}, context=context)
     assert memory_result["content"] == (
         "# Rep preferences\n\n"
-        "- Tone: comparative. Length: about 5 words. Format: generic invitation.\n"
+        "- Tone: consultative. Length: about 34 words. Format: route-specific invitation.\n"
     )
 
 

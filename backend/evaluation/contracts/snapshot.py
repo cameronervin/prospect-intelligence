@@ -130,6 +130,7 @@ def normalize_snapshot(
             account_name=account_name,
             rep_preferences=rep_preferences,
             injection_canary=injection_canary,
+            require_outreach=analysis.get("verdict") == "fit",
         ),
         analysis=analysis,
         verdict=verdict if isinstance(verdict, str) else "",

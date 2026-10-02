@@ -16,6 +16,7 @@ def evaluate_trajectory(
         snapshot_strings(outputs.get("trajectory_events")),
         pending_review=outputs.get("pending_review") is True,
         latency_seconds=0.0,
+        review_required=outputs.get("verdict") not in {"no_fit", "needs_more_data"},
     )
     return EvaluationResult(
         key=signal.key,

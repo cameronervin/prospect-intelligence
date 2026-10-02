@@ -9,6 +9,7 @@ import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.bootstrap.exception_handlers import register_exception_handlers
 from app.features.authentication.public import (
@@ -18,6 +19,7 @@ from app.features.authentication.public import (
     build_authenticated_user,
 )
 from app.features.prospect_intelligence.api.router import build_router
+from app.features.prospect_intelligence.api.serializers import run_response
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
     FitVerdict,
@@ -34,7 +36,6 @@ from app.features.prospect_intelligence.contracts.models import (
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
 from app.features.prospect_intelligence.domain.progress import SourceCalled, StepStarted
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
@@ -42,6 +43,7 @@ from app.features.prospect_intelligence.repositories.memory import (
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import auth_context, authentication_user, synthetic_prospect_sources
+from tests.prospect_repositories import InMemoryAccountRepository
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 TEST_USER = authentication_user()
@@ -305,6 +307,40 @@ def test_pending_review_is_null_for_non_review_lifecycle_states() -> None:
         "message": "The run could not be completed.",
         "retryable": False,
     }
+
+
+def test_legacy_blank_completed_fit_stage_is_normalized_without_mutating_storage() -> None:
+    api, service, runs = api_with_service()
+    headers = {"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-demo"}
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
+    completed = service.review_run(
+        run.id,
+        ReviewAction.APPROVE,
+        tool_call_id=review_tool_call_id(run.id),
+    )
+    runs.save(replace(completed, stage=""))
+
+    response = api.get(f"/api/v1/prospect-runs/{run.id}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["stage"] == "Simulated send complete"
+    assert service.get_run(run.id).stage == ""
+
+
+def test_blank_completed_fit_stage_without_simulated_receipt_remains_invalid() -> None:
+    _, service, _ = api_with_service()
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
+    completed = service.review_run(
+        run.id,
+        ReviewAction.APPROVE,
+        tool_call_id=review_tool_call_id(run.id),
+    )
+    malformed = replace(completed, stage="", send_receipt_id=None)
+
+    with pytest.raises(ValidationError, match="stage"):
+        run_response(malformed, has_simulated_send_receipt=False)
 
 
 @pytest.mark.parametrize("verdict", [FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA])
@@ -621,7 +657,7 @@ def test_unsafe_edit_returns_sanitized_conflict_without_echoing_draft() -> None:
     assert response.status_code == 409
     assert response.json()["error"] == {
         "code": "conflict",
-        "message": "customer outreach contains internal-only information",
+        "message": "customer outreach contains prohibited content",
         "retryable": False,
         "issues": [],
     }

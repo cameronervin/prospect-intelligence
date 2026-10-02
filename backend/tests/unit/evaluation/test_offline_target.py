@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from app.features.prospect_intelligence.public import PROSPECT_FILES
+from evaluation.contracts.semantic import citation_id
 from evaluation.contracts.snapshot import decode_artifacts, normalize_snapshot
 from evaluation.datasets import langsmith_examples
 from evaluation.evaluators.file_contract import evaluate_file_contract
@@ -72,19 +73,21 @@ def test_snapshot_accepts_the_exact_live_hashed_memory_path() -> None:
 
 def test_snapshot_uses_canonical_source_evidence_for_semantic_projection() -> None:
     files = completed_files()
+    provenance = {
+        "source": "synthetic",
+        "mode": "fixture",
+        "endpoint_or_artifact": "fixture://synthetic",
+        "retrieved_at": "2026-09-29T00:00:00+00:00",
+        "evidence_location": "record:1",
+        "source_version": "v1",
+    }
     collision = {
         "coverage": {"source": "synthetic", "status": "complete"},
         "evidence": [
             {
                 "claim": "model-authored conflicting support",
-                "provenance": {
-                    "source": "synthetic",
-                    "mode": "fixture",
-                    "endpoint_or_artifact": "fixture://synthetic",
-                    "retrieved_at": "2026-09-29T00:00:00+00:00",
-                    "evidence_location": "record:1",
-                    "source_version": "v1",
-                },
+                "citation_id": citation_id(provenance),
+                "provenance": provenance,
             }
         ],
     }
@@ -147,6 +150,7 @@ async def test_target_runs_one_scenario_through_compiled_graph(
         "invalid_json": [],
         "invalid_schema": [],
         "missing": [],
+        "review_required": True,
         "unexpected": [],
     }
     assert snapshot["pending_review"] is True
@@ -177,7 +181,7 @@ async def test_target_runs_one_scenario_through_compiled_graph(
     assert cast("list[object]", semantic["claim_supported"])
     assert (
         cast("Mapping[str, object]", semantic["entity_resolution_ok"])["account_name"]
-        == example.inputs["account_name"]
+        == "Synthetic Core Shipper One"
     )
     assert semantic["tone_fit"] is None
     assert "input_payload" not in repr(semantic)
@@ -201,3 +205,43 @@ async def test_target_preserves_unavailable_source_state_in_safe_observation() -
         "coverage": "unavailable",
         "dependency_failed": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("example_id", "expected_verdict"),
+    [("edge_01", "needs_more_data"), ("edge_04", "no_fit")],
+)
+@pytest.mark.asyncio
+async def test_non_fit_target_skips_outreach_review_and_send(
+    example_id: str,
+    expected_verdict: str,
+) -> None:
+    example = next(
+        item
+        for item in langsmith_examples()
+        if item.inputs is not None and item.inputs["example_id"] == example_id
+    )
+    assert example.inputs is not None
+
+    snapshot = await ProspectOfflineTarget().ainvoke(example.inputs)
+
+    artifacts = cast("Mapping[str, str]", snapshot["artifacts"])
+    assert snapshot["verdict"] == expected_verdict
+    assert PROSPECT_FILES.outreach_draft not in artifacts
+    assert snapshot["pending_review"] is False
+    observations = cast("Mapping[str, object]", snapshot["artifact_observations"])
+    assert observations["file_contract"] == {
+        "actual_count": 10,
+        "expected_count": 10,
+        "invalid_json": [],
+        "invalid_schema": [],
+        "missing": [],
+        "review_required": False,
+        "unexpected": [],
+    }
+    assert snapshot["trajectory_events"] == [
+        "account_context.completed",
+        "external_research.completed",
+        "lane_analyst.completed",
+    ]
+    assert "send_outreach" not in cast("Sequence[str]", snapshot["tool_calls"])

@@ -7,9 +7,20 @@ from .models import Account, ProspectRun, QualityEvent, RepPreference, ReviewAct
 
 
 class AccountRepository(Protocol):
-    def list_for_tenant(self, tenant_id: str) -> tuple[Account, ...]: ...
+    def list_for_actor(
+        self,
+        tenant_id: str,
+        subject: str,
+        rep_id: str,
+    ) -> tuple[Account, ...]: ...
 
-    def get(self, tenant_id: str, account_id: str) -> Account | None: ...
+    def get_for_actor(
+        self,
+        tenant_id: str,
+        subject: str,
+        rep_id: str,
+        account_id: str,
+    ) -> Account | None: ...
 
 
 class RunRepository(Protocol):

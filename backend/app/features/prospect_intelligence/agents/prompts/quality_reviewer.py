@@ -49,13 +49,13 @@ the rep.
 - lane_consistency: The verdict, the recommended next step, and the top-lane table match
   /analysis/lane_fit.json exactly in meaning and order. Revenue and deadhead are labeled as modeled
   estimates, and revenue is never described as margin or profit.
-- customer_safety: The outreach reveals no rates, margins, capacity, network lanes, scores, modeled
-  figures, other customers, or restricted vendor data, including paraphrases. It must be exactly
-  one of the approved templates:
-  - `Freight conversation` with one of the three generic bodies;
-  - `<ORIGIN> to <DESTINATION> freight conversation` with the matching "Would you be open to
-    comparing notes on your <ORIGIN>-to-<DESTINATION> freight needs?" body, using the brief's top
-    lane.
+- customer_safety: The outreach uses only the selected account, fictional contact, initiating rep,
+  and top lane named by the run. It has a useful account-specific subject and exactly four
+  blank-line-separated paragraphs: contact greeting; rep introduction as representing an
+  asset-based truckload carrier without an invented brand; evidence-grounded account relevance
+  and the exact `<ORIGIN>-to-<DESTINATION>` opportunity; and a specific low-friction question.
+  It contains no digits, markup, control characters, provider/source names, internal scores,
+  rates, revenue, margin, capacity terminology, other customers, or unsupported claims.
 - rep_preferences: The outreach follows the rep's saved tone, length, and format preferences where
   the templates allow.
 - structure_format: The brief follows the brief template: all sections, exact headings, order,

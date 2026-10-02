@@ -2,7 +2,8 @@
 
 from app.features.authentication.public import AuthContext, UserRole
 
-from ..contracts.models import ProspectRun
+from ..contracts.models import ProspectRun, RunStatus
+from ..domain.errors import InvalidRunTransitionError
 
 
 def persisted_auth(run: ProspectRun) -> AuthContext:
@@ -25,3 +26,9 @@ def require_run_scope(
     ):
         raise LookupError(f"unknown run: {run.id}")
     return run
+
+
+def require_run_status(run: ProspectRun, expected: RunStatus) -> None:
+    if run.status is not expected:
+        detail = f"expected {expected.value!r}, got {run.status.value!r}"
+        raise InvalidRunTransitionError(detail)

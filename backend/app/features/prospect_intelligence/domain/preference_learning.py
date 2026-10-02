@@ -1,7 +1,6 @@
 """Deterministic, sanitized learning from approved outreach edits."""
 
 from ..contracts.models import OutreachDraft
-from .outreach import validate_customer_outreach
 
 _GENERIC_SUBJECT = "Freight conversation"
 _DIRECT_BODY = "Could we discuss your freight needs?"
@@ -28,7 +27,6 @@ def normalized_edit_distance(original: OutreachDraft, edited: OutreachDraft) -> 
 def preference_summary(outreach: OutreachDraft) -> str:
     """Describe only an approved edit's bounded style taxonomy, never its content."""
 
-    validate_customer_outreach(outreach)
     if outreach.body == _DIRECT_BODY:
         tone = "direct"
     elif outreach.body == _COMPARATIVE_BODY:

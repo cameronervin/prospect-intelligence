@@ -25,7 +25,8 @@ from evaluation.targets.prospect_graph import ProspectOfflineTarget
 from .report import render_report
 from .results import aggregates, gate_results, normalize_rows
 
-GRAPH_REVISION = "prospect-compiled-script-v1"
+GRAPH_REVISION = "prospect-compiled-script-v2"
+PROMPT_REVISION = "outreach-v2"
 REPETITIONS = 3
 DEFAULT_REPORT_PATH = Path("evaluation/reports/cam_38_offline.md")
 
@@ -91,6 +92,7 @@ def run_offline_evaluation(
                     "dataset_versions": list(dataset_versions),
                     "evaluator_version": EVALUATOR_VERSION,
                     "graph_revision": GRAPH_REVISION,
+                    "prompt_revision": PROMPT_REVISION,
                 },
                 experiment_prefix="cam-38-offline",
                 max_concurrency=0,
@@ -119,6 +121,7 @@ def run_offline_evaluation(
             expected_row_count=len(selected) * REPETITIONS,
             dataset_versions=dataset_versions,
             graph_revision=GRAPH_REVISION,
+            prompt_revision=PROMPT_REVISION,
             repetitions=REPETITIONS,
         ),
         encoding="utf-8",

@@ -31,3 +31,16 @@ def test_file_contract_checks_count_paths_json_and_schema() -> None:
     assert _metadata(extra)["unexpected"] == ["/unexpected.txt"]
     missing_score = evaluate_file_contract({}, {}).score
     assert isinstance(missing_score, (int, float)) and missing_score < 1.0
+
+
+def test_non_fit_file_contract_requires_exactly_the_non_review_artifacts() -> None:
+    non_fit = artifacts(19)
+    non_fit.pop(PROSPECT_FILES.outreach_draft)
+    non_fit.pop(PROSPECT_FILES.review_findings)
+
+    assert evaluate_file_contract(outputs(non_fit), {}).score == 1.0
+
+    non_fit[PROSPECT_FILES.outreach_draft] = "unexpected outreach"
+    unexpected = evaluate_file_contract(outputs(non_fit), {})
+    assert isinstance(unexpected.score, (int, float)) and unexpected.score < 1.0
+    assert _metadata(unexpected)["unexpected"] == [PROSPECT_FILES.outreach_draft]

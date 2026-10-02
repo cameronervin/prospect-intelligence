@@ -13,12 +13,19 @@ from langchain_core.tools import BaseTool
 from pydantic import Field
 
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from app.features.prospect_intelligence.contracts.lane_analysis import LaneAnalysisArtifact
+from app.features.prospect_intelligence.contracts.models import FitVerdict, OutreachDraft
+from app.features.prospect_intelligence.domain.outreach import (
+    OutreachContext,
+    validate_customer_outreach,
+)
 
 _PASSING_REVIEW = json.dumps({"round": 1, "verdict": "pass", "findings": [], "resolved_prior": []})
 
 
 class ScenarioScriptedModel(BaseChatModel):
     artifacts: dict[str, str]
+    outreach_context: OutreachContext | None = None
     call_counts: dict[str, int] = Field(default_factory=dict)
     tool_call_names: list[str] = Field(default_factory=list)
 
@@ -54,6 +61,10 @@ class ScenarioScriptedModel(BaseChatModel):
             "orchestrator": "Delegate research and analysis",
         }
         return next(role for role, marker in markers.items() if marker in system)
+
+    def _is_fit(self) -> bool:
+        analysis = LaneAnalysisArtifact.from_json(self.artifacts[PROSPECT_FILES.lane_fit_json])
+        return analysis.verdict is FitVerdict.FIT
 
     def _generate(
         self,
@@ -111,7 +122,7 @@ class ScenarioScriptedModel(BaseChatModel):
                         content=self.artifacts[PROSPECT_FILES.sales_brief],
                     )
                 ]
-            elif turn == 4:
+            elif turn == 4 and self._is_fit():
                 tool_calls = [
                     self._tool(
                         "task",
@@ -132,6 +143,17 @@ class ScenarioScriptedModel(BaseChatModel):
             elif turn == 6:
                 tool_calls = [self._tool("send_outreach", "request-review")]
         elif turn == 0 and role == "quality-reviewer":
+            content = self.artifacts[PROSPECT_FILES.outreach_draft]
+            subject_line, separator, body = content.partition("\n\n")
+            if not separator or self.outreach_context is None:
+                raise ValueError("scripted outreach review requires v2 context")
+            validate_customer_outreach(
+                OutreachDraft(
+                    subject=subject_line.removeprefix("Subject: ").strip(),
+                    body=body,
+                ),
+                self.outreach_context,
+            )
             tool_calls = [
                 self._tool(
                     "write_file",

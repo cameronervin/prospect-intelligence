@@ -16,6 +16,11 @@ from app.platform.api.errors import (
 )
 
 logger = structlog.get_logger(__name__)
+_AUTH_PATH = "/api/v1/auth"
+_AUTH_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, max-age=0",
+    "Pragma": "no-cache",
+}
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -23,7 +28,6 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
-        del request
         issues = [
             ErrorIssue(
                 location=".".join(str(part) for part in item["loc"]),
@@ -40,11 +44,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                 retryable=False,
                 issues=issues,
             ),
+            headers=_error_headers(request),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, error: StarletteHTTPException) -> JSONResponse:
-        del request
         code = {
             401: ApiErrorCode.UNAUTHORIZED,
             403: ApiErrorCode.FORBIDDEN,
@@ -59,7 +63,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 message=error.detail,
                 retryable=error.status_code == 503,
             ),
-            headers=error.headers,
+            headers=_error_headers(request, error.headers),
         )
 
     @app.exception_handler(Exception)
@@ -76,6 +80,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 message="The request could not be completed.",
                 retryable=False,
             ),
+            headers=_error_headers(request),
         )
 
 
@@ -90,3 +95,14 @@ def _response(
         content=ErrorResponse(error=detail).model_dump(mode="json"),
         headers=headers,
     )
+
+
+def _error_headers(
+    request: Request,
+    headers: Mapping[str, str] | None = None,
+) -> Mapping[str, str] | None:
+    merged = dict(headers or {})
+    path = request.url.path
+    if path == _AUTH_PATH or path.startswith(f"{_AUTH_PATH}/"):
+        merged.update(_AUTH_NO_CACHE_HEADERS)
+    return merged or None

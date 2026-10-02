@@ -6,6 +6,7 @@ from hashlib import sha256
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from langsmith.evaluation import EvaluationResult
 
 from evaluation.datasets import langsmith_examples
@@ -13,7 +14,7 @@ from evaluation.evaluators.semantic import SEMANTIC_EVALUATOR_KEYS
 from evaluation.evaluators.suite import OFFLINE_EVALUATOR_REGISTRATIONS, OFFLINE_EVALUATORS
 from evaluation.experiments.hosted import run_hosted_evaluations
 from evaluation.experiments.hosted.persistence import verify_hosted_persistence
-from evaluation.experiments.hosted.plan import ExperimentPlan
+from evaluation.experiments.hosted.plan import ACTIVE_HOSTED_GRAPH_REVISION, ExperimentPlan
 
 
 class FakeClient:
@@ -71,6 +72,40 @@ class FakeResults:
         return rows()
 
 
+def _active_v2_plan() -> ExperimentPlan:
+    historical = ExperimentPlan.default()
+    return replace(
+        historical,
+        graph_revision=ACTIVE_HOSTED_GRAPH_REVISION,
+        archived=False,
+        variants=tuple(
+            replace(variant, prompt_revision="outreach-v2") for variant in historical.variants
+        ),
+    )
+
+
+async def test_hosted_runner_rejects_the_archived_v1_plan_before_external_work() -> None:
+    calls: list[object] = []
+
+    async def unexpected_aevaluate(*args: object, **kwargs: object) -> FakeResults:
+        calls.append((args, kwargs))
+        return FakeResults("unexpected")
+
+    with pytest.raises(RuntimeError, match="archived"):
+        await run_hosted_evaluations(
+            plan=ExperimentPlan.default(),
+            dataset_name="freight-prospect-v1",
+            client=FakeClient(),  # type: ignore[arg-type]
+            judge=FakeJudge(),  # type: ignore[arg-type]
+            target_factory=lambda variant: FakeTarget(variant),
+            aevaluate_fn=unexpected_aevaluate,  # type: ignore[arg-type]
+            code_revision="revision",
+            close_resources=True,
+        )
+
+    assert calls == []
+
+
 async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> None:
     calls: list[dict[str, object]] = []
     verifications: list[dict[str, object]] = []
@@ -84,7 +119,7 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
     def record_verification(**kwargs: object) -> None:
         verifications.append(dict(kwargs))
 
-    plan = replace(ExperimentPlan.default(), evaluator_version="test-evaluators-v9")
+    plan = replace(_active_v2_plan(), evaluator_version="test-evaluators-v9")
     summary = await run_hosted_evaluations(
         plan=plan,
         dataset_name="freight-prospect-v1",
@@ -116,12 +151,12 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
         assert call["data"] == "freight-prospect-v1"
         metadata = call["metadata"]
         assert len(metadata["rep_scope_sha256"]) == 64  # type: ignore[index]
-        assert metadata["graph_revision"] == "prospect-intelligence-v1"  # type: ignore[index]
+        assert metadata["graph_revision"] == "prospect-intelligence-v2"  # type: ignore[index]
         assert metadata["evaluator_version"] == "test-evaluators-v9"  # type: ignore[index]
         assert metadata["evidence_class"] == "release_experiment"  # type: ignore[index]
         assert metadata["experiment_purpose"] == "model_selection"  # type: ignore[index]
         assert metadata["alignment_run"] is False  # type: ignore[index]
-        assert metadata["prompt_revision"] in {"v1", "evidence-self-check-v2"}  # type: ignore[index]
+        assert metadata["prompt_revision"] == "outreach-v2"  # type: ignore[index]
         assert metadata["code_revision"] == "f75630c31df2-dirty-abc123def456"  # type: ignore[index]
         assert call["max_concurrency"] == 2
     assert len(verifications) == 4
@@ -131,7 +166,8 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
 async def test_hosted_runner_rejects_local_rows_missing_from_langsmith() -> None:
     client = FakeClient()
     judge = FakeJudge()
-    plan = replace(ExperimentPlan.default(), variants=(ExperimentPlan.default().variants[0],))
+    active = _active_v2_plan()
+    plan = replace(active, variants=(active.variants[0],))
 
     class CompleteLocalResults(FakeResults):
         def __aiter__(self) -> AsyncIterator[object]:

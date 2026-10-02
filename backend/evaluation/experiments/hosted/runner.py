@@ -29,7 +29,7 @@ from .persistence import (
     HostedPersistenceClient,
     verify_hosted_persistence,
 )
-from .plan import HOSTED_GRAPH_REVISION, ExperimentPlan, ExperimentVariant
+from .plan import ACTIVE_HOSTED_GRAPH_REVISION, ExperimentPlan, ExperimentVariant
 from .results import (
     VariantComparison,
     VariantSummary,
@@ -87,7 +87,7 @@ def _metadata(
         "dataset_version": plan.dataset_version,
         "dataset_checksum_sha256": dataset_checksum or "published-hosted-dataset",
         "evaluator_version": plan.evaluator_version,
-        "graph_revision": HOSTED_GRAPH_REVISION,
+        "graph_revision": plan.graph_revision,
         "judge_revision": JEV_MODEL_VERSION,
         "orchestrator_model": variant.orchestrator_model,
         "specialist_model": variant.specialist_model,
@@ -124,10 +124,18 @@ async def run_hosted_evaluations(
 ) -> HostedSuiteSummary:
     """Execute every variant and return normalized rows for reporting."""
 
-    evaluate_hosted = aevaluate_fn or cast("AevaluateFunction", aevaluate)
-    semantic = semantic_evaluators(judge)  # type: ignore[arg-type]
     runs: list[HostedExperimentRun] = []
     try:
+        if plan.archived:
+            raise RuntimeError(
+                "the historical CAM-40 v1 hosted experiment plan is archived and cannot be rerun"
+            )
+        if plan.graph_revision != ACTIVE_HOSTED_GRAPH_REVISION or any(
+            variant.prompt_revision != "outreach-v2" for variant in plan.variants
+        ):
+            raise RuntimeError("active hosted experiments require v2 graph and prompt revisions")
+        evaluate_hosted = aevaluate_fn or cast("AevaluateFunction", aevaluate)
+        semantic = semantic_evaluators(judge)  # type: ignore[arg-type]
         for variant in plan.variants:
             target = target_factory(variant)
             try:
@@ -141,7 +149,7 @@ async def run_hosted_evaluations(
                         dataset_checksum=dataset_checksum,
                         code_revision=code_revision,
                     ),
-                    experiment_prefix=f"cam-40-{variant.key}",
+                    experiment_prefix=f"cam-40-v2-{variant.key}",
                     max_concurrency=2,
                     num_repetitions=plan.repetitions,
                     upload_results=True,
@@ -184,8 +192,14 @@ async def run_hosted_evaluations(
 
 
 async def run_live_suite(settings: Settings) -> HostedSuiteSummary:
-    """Publish the reviewed dataset and execute the credentialed hosted suite."""
+    """Fail closed until a separately reviewed outreach-v2 hosted plan exists."""
 
+    plan = ExperimentPlan.default()
+    if plan.archived:
+        raise RuntimeError(
+            "the historical CAM-40 v1 hosted experiment plan is archived; "
+            "a separately reviewed v2 plan is required"
+        )
     langsmith_key = settings.langsmith_api_key
     typesafe_key = settings.typesafe_api_key
     if langsmith_key is None or typesafe_key is None:
@@ -198,7 +212,6 @@ async def run_live_suite(settings: Settings) -> HostedSuiteSummary:
         await _close(judge)
         client.close()
         raise
-    plan = ExperimentPlan.default()
     code_revision = current_code_revision()
     summary = await run_hosted_evaluations(
         plan=plan,

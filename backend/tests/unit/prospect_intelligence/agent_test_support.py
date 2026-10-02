@@ -19,6 +19,7 @@ from pydantic import Field
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectRuntimeContext,
 )
+from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
 from tests.fakes import auth_context
 
 
@@ -27,20 +28,22 @@ def file_data(content: str) -> FileData:
 
 
 def _sourced(payload: Mapping[str, object], *, source: str) -> str:
+    provenance = {
+        "source": source,
+        "mode": "fixture",
+        "endpoint_or_artifact": f"fixture://{source}",
+        "retrieved_at": "2026-09-29T00:00:00+00:00",
+        "evidence_location": "record:1",
+        "source_version": "v1",
+    }
     value = {
         **payload,
         "coverage": {"source": source, "status": "complete"},
         "evidence": [
             {
                 "claim": "supported claim",
-                "provenance": {
-                    "source": source,
-                    "mode": "fixture",
-                    "endpoint_or_artifact": f"fixture://{source}",
-                    "retrieved_at": "2026-09-29T00:00:00+00:00",
-                    "evidence_location": "record:1",
-                    "source_version": "v1",
-                },
+                "citation_id": evidence_citation_id(provenance),
+                "provenance": provenance,
             }
         ],
     }
@@ -68,7 +71,7 @@ def completed_files() -> dict[str, FileData]:
     return {
         "/task/brief.md": file_data("Research Acme freight fit."),
         "/INDEX.md": file_data("# Prospect artifact manifest\n"),
-        "/context/account.json": file_data(_sourced({"account": "Acme"}, source="crm")),
+        "/context/account.json": file_data(_sourced({"account": "Acme"}, source="CRM fixture")),
         "/context/our_network.json": file_data(
             _sourced(
                 {
@@ -80,7 +83,7 @@ def completed_files() -> dict[str, FileData]:
                         }
                     ]
                 },
-                source="network",
+                source="Carrier network fixture",
             )
         ),
         "/research/freight_intel/lanes.json": file_data(
@@ -94,11 +97,13 @@ def completed_files() -> dict[str, FileData]:
                         }
                     ]
                 },
-                source="genlogs",
+                source="GenLogs fixture",
             )
         ),
-        "/research/company/company.json": file_data(_sourced({"signals": []}, source="sec")),
-        "/research/market/volumes.json": file_data(_sourced({"lanes": []}, source="faf")),
+        "/research/company/company.json": file_data(_sourced({"signals": []}, source="SEC EDGAR")),
+        "/research/market/volumes.json": file_data(
+            _sourced({"lanes": []}, source="BTS/FHWA FAF5.7.1")
+        ),
         "/analysis/lane_fit.json": file_data(
             '{"method_version":"lane_fit_v1","verdict":"fit","top_lanes":['
             '{"origin":"ATL","destination":"DAL","shipper_loads_per_week":8,'
@@ -112,8 +117,12 @@ def completed_files() -> dict[str, FileData]:
             "Acme has 8 matched weekly loads on ATL to DAL with fit score 0.8."
         ),
         "/output/outreach_draft.md": file_data(
-            "Subject: ATL to DAL freight conversation\n\n"
-            "Would you be open to comparing notes on your ATL-to-DAL freight needs?"
+            "Subject: A freight conversation for Acme Foods\n\n"
+            "Hi Jordan,\n\n"
+            "I'm Alex Morgan, and I represent an asset-based truckload carrier.\n\n"
+            "Acme Foods' distribution footprint and ATL-to-DAL freight activity may align "
+            "with lanes our team supports.\n\n"
+            "Would you be open to a brief conversation next week to compare network needs?"
         ),
         "/review/findings.json": file_data(review_findings()),
     }
@@ -368,4 +377,8 @@ def runtime_context(*, rep_preferences: tuple[str, ...] = ()) -> ProspectRuntime
         run_id=UUID("00000000-0000-0000-0000-000000000123"),
         auth=auth_context(tenant_id="tenant-demo", rep_id="rep-demo"),
         rep_preferences=rep_preferences,
+        account_name="Acme Foods",
+        contact_name="Jordan Lee",
+        contact_role="Director of Transportation",
+        rep_display_name="Alex Morgan",
     )

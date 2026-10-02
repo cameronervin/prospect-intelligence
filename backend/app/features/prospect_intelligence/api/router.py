@@ -14,7 +14,7 @@ from app.features.authentication.public import (
 )
 from app.platform.api.errors import ErrorResponse
 
-from ..contracts.models import OutreachDraft, ReviewAction
+from ..contracts.models import OutreachDraft, ProspectRun, ReviewAction
 from ..domain.errors import InvalidRunTransitionError, UnsafeOutreachError
 from ..schemas.api import (
     AccountResponse,
@@ -47,6 +47,12 @@ def build_router(
         responses=ERROR_RESPONSES,
     )
 
+    def serialize_run(run: ProspectRun) -> ProspectRunResponse:
+        return run_response(
+            run,
+            has_simulated_send_receipt=service.has_simulated_send_receipt(run),
+        )
+
     @router.get("/accounts", response_model=AccountsResponse)
     def list_accounts(
         user: Annotated[SessionUser, Depends(authenticated_user)],
@@ -74,14 +80,19 @@ def build_router(
         request: StartRunRequest,
         user: Annotated[SessionUser, Depends(authenticated_user)],
     ) -> ProspectRunResponse:
-        auth = require_sales_rep(user).auth
+        session_user = require_sales_rep(user)
+        auth = session_user.auth
         try:
-            run = service.create_run(auth, request.account_id)
+            run = service.create_run(
+                auth,
+                request.account_id,
+                actor_display_name=session_user.display_name,
+            )
         except LookupError as error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Account not found"
             ) from error
-        response = run_response(run)
+        response = serialize_run(run)
         return response
 
     @router.get("/prospect-runs/{run_id}", response_model=ProspectRunResponse)
@@ -96,7 +107,7 @@ def build_router(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
             ) from error
-        return run_response(run)
+        return serialize_run(run)
 
     @router.post("/prospect-runs/{run_id}/review", response_model=ProspectRunResponse)
     async def review_run(
@@ -139,6 +150,6 @@ def build_router(
         except (InvalidRunTransitionError, UnsafeOutreachError) as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         response.status_code = status.HTTP_200_OK
-        return run_response(run)
+        return serialize_run(run)
 
     return router

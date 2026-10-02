@@ -78,6 +78,7 @@ class SourceCoverageResponse(BaseModel):
 
 
 class EvidenceResponse(BaseModel):
+    citation_id: str
     claim: str
     source: str
     mode: SourceMode
@@ -148,10 +149,11 @@ class ProspectRunResponse(BaseModel):
     id: UUID
     account: AccountSummary
     status: RunStatus
-    stage: str
+    stage: str = Field(min_length=1, pattern=r".*\S.*")
     progress_percent: int = Field(ge=0, le=100)
     steps: list[RunStepResponse] = Field(default_factory=lambda: list[RunStepResponse]())
     source_coverage: list[SourceCoverageResponse]
+    evidence: list[EvidenceResponse] = Field(default_factory=lambda: list[EvidenceResponse]())
     verdict: FitVerdict | None = None
     brief: BriefResponse | None = None
     outreach: OutreachResponse | None = None

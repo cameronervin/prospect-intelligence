@@ -7,7 +7,7 @@ from typing import Literal
 from ..contracts.filesystem import PROSPECT_FILES
 from .prompts import AGENT_PROMPTS, EVIDENCE_SELF_CHECK_V2
 
-type PromptRevision = Literal["v1", "evidence-self-check-v2"]
+type PromptRevision = Literal["v1", "evidence-self-check-v2", "outreach-v2"]
 
 
 class ModelClass(StrEnum):
@@ -122,12 +122,12 @@ def specialist_specs() -> tuple[AgentSpec, ...]:
     )
 
 
-def orchestrator_spec(prompt_revision: PromptRevision = "v1") -> AgentSpec:
-    if prompt_revision not in ("v1", "evidence-self-check-v2"):
+def orchestrator_spec(prompt_revision: PromptRevision = "outreach-v2") -> AgentSpec:
+    if prompt_revision not in ("v1", "evidence-self-check-v2", "outreach-v2"):
         raise ValueError(f"unsupported prompt revision: {prompt_revision}")
     specialist_names = tuple(spec.name for spec in specialist_specs())
     system_prompt = AGENT_PROMPTS["orchestrator"]
-    if prompt_revision == "evidence-self-check-v2":
+    if prompt_revision in ("evidence-self-check-v2", "outreach-v2"):
         system_prompt = f"{system_prompt}\n\n{EVIDENCE_SELF_CHECK_V2}"
     return AgentSpec(
         name="orchestrator",

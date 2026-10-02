@@ -3,6 +3,7 @@
 import asyncio
 import json
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -32,10 +33,12 @@ from app.features.prospect_intelligence.contracts.models import (
 )
 from app.features.prospect_intelligence.contracts.progress import RunStepStatus
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
-from app.features.prospect_intelligence.domain.errors import InvalidRunTransitionError
+from app.features.prospect_intelligence.domain.errors import (
+    InvalidRunTransitionError,
+    UnsafeOutreachError,
+)
 from app.features.prospect_intelligence.domain.progress import SourceCalled, StepStarted
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
@@ -45,6 +48,8 @@ from app.features.prospect_intelligence.services.agent_reviews import ProspectAg
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import auth_context, synthetic_prospect_sources
+from tests.prospect_repositories import InMemoryAccountRepository, outreach_v2
+from tests.unit.prospect_intelligence.agent_test_support import completed_files
 
 
 class _CompiledRuntime:
@@ -78,19 +83,17 @@ class _CompiledRuntime:
         self.invoke_calls += 1
         self.input = input
         self.context = context
-        files: dict[str, object] = {
-            "/output/brief.md": {
-                "content": self.brief_content,
-                "encoding": "utf-8",
-            },
-            "/output/outreach_draft.md": {
-                "content": (
-                    "Subject: ATL to DAL freight conversation\n\n"
-                    "Would you be open to comparing notes on your ATL-to-DAL freight needs?"
-                ),
-                "encoding": "utf-8",
-            },
+        files: dict[str, object] = dict(completed_files())
+        files["/output/brief.md"] = {
+            "content": self.brief_content,
+            "encoding": "utf-8",
         }
+        outreach_file = dict(cast("dict[str, str]", files["/output/outreach_draft.md"]))
+        outreach_file["content"] = outreach_file["content"].replace(
+            "Alex Morgan",
+            context.rep_display_name,
+        )
+        files["/output/outreach_draft.md"] = outreach_file
         result = ProspectAgentResult(
             files=files,
             completed_stages=("orchestrate",),
@@ -110,6 +113,52 @@ class _CompiledRuntime:
         context: ProspectRuntimeContext,
     ) -> ProspectAgentResult:
         raise AssertionError(f"worker must not resume human review: {decision!r}, {context!r}")
+
+
+class _NonReviewRuntime(_CompiledRuntime):
+    def __init__(self, verdict: FitVerdict) -> None:
+        super().__init__()
+        self.verdict = verdict
+
+    async def execute(
+        self,
+        input: ProspectAgentInput,
+        *,
+        context: ProspectRuntimeContext,
+    ) -> ProspectAgentResult:
+        self.invoke_calls += 1
+        self.input = input
+        self.context = context
+        files: dict[str, object] = dict(completed_files())
+        files.pop("/output/outreach_draft.md")
+        files.pop("/review/findings.json")
+        files["/analysis/lane_fit.json"] = {
+            "content": (
+                '{"method_version":"lane_fit_v1","verdict":"'
+                f'{self.verdict.value}","top_lanes":[]}}'
+            ),
+            "encoding": "utf-8",
+        }
+        raw = {"files": files, "completed_stages": ["complete_without_review"]}
+        result = ProspectAgentResult(
+            files=files,
+            completed_stages=("complete_without_review",),
+            pending_interrupt=None,
+            raw=raw,
+        )
+        self.snapshot = ProspectAgentCheckpoint(values=raw, pending_interrupt=None)
+        return result
+
+
+class _CanaryRuntime(_CompiledRuntime):
+    async def execute(
+        self,
+        input: ProspectAgentInput,
+        *,
+        context: ProspectRuntimeContext,
+    ) -> ProspectAgentResult:
+        context.tool_handlers["search_genlogs"]({})
+        return await super().execute(input, context=context)
 
 
 class _FailOnceService(ProspectRunService):
@@ -212,16 +261,76 @@ async def test_agent_job_handler_commits_validated_graph_output_to_review() -> N
     assert completed.output.brief.markdown == (
         "Evidence supports the reviewed ATL to DAL opportunity."
     )
-    assert completed.output.brief.lanes[0].score.matched_loads_per_week == 31
+    assert completed.output.brief.lanes[0].score.matched_loads_per_week == 8
     assert runtime.context is not None
     assert "search_sec" in runtime.context.tool_handlers
     assert runtime.context.thread_id == completed.thread_id
     assert runtime.context.rep_preferences == ("Prefer concise outreach.",)
+    assert runtime.context.account_name == "Acme Foods"
+    assert runtime.context.contact_name == "Jordan Lee"
+    assert runtime.context.rep_display_name == "Sales representative"
+    assert runtime.input is not None
+    assert "Acme Foods" not in runtime.input.task_brief
+    assert "Jordan Lee" not in runtime.input.task_brief
+    assert "Northstar Retail" not in repr(runtime.context)
+    assert "Northstar Retail" not in repr(runtime.input)
 
     scored = runtime.context.tool_handlers["score_lane_fit_v1"]({})
     artifact = LaneAnalysisArtifact.from_json(json.dumps(scored))
     assert artifact.verdict is FitVerdict.FIT is completed.output.verdict
-    assert artifact.top_lanes == tuple(lane.score for lane in completed.output.brief.lanes)
+    assert artifact.top_lanes[0].origin == "PHX"
+    assert completed.output.brief.lanes[0].score.origin == "ATL"
+
+
+@pytest.mark.parametrize("verdict", (FitVerdict.NO_FIT, FitVerdict.NEEDS_MORE_DATA))
+@pytest.mark.asyncio
+async def test_agent_job_handler_commits_non_fit_without_a_review_interrupt(
+    verdict: FitVerdict,
+) -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+    runtime = _NonReviewRuntime(verdict)
+    handler = ProspectAgentJobHandler(
+        runtime=runtime,
+        service=service,
+        sources=synthetic_prospect_sources(),
+    )
+
+    await handler(run.id, UUID("10000000-0000-0000-0000-000000000032"))
+
+    completed = service.get_run(run.id)
+    assert completed.status is RunStatus.COMPLETED
+    assert completed.output is not None
+    assert completed.output.verdict is verdict
+    assert completed.output.outreach is None
+    assert completed.reviewed_outreach is None
+    assert runtime.invoke_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_non_fit_commit_retry_reuses_the_terminal_graph_checkpoint() -> None:
+    service = _FailOnceService()
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+    runtime = _NonReviewRuntime(FitVerdict.NO_FIT)
+    handler = ProspectAgentJobHandler(
+        runtime=runtime,
+        service=service,
+        sources=synthetic_prospect_sources(),
+    )
+    claim_token = UUID("10000000-0000-0000-0000-000000000032")
+
+    with pytest.raises(RuntimeError, match="synthetic commit failure"):
+        await handler(run.id, claim_token)
+    await handler(run.id, claim_token)
+
+    assert runtime.invoke_calls == 1
+    assert service.get_run(run.id).status is RunStatus.COMPLETED
 
 
 @pytest.mark.asyncio
@@ -258,7 +367,7 @@ async def test_agent_job_handler_projects_the_selected_synthetic_injection_canar
     service = _CaptureEvaluationService()
     run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
     handler = ProspectAgentJobHandler(
-        runtime=_CompiledRuntime(brief_content="FREIGHT_CANARY_7F3A"),
+        runtime=_CanaryRuntime(brief_content="FREIGHT_CANARY_7F3A"),
         service=service,
         sources=synthetic_prospect_sources(aliases={"acme-foods": "edge_05"}),
         quality_projector=OnlineQualityProjector(
@@ -413,10 +522,7 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
     runtime = _ReviewRuntime()
     handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
     edited = (
-        OutreachDraft(
-            subject="Freight conversation",
-            body="Could we compare freight needs?",
-        )
+        outreach_v2(question="Could we compare transportation priorities next week?")
         if action is ReviewAction.EDIT
         else None
     )
@@ -432,6 +538,7 @@ async def test_review_handler_resumes_real_graph_before_persisting_decision(
     assert runtime.decisions == [ProspectReviewDecision(action, edited)]
     assert runtime.context is not None
     assert runtime.context.thread_id == run.thread_id
+    assert "Northstar Retail" not in repr(runtime.context)
     assert reviewed.review_action is action
 
 
@@ -460,6 +567,34 @@ async def test_review_handler_reuses_matching_finalized_checkpoint_after_commit_
 
     assert reviewed.status is RunStatus.COMPLETED
     assert len(runtime.decisions) == 1
+
+
+@pytest.mark.asyncio
+async def test_review_handler_blocks_another_assigned_account_before_graph_resume() -> None:
+    service = ProspectRunService(
+        accounts=InMemoryAccountRepository.seeded(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+    DeterministicProspectPipeline(service, synthetic_prospect_sources()).run(run.id)
+    runtime = _ReviewRuntime()
+    handler = ProspectAgentReviewHandler(runtime=runtime, service=service)
+
+    with pytest.raises(UnsafeOutreachError, match="another assigned account"):
+        await handler(
+            run.id,
+            ReviewAction.EDIT,
+            tool_call_id=review_tool_call_id(run.id),
+            edited_outreach=outreach_v2(
+                question="Would Northstar Retail be open to comparing priorities next week?"
+            ),
+            auth=auth_context(rep_id="rep-demo"),
+        )
+
+    assert runtime.decisions == []
 
 
 @pytest.mark.asyncio

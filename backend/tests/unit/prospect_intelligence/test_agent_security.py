@@ -94,6 +94,45 @@ def test_semantic_provenance_is_required_for_source_artifacts() -> None:
         validate_workflow_artifacts(files)
 
 
+def test_unavailable_source_artifact_may_have_no_evidence() -> None:
+    files = completed_files()
+    files["/research/market/volumes.json"] = file_data(
+        '{"sources":{},"coverage":['
+        '{"source":"FAF5 market data","status":"unavailable",'
+        '"mode":"snapshot","detail":"lane not present in snapshot"}],"evidence":[]}'
+    )
+
+    validate_workflow_artifacts(files)
+
+
+def test_complete_source_artifact_cannot_drop_all_evidence() -> None:
+    files = completed_files()
+    files["/research/market/volumes.json"] = file_data(
+        '{"sources":{"ATL->DAL":{"estimated_loads_per_week":12}},"coverage":['
+        '{"source":"FAF5 market data","status":"complete","mode":"snapshot"}],'
+        '"evidence":[]}'
+    )
+
+    with pytest.raises(ValueError, match="complete provenance"):
+        validate_workflow_artifacts(files)
+
+
+@pytest.mark.parametrize("verdict", ("no_fit", "needs_more_data"))
+def test_non_fit_workflow_requires_no_outreach_artifacts(verdict: str) -> None:
+    files = completed_files()
+    files["/analysis/lane_fit.json"] = file_data(
+        f'{{"method_version":"lane_fit_v1","verdict":"{verdict}","top_lanes":[]}}'
+    )
+    files.pop("/output/outreach_draft.md")
+    files.pop("/review/findings.json")
+
+    validate_workflow_artifacts(files)
+
+    files["/output/outreach_draft.md"] = file_data("unexpected draft")
+    with pytest.raises(ValueError, match="non-fit analysis returned outreach"):
+        validate_workflow_artifacts(files)
+
+
 def test_lane_analysis_requires_complete_typed_ranked_scores() -> None:
     files = completed_files()
     files["/analysis/lane_fit.json"] = file_data(

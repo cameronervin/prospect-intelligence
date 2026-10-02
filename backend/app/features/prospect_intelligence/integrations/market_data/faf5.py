@@ -25,6 +25,7 @@ _ARTIFACT_PATH = (
     "app/features/prospect_intelligence/integrations/market_data/data/"
     "faf5_7_1_2023_truck_snapshot.csv"
 )
+_SOURCE_NAME = "BTS/FHWA FAF5.7.1"
 _ESTIMATE_LABEL = "project-owned synthetic estimate"
 _MIN_SHARE = Decimal("0.0025")
 _MAX_SHARE = Decimal("0.0100")
@@ -95,7 +96,7 @@ class Faf5MarketDataSource:
                 value=None,
                 coverage=SourceCoverage(
                     mode=SourceMode.SNAPSHOT,
-                    source="FAF5.7.1 snapshot",
+                    source=_SOURCE_NAME,
                     status=SourceCoverageStatus.UNAVAILABLE,
                     detail="lane is not present in the reviewed FAF snapshot",
                 ),
@@ -117,7 +118,7 @@ class Faf5MarketDataSource:
             ),
             coverage=SourceCoverage(
                 mode=SourceMode.SNAPSHOT,
-                source="FAF5.7.1 snapshot",
+                source=_SOURCE_NAME,
                 status=SourceCoverageStatus.COMPLETE,
             ),
             evidence=(
@@ -127,7 +128,7 @@ class Faf5MarketDataSource:
                         "synthetic estimate"
                     ),
                     provenance=Provenance(
-                        source="BTS/FHWA FAF5.7.1",
+                        source=_SOURCE_NAME,
                         mode=SourceMode.SNAPSHOT,
                         endpoint_or_artifact=_ARTIFACT_PATH,
                         retrieved_at=retrieved_at,

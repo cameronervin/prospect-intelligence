@@ -28,6 +28,7 @@ _REP_MEMORY = re.compile(
     r"^/memories/[A-Za-z0-9][A-Za-z0-9_.-]{2,99}/"
     r"[A-Za-z0-9][A-Za-z0-9_.-]{2,99}/preferences\.md$"
 )
+_REVIEW_ARTIFACTS = frozenset({PROSPECT_FILES.outreach_draft, PROSPECT_FILES.review_findings})
 
 
 def decode_files(files: Mapping[str, object]) -> tuple[dict[str, str], int]:
@@ -85,8 +86,11 @@ def file_contract_signal(
     artifacts: Mapping[str, str],
     *,
     invalid_encoding: int,
+    review_required: bool = True,
 ) -> QualitySignal:
     required = set(PROSPECT_FILES.required_artifacts())
+    if not review_required:
+        required.difference_update(_REVIEW_ARTIFACTS)
     inspected = {path for path in files if not _REP_MEMORY.fullmatch(path)}
     present = set(artifacts)
     missing = required.difference(present)
@@ -122,6 +126,7 @@ def file_contract_signal(
             ],
             "expected_count": len(required),
             "actual_count": len(inspected),
+            "review_required": review_required,
         }
     )
     return QualitySignal(

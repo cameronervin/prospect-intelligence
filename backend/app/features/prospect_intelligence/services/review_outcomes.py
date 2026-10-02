@@ -14,8 +14,9 @@ from ..contracts.models import (
     SendReceipt,
 )
 from ..domain.errors import InvalidRunTransitionError
-from ..domain.outreach import validate_customer_outreach
+from ..domain.outreach import OutreachContext, validate_customer_outreach
 from ..domain.preference_learning import normalized_edit_distance, preference_summary
+from ..domain.progress import COMPLETED_REVIEW_STAGE
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,7 @@ def prepare_review_outcome(
     *,
     tool_call_id: str,
     edited_outreach: OutreachDraft | None,
+    outreach_scope: OutreachContext,
     now: datetime,
     id_factory: Callable[[], UUID],
 ) -> ReviewOutcome:
@@ -57,7 +59,7 @@ def prepare_review_outcome(
         outreach = edited_outreach
     else:
         outreach = run.output.outreach
-    validate_customer_outreach(outreach)
+    validate_customer_outreach(outreach, outreach_scope)
     edit_distance = (
         normalized_edit_distance(run.output.outreach, outreach)
         if action is ReviewAction.EDIT
@@ -85,7 +87,7 @@ def prepare_review_outcome(
         run=replace(
             run,
             status=RunStatus.COMPLETED,
-            stage="Simulated send complete",
+            stage=COMPLETED_REVIEW_STAGE,
             progress_percent=100,
             reviewed_outreach=outreach,
             review_action=action,

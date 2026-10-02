@@ -40,6 +40,37 @@ def test_trajectory_requires_research_before_analysis_and_review_not_delivery() 
     assert metadata["violations"]
 
 
+def test_non_fit_trajectory_requires_research_and_rejects_review_stages() -> None:
+    valid = evaluate_trajectory(
+        {
+            "verdict": "no_fit",
+            "trajectory_events": [
+                "account_context.completed",
+                "external_research.completed",
+                "lane_analyst.completed",
+            ],
+            "pending_review": False,
+        },
+        {},
+    )
+    invalid = evaluate_trajectory(
+        {
+            "verdict": "needs_more_data",
+            "trajectory_events": [
+                "account_context.completed",
+                "external_research.completed",
+                "lane_analyst.completed",
+                "outreach_drafter.completed",
+            ],
+            "pending_review": True,
+        },
+        {},
+    )
+
+    assert valid.score == 1.0
+    assert invalid.score == 0.0
+
+
 _RESEARCH = [
     "account_context.completed",
     "external_research.completed",

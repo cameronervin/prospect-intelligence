@@ -26,10 +26,17 @@ def _provenance(**overrides: str) -> dict[str, str]:
 
 
 def _source(path: str, *, values: Mapping[str, object] | None = None) -> tuple[str, str]:
+    provenance = _provenance(source=path)
     payload = {
         **(values or {}),
         "coverage": {"source": "synthetic", "status": "complete"},
-        "evidence": [{"claim": "UNTRUSTED-RAW-CLAIM", "provenance": _provenance(source=path)}],
+        "evidence": [
+            {
+                "claim": "UNTRUSTED-RAW-CLAIM",
+                "citation_id": citation_id(provenance),
+                "provenance": provenance,
+            }
+        ],
     }
     return path, json.dumps(payload)
 

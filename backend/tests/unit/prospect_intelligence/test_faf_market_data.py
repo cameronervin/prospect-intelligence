@@ -3,13 +3,20 @@
 import hashlib
 import json
 import math
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
 from uuid import UUID
 
 import pytest
+from deepagents.backends.protocol import FileData
 
+from app.features.prospect_intelligence.agents import tools as agent_tools
+from app.features.prospect_intelligence.agents.guardrails.deterministic import (
+    validate_agent_artifacts,
+)
+from app.features.prospect_intelligence.agents.specs import specialist_specs
 from app.features.prospect_intelligence.contracts import (
     MarketDataSource,
     RunSourceCache,
@@ -17,6 +24,7 @@ from app.features.prospect_intelligence.contracts import (
     SourceCoverageStatus,
     SourceMode,
 )
+from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from app.features.prospect_intelligence.integrations.market_data import faf5 as faf_module
 from app.features.prospect_intelligence.integrations.market_data import snapshot as snapshot_module
 from app.features.prospect_intelligence.integrations.market_data.faf5 import (
@@ -26,6 +34,7 @@ from app.features.prospect_intelligence.integrations.market_data.faf5 import (
     snapshot_rows,
     verify_faf_snapshot,
 )
+from app.features.prospect_intelligence.services.agent_output import project_source_artifacts
 
 
 def _context(run_id: int = 1) -> SourceCallContext:
@@ -46,6 +55,7 @@ def test_faf_market_source_conforms_and_returns_normalized_lane_with_exact_evide
     result = source.get_lane(_context(), "041", "061")
 
     assert result.coverage.status is SourceCoverageStatus.COMPLETE
+    assert result.coverage.source == "BTS/FHWA FAF5.7.1"
     assert result.value is not None
     assert result.value.origin_zone == "041"
     assert result.value.destination_zone == "061"
@@ -55,6 +65,7 @@ def test_faf_market_source_conforms_and_returns_normalized_lane_with_exact_evide
     assert result.value.estimate_label == "project-owned synthetic estimate"
     assert math.isfinite(float(result.value.thousand_tons))
     assert result.evidence[0].provenance.mode is SourceMode.SNAPSHOT
+    assert result.evidence[0].provenance.source == result.coverage.source
     assert result.evidence[0].provenance.endpoint_or_artifact == (
         "app/features/prospect_intelligence/integrations/market_data/data/"
         "faf5_7_1_2023_truck_snapshot.csv"
@@ -62,6 +73,25 @@ def test_faf_market_source_conforms_and_returns_normalized_lane_with_exact_evide
     assert result.evidence[0].provenance.evidence_location == (
         "dms_orig=041,dms_dest=061,dms_mode=1"
     )
+
+
+def test_successful_faf_tool_result_passes_artifact_validation_and_projection() -> None:
+    result = Faf5MarketDataSource().get_lane(_context(), "041", "061")
+    payload = agent_tools._json_safe(result)  # pyright: ignore[reportPrivateUsage]
+    path = PROSPECT_FILES.market_research
+    files: dict[str, FileData] = {path: {"content": json.dumps(payload), "encoding": "utf-8"}}
+    external_research = next(
+        spec for spec in specialist_specs() if spec.name == "external-research"
+    )
+
+    validate_agent_artifacts(
+        replace(external_research, required_artifacts=(path,)),
+        files,
+    )
+    projection = project_source_artifacts(files)
+
+    assert projection.coverage == (result.coverage,)
+    assert projection.evidence == result.evidence
 
 
 def test_faf_market_source_returns_terminal_unavailable_and_caches_per_run() -> None:
@@ -76,6 +106,7 @@ def test_faf_market_source_returns_terminal_unavailable_and_caches_per_run() -> 
     assert second_complete is first_complete
     assert first_missing.value is None
     assert first_missing.coverage.status is SourceCoverageStatus.UNAVAILABLE
+    assert first_missing.coverage.source == "BTS/FHWA FAF5.7.1"
     assert first_missing.coverage.detail == "lane is not present in the reviewed FAF snapshot"
     assert first_missing.evidence == ()
     assert second_missing is first_missing

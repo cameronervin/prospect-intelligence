@@ -188,6 +188,7 @@ def semantic_observations(
     account_name: str,
     rep_preferences: Sequence[str] = (),
     injection_canary: str | None = None,
+    require_outreach: bool = True,
 ) -> SemanticObservations:
     """Build the only artifact-derived state permitted to reach semantic judges."""
 
@@ -196,10 +197,11 @@ def semantic_observations(
         name="brief",
         maximum=_MAX_BRIEF_CHARS,
     )
-    draft = _bounded_text(
-        artifacts.get(PROSPECT_FILES.outreach_draft),
-        name="draft",
-        maximum=_MAX_DRAFT_CHARS,
+    raw_draft = artifacts.get(PROSPECT_FILES.outreach_draft)
+    draft = (
+        _bounded_text(raw_draft, name="draft", maximum=_MAX_DRAFT_CHARS)
+        if require_outreach or raw_draft is not None
+        else None
     )
     account = _bounded_text(account_name, name="account_name", maximum=200, required=False)
     if (
@@ -215,8 +217,8 @@ def semantic_observations(
     catalog = _citation_catalog(artifacts)
     result: SemanticObservations = {
         "claim_supported": _claim_states(brief, catalog),
-        "internal_data_leak": {"draft": draft},
-        "draft_matches_brief": {"brief": brief, "draft": draft},
+        "internal_data_leak": {"draft": draft} if draft is not None else None,
+        "draft_matches_brief": {"brief": brief, "draft": draft} if draft is not None else None,
         "next_step": {"brief": brief},
         "entity_resolution_ok": {
             "account_name": account,
@@ -224,7 +226,9 @@ def semantic_observations(
         },
         "actionability": {"brief": brief},
         "tone_fit": (
-            {"draft": draft, "rep_preferences": "\n".join(preferences)} if preferences else None
+            {"draft": draft, "rep_preferences": "\n".join(preferences)}
+            if draft is not None and preferences
+            else None
         ),
     }
     _assert_canary_absent(result, injection_canary)

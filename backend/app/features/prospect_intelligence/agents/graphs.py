@@ -12,9 +12,10 @@ from langgraph.types import interrupt
 
 from ..contracts.agent_runtime import ProspectRuntimeContext
 from ..contracts.filesystem import PROSPECT_FILES
-from ..contracts.models import OutreachDraft, ReviewAction
+from ..contracts.lane_analysis import LaneAnalysisArtifact
+from ..contracts.models import FitVerdict, OutreachDraft, ReviewAction
 from ..domain.errors import UnsafeOutreachError
-from ..domain.outreach import validate_customer_outreach
+from ..domain.outreach import OutreachContext, validate_customer_outreach
 from .guardrails.deterministic import (
     file_data,
     manifest_file,
@@ -55,7 +56,9 @@ def _review_payload(state: ProspectWorkflowState) -> dict[str, object]:
 
 
 def _apply_review(
-    decision: object, files: Mapping[str, FileData]
+    decision: object,
+    files: Mapping[str, FileData],
+    runtime_context: ProspectRuntimeContext,
 ) -> tuple[dict[str, object], dict[str, FileData]]:
     if not isinstance(decision, Mapping):
         raise ValueError("review decision must be a mapping")
@@ -75,12 +78,24 @@ def _apply_review(
         if not isinstance(subject, str) or not isinstance(body, str):
             raise ValueError("edited outreach must contain subject and body")
         draft = OutreachDraft(subject=subject, body=body)
+        analysis = LaneAnalysisArtifact.from_json(files[PROSPECT_FILES.lane_fit_json]["content"])
+        if not analysis.top_lanes:
+            raise ValueError("edited outreach requires an evidence-backed lane")
+        lane = analysis.top_lanes[0]
+        outreach_scope = OutreachContext(
+            account_name=runtime_context.account_name,
+            contact_name=runtime_context.contact_name,
+            contact_role=runtime_context.contact_role,
+            rep_display_name=runtime_context.rep_display_name,
+            origin=lane.origin,
+            destination=lane.destination,
+        )
         try:
-            validate_customer_outreach(draft)
+            validate_customer_outreach(draft, outreach_scope)
         except UnsafeOutreachError as error:
             raise ValueError("edited outreach violates the customer-safe allowlist") from error
         content = f"Subject: {draft.subject}\n\n{draft.body}"
-        validate_outreach(content, files)
+        validate_outreach(content, files, outreach_scope)
         updated[PROSPECT_FILES.outreach_draft] = file_data(content)
         canonical_edit = {"subject": subject, "body": body}
     elif edited is not None:
@@ -134,10 +149,11 @@ def build_prospect_workflow(
                     content=(
                         "Read /task/brief.md, /INDEX.md, and allowed rep memory. Delegate "
                         "account-context and external-research in one parallel tool-call turn; "
-                        "then delegate lane-analyst, write /output/brief.md, and delegate "
-                        "outreach-drafter. Delegate quality-reviewer; on revise, fix brief "
-                        "findings and re-delegate outreach findings, then review again (at most "
-                        "three reviews). Call send_outreach only after the latest review passes."
+                        "then delegate lane-analyst and write /output/brief.md. For a fit, "
+                        "delegate outreach-drafter and quality-reviewer; on revise, fix findings "
+                        "and review again (at most three reviews), then call send_outreach only "
+                        "after a pass. "
+                        "For no_fit or needs_more_data, finish without outreach or human review."
                     )
                 )
             ],
@@ -161,19 +177,40 @@ def build_prospect_workflow(
         review_mapping: Mapping[object, object] = (
             cast("Mapping[object, object]", review) if isinstance(review, Mapping) else {}
         )
-        if review_mapping.get("name") != "send_outreach":
+        analysis = LaneAnalysisArtifact.from_json(files[PROSPECT_FILES.lane_fit_json]["content"])
+        if analysis.verdict is FitVerdict.FIT and review_mapping.get("name") != "send_outreach":
             raise ValueError("root agent must call send_outreach after completing artifacts")
-        return {
+        if analysis.verdict is not FitVerdict.FIT and review is not None:
+            raise ValueError("non-fit analysis must complete without an outreach review")
+        update: ProspectWorkflowState = {
             "files": files,
-            "review_requested": {"name": "send_outreach"},
             "completed_stages": ["root"],
         }
+        if analysis.verdict is FitVerdict.FIT:
+            update["review_requested"] = {"name": "send_outreach"}
+        return update
 
-    def finalize(state: ProspectWorkflowState) -> ProspectWorkflowState:
+    def complete_without_review(state: ProspectWorkflowState) -> ProspectWorkflowState:
+        del state
+        return {"completed_stages": ["complete_without_review"]}
+
+    def review_route(state: ProspectWorkflowState) -> str:
+        files = state.get("files", {})
+        analysis = LaneAnalysisArtifact.from_json(files[PROSPECT_FILES.lane_fit_json]["content"])
+        return "finalize" if analysis.verdict is FitVerdict.FIT else "complete_without_review"
+
+    def finalize(
+        state: ProspectWorkflowState,
+        runtime: Runtime[ProspectRuntimeContext],
+    ) -> ProspectWorkflowState:
         if state.get("review_requested", {}).get("name") != "send_outreach":
             raise ValueError("send_outreach review was not requested")
         decision = interrupt(_review_payload(state))
-        canonical, edited_files = _apply_review(decision, state.get("files", {}))
+        canonical, edited_files = _apply_review(
+            decision,
+            state.get("files", {}),
+            runtime.context,
+        )
         return {
             "files": edited_files,
             "review_decision": canonical,
@@ -188,6 +225,7 @@ def build_prospect_workflow(
     builder.add_node("output_jev_guardrail", output_jev_guardrail)  # pyright: ignore[reportUnknownMemberType]
     builder.add_node("enforce_output_guardrail", enforce_output_guardrail)  # pyright: ignore[reportUnknownMemberType]
     builder.add_node("finalize", finalize)  # pyright: ignore[reportUnknownMemberType]
+    builder.add_node("complete_without_review", complete_without_review)  # pyright: ignore[reportUnknownMemberType]
     builder.add_edge(START, "prepare")
     builder.add_edge("prepare", "input_jev_guardrail")
     builder.add_edge("input_jev_guardrail", "enforce_input_guardrail")
@@ -195,6 +233,14 @@ def build_prospect_workflow(
     builder.add_edge("root_agent", "validate_root")
     builder.add_edge("validate_root", "output_jev_guardrail")
     builder.add_edge("output_jev_guardrail", "enforce_output_guardrail")
-    builder.add_edge("enforce_output_guardrail", "finalize")
+    builder.add_conditional_edges(  # pyright: ignore[reportUnknownMemberType]
+        "enforce_output_guardrail",
+        review_route,
+        {
+            "finalize": "finalize",
+            "complete_without_review": "complete_without_review",
+        },
+    )
     builder.add_edge("finalize", END)
+    builder.add_edge("complete_without_review", END)
     return builder

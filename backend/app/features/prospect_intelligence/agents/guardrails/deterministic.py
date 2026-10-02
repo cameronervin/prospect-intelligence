@@ -8,12 +8,13 @@ from typing import cast
 
 from deepagents.backends.protocol import FileData
 
+from ...contracts.citations import evidence_citation_id
 from ...contracts.filesystem import PROSPECT_FILES, ArtifactMediaType
 from ...contracts.lane_analysis import LaneAnalysisArtifact
-from ...contracts.models import OutreachDraft
+from ...contracts.models import FitVerdict, OutreachDraft
 from ...contracts.review import QualityReviewArtifact
 from ...domain.errors import UnsafeOutreachError
-from ...domain.outreach import validate_customer_outreach
+from ...domain.outreach import OutreachContext, validate_customer_outreach
 from ..specs import AgentSpec
 
 _NUMBER = re.compile(r"(?<![\w])[$]?(-?\d+(?:,\d{3})*(?:\.\d+)?)%?")
@@ -77,8 +78,27 @@ def _validate_source_artifact(path: str, value: object) -> None:
     if not isinstance(coverage, (Mapping, Sequence)) or isinstance(coverage, (str, bytes)):
         raise ValueError(f"source artifact must declare explicit coverage: {path}")
     evidence = data.get("evidence")
-    if not isinstance(evidence, list) or not evidence:
+    if not isinstance(evidence, list):
         raise ValueError(f"source artifact must retain complete provenance: {path}")
+    coverage_items: list[object] = (
+        list(cast("Sequence[object]", coverage))
+        if isinstance(coverage, Sequence) and not isinstance(coverage, (str, bytes, Mapping))
+        else [cast(object, coverage)]
+    )
+    if not coverage_items or any(not isinstance(item, Mapping) for item in coverage_items):
+        raise ValueError(f"source artifact must declare explicit coverage: {path}")
+    coverage_by_source = {
+        cast("Mapping[object, object]", item).get("source"): cast(
+            "Mapping[object, object]", item
+        ).get("status")
+        for item in coverage_items
+    }
+    if any(not isinstance(source, str) for source in coverage_by_source):
+        raise ValueError(f"source artifact must declare explicit coverage: {path}")
+    statuses = set(coverage_by_source.values())
+    if not evidence and statuses != {"unavailable"}:
+        raise ValueError(f"source artifact must retain complete provenance: {path}")
+    evidence_sources: set[object] = set()
     for item in cast("list[object]", evidence):
         if not isinstance(item, Mapping):
             raise ValueError(f"source artifact must retain complete provenance: {path}")
@@ -91,6 +111,18 @@ def _validate_source_artifact(path: str, value: object) -> None:
             provenance_mapping[field] in (None, "") for field in _PROVENANCE_FIELDS
         ):
             raise ValueError(f"source artifact must retain complete provenance: {path}")
+        normalized = {field: provenance_mapping[field] for field in _PROVENANCE_FIELDS}
+        evidence_sources.add(normalized["source"])
+        supplied_id = entry.get("citation_id")
+        if not isinstance(supplied_id, str) or supplied_id != evidence_citation_id(normalized):
+            raise ValueError(f"source artifact citation id does not match provenance: {path}")
+    factual_sources = {
+        source for source, status in coverage_by_source.items() if status != "unavailable"
+    }
+    if not factual_sources.issubset(evidence_sources):
+        raise ValueError(f"source artifact must retain complete provenance: {path}")
+    if not evidence_sources.issubset(coverage_by_source):
+        raise ValueError(f"source artifact evidence has unknown coverage source: {path}")
 
 
 def validate_agent_artifacts(spec: AgentSpec, files: Mapping[str, FileData]) -> None:
@@ -144,7 +176,11 @@ def validate_numeric_grounding(content: str, files: Mapping[str, FileData]) -> N
             raise ValueError(f"unsupported numeric claim: {raw}")
 
 
-def validate_outreach(content: str, files: Mapping[str, FileData]) -> None:
+def validate_outreach(
+    content: str,
+    files: Mapping[str, FileData],
+    context: OutreachContext,
+) -> None:
     first, separator, body = content.partition("\n")
     if not separator or not first.startswith("Subject: "):
         raise ValueError("outreach draft violates the customer-safe allowlist")
@@ -153,7 +189,7 @@ def validate_outreach(content: str, files: Mapping[str, FileData]) -> None:
         raise ValueError("outreach draft violates the customer-safe allowlist")
     draft = OutreachDraft(subject=first.removeprefix("Subject: ").strip(), body=body.strip())
     try:
-        validate_customer_outreach(draft)
+        validate_customer_outreach(draft, context)
     except UnsafeOutreachError as error:
         raise ValueError("outreach draft violates the customer-safe allowlist") from error
     validate_numeric_grounding(content, files)
@@ -170,13 +206,28 @@ def validate_workflow_artifacts(
     unknown = sorted(path for path in files if path not in canonical)
     if unknown:
         raise ValueError(f"agent returned non-canonical artifact paths: {unknown}")
+    analysis_path = PROSPECT_FILES.lane_fit_json
+    if analysis_path not in files:
+        raise ValueError(f"required artifacts are missing: ['{analysis_path}']")
+    analysis = LaneAnalysisArtifact.from_json(artifact_content(files[analysis_path], analysis_path))
+    review_artifacts = {PROSPECT_FILES.outreach_draft, PROSPECT_FILES.review_findings}
+    if analysis.verdict is not FitVerdict.FIT:
+        unexpected = sorted(review_artifacts.intersection(files))
+        if unexpected:
+            raise ValueError(f"non-fit analysis returned outreach artifacts: {unexpected}")
     expected = canonical.difference((PROSPECT_FILES.task_brief, PROSPECT_FILES.index))
+    if analysis.verdict is not FitVerdict.FIT:
+        expected.difference_update(review_artifacts)
     missing = sorted(expected.difference(files))
     if missing:
         raise ValueError(f"required artifacts are missing: {missing}")
     # Draft content (grounding, safety, format) is judged by the quality reviewer before this
     # gate; here only the artifact data contracts are enforced.
     for spec in _all_specs():
+        if analysis.verdict is not FitVerdict.FIT and review_artifacts.intersection(
+            spec.required_artifacts
+        ):
+            continue
         validate_agent_artifacts(spec, files)
 
 

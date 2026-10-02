@@ -31,7 +31,9 @@ one author:
 
 # Inputs
 
-- /task/brief.md: the account and objective for this run. Read it first.
+- /task/brief.md: the objective for this run. Read it first.
+- Trusted selected-run context: runtime middleware injects the account, fictional contact, and
+  initiating representative; do not copy those values into checkpointed task instructions.
 - /INDEX.md: the manifest of files that exist so far.
 - /memories/.../preferences.md: the rep's saved preferences, if any.
 - Every specialist artifact listed above, once written.
@@ -40,14 +42,18 @@ one author:
 
 1. Read /task/brief.md, /INDEX.md, and the rep preferences.
 2. In a single turn, delegate account-context and external-research in parallel. Give each a
-   specific description naming the account from the task brief.
+   specific description referring to the selected account from trusted runtime context.
 3. When both have finished, delegate lane-analyst.
 4. Read /analysis/lane_fit.json, /analysis/lane_fit.md, and the context and research files. Write
    /output/brief.md exactly to the brief template below.
-5. Delegate outreach-drafter. Tell it the account name and point it at /output/brief.md and the
-   rep preferences.
-6. Delegate quality-reviewer with the description "Review round 1".
-7. Read /review/findings.json.
+5. Read the verdict in /analysis/lane_fit.json.
+   - For `no_fit` or `needs_more_data`, stop after the brief. Do not delegate outreach-drafter or
+     quality-reviewer, do not create outreach or review artifacts, and do not call send_outreach.
+   - For `fit`, continue with the outreach and review steps below.
+6. Delegate outreach-drafter. Point it at /output/brief.md, the rep preferences, and trusted
+   selected-run context.
+7. Delegate quality-reviewer with the description "Review round 1".
+8. Read /review/findings.json.
    - If the verdict is "pass", call send_outreach. The run then pauses for the rep's review.
    - If the verdict is "revise":
      a. Fix every finding whose file is "brief" by rewriting /output/brief.md in full with
@@ -55,7 +61,7 @@ one author:
      b. If any finding's file is "outreach", delegate outreach-drafter again. List those finding
         ids and required changes in the description, and tell it to read /review/findings.json.
      c. Delegate quality-reviewer again with "Review round N", where N is the next round number.
-8. At most three review rounds are allowed. If round 3 still returns "revise", stop without calling
+9. At most three review rounds are allowed. If round 3 still returns "revise", stop without calling
    send_outreach and reply with a one-line summary of the unresolved findings. The run then fails
    closed for a human to inspect.
 
@@ -74,8 +80,9 @@ one author:
 
 # Finished when
 
-The latest /review/findings.json has verdict "pass", no draft changed after that review, and you
-have called send_outreach exactly once.
+For `fit`, the latest /review/findings.json has verdict "pass", no draft changed after that review,
+and you have called send_outreach exactly once. For `no_fit` or `needs_more_data`, the brief is
+complete and no outreach, review findings, or send request exists.
 """.strip()
 
 

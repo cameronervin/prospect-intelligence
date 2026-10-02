@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from time import perf_counter
 from typing import cast
@@ -13,6 +13,7 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ToolHandler,
 )
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from app.features.prospect_intelligence.contracts.lane_analysis import LaneAnalysisArtifact
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
     FitVerdict,
@@ -21,7 +22,6 @@ from app.features.prospect_intelligence.contracts.models import (
     RecommendedNextStep,
     RunStatus,
     ScoredLane,
-    SourceCoverage,
 )
 from app.features.prospect_intelligence.contracts.quality_evaluation import (
     OnlineQualityProjector,
@@ -34,9 +34,13 @@ from app.features.prospect_intelligence.contracts.sources import (
 )
 from app.features.prospect_intelligence.services.agent_output import (
     checkpoint_files,
+    completed_without_review,
     injection_canary,
     parse_outreach,
+    project_source_artifacts,
+    require_expected_review,
     text_file,
+    validate_progress_coverage,
 )
 from app.features.prospect_intelligence.services.identity import persisted_auth
 from app.features.prospect_intelligence.services.lane_analysis import analyze_lanes
@@ -77,6 +81,9 @@ class ProspectAgentJobHandler:
             run_id=run.id,
             auth=persisted_auth(run),
             account_name=run.account.name,
+            contact_name=run.account.contact_name,
+            contact_role=run.account.contact_role,
+            rep_display_name=run.created_by_display_name,
             runtime_guardrail=self.runtime_guardrail,
             injection_canary=lambda: injection_canary(source_context),
             tool_handlers=self._tool_handlers(run, source_context),
@@ -92,8 +99,8 @@ class ProspectAgentJobHandler:
         )
         started = perf_counter()
         checkpoint = await self.runtime.checkpoint(context=runtime_context)
-        if checkpoint.pending_interrupt is not None:
-            self._require_review_interrupt(checkpoint.pending_interrupt)
+        pending_interrupt = checkpoint.pending_interrupt
+        if pending_interrupt is not None or completed_without_review(checkpoint.values):
             files = checkpoint_files(checkpoint.values)
             raw_state = checkpoint.values
         else:
@@ -102,21 +109,20 @@ class ProspectAgentJobHandler:
                     account_id=run.account.id,
                     task_brief=(
                         "Research the account's freight activity, compute lane_fit_v1, produce an "
-                        "evidence-backed internal brief, and draft approved outreach. "
-                        f"Account: {run.account.name} ({run.account.id})."
+                        "evidence-backed internal brief, and only for a fit draft outreach-v2 for "
+                        "the selected run context."
                     ),
                 ),
                 context=runtime_context,
             )
-            self._require_review_interrupt(result.pending_interrupt)
+            pending_interrupt = result.pending_interrupt
             files = result.files
             raw_state = result.raw
-        output = await asyncio.to_thread(
-            self._build_output,
-            run,
-            source_context,
-            cast("Mapping[object, object]", files),
-        )
+        typed_files = cast("Mapping[object, object]", files)
+        output = await asyncio.to_thread(self._build_output, run, typed_files)
+        require_expected_review(output, pending_interrupt)
+        progressed_run = await asyncio.to_thread(self.service.get_run, run.id)
+        validate_progress_coverage(progressed_run.steps, output.source_coverage)
         quality_projection = (
             self.quality_projector.project(
                 run_id=run.id,
@@ -142,11 +148,6 @@ class ProspectAgentJobHandler:
             ),
         )
 
-    @staticmethod
-    def _require_review_interrupt(pending_interrupt: str | None) -> None:
-        if pending_interrupt != "send_outreach":
-            raise ValueError("compiled graph did not stop at the send_outreach review interrupt")
-
     def _tool_handlers(
         self,
         run: ProspectRun,
@@ -169,12 +170,11 @@ class ProspectAgentJobHandler:
             )
 
         def score(_: dict[str, object]) -> object:
-            # Return the exact canonical artifact so the analyst can write it verbatim.
             freight = self.sources.freight.get_activity(context, run.account)
             network = self.sources.network.get_network(context)
             return json.loads(analyze_lanes(freight, network).to_json())
 
-        handlers: dict[str, Callable[[dict[str, object]], object]] = {
+        return {
             "get_crm_account": lambda _: self.sources.crm.get_account(context, run.account.id),
             "get_network_lanes": lambda _: self.sources.network.get_network(context),
             "search_genlogs": lambda _: self.sources.freight.get_activity(context, run.account),
@@ -186,19 +186,19 @@ class ProspectAgentJobHandler:
             "get_faf_market_volume": market,
             "score_lane_fit_v1": score,
         }
-        return dict(handlers)
 
     def _build_output(
         self,
         run: ProspectRun,
-        context: SourceCallContext,
         raw_files: Mapping[object, object],
     ) -> AnalysisOutput:
         files = {str(path): value for path, value in raw_files.items()}
-        freight = self.sources.freight.get_activity(context, run.account)
-        network = self.sources.network.get_network(context)
-        coverage: tuple[SourceCoverage, ...] = (freight.coverage, network.coverage)
-        analysis = analyze_lanes(freight, network)
+        projection = project_source_artifacts(files)
+        lane_projection = project_source_artifacts(
+            files,
+            paths=(PROSPECT_FILES.freight_research, PROSPECT_FILES.network_context),
+        )
+        analysis = LaneAnalysisArtifact.from_json(text_file(files, PROSPECT_FILES.lane_fit_json))
         if analysis.verdict is FitVerdict.NEEDS_MORE_DATA:
             return AnalysisOutput(
                 verdict=FitVerdict.NEEDS_MORE_DATA,
@@ -210,9 +210,9 @@ class ProspectAgentJobHandler:
                     lanes=(),
                 ),
                 outreach=None,
-                source_coverage=coverage,
+                source_coverage=projection.coverage,
+                evidence=projection.evidence,
             )
-        assert freight.value is not None and network.value is not None
         ranked = analysis.top_lanes
         verdict = analysis.verdict
         markdown = text_file(files, PROSPECT_FILES.sales_brief)
@@ -239,10 +239,10 @@ class ProspectAgentJobHandler:
                     else "Do not prioritize outreach for this account."
                 ),
                 lanes=tuple(
-                    ScoredLane(score=lane, evidence=freight.evidence + network.evidence)
-                    for lane in ranked
+                    ScoredLane(score=lane, evidence=lane_projection.evidence) for lane in ranked
                 ),
             ),
             outreach=outreach,
-            source_coverage=coverage,
+            source_coverage=projection.coverage,
+            evidence=projection.evidence,
         )

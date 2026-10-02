@@ -1,6 +1,7 @@
 """Run lifecycle and human-review boundary tests."""
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -14,6 +15,7 @@ from app.features.prospect_intelligence.contracts.models import (
     RecommendedNextStep,
     ReviewAction,
     RunStatus,
+    ScoredLane,
     SourceCoverage,
     SourceCoverageStatus,
 )
@@ -23,20 +25,20 @@ from app.features.prospect_intelligence.domain.errors import (
     InvalidRunTransitionError,
     UnsafeOutreachError,
 )
-from app.features.prospect_intelligence.domain.outreach import validate_customer_outreach
+from app.features.prospect_intelligence.domain.models import LaneFitResult
 from app.features.prospect_intelligence.domain.progress import (
     SourceCalled,
     StepFinished,
     StepStarted,
 )
 from app.features.prospect_intelligence.repositories.memory import (
-    InMemoryAccountRepository,
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
     InMemorySendReceiptRepository,
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from tests.fakes import auth_context
+from tests.prospect_repositories import InMemoryAccountRepository, outreach_v2
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)
 
@@ -51,12 +53,46 @@ def build_service() -> ProspectRunService:
     )
 
 
+def test_new_run_metadata_identifies_the_v2_graph_and_prompt_bundle() -> None:
+    service = build_service()
+
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+
+    assert run.quality_metadata["agent_version"] == "prospect-intelligence-v2"
+    assert run.quality_metadata["prompt_version"] == "outreach-v2"
+
+
 def analysis(
     draft: str,
     *,
-    subject: str = "Freight conversation",
+    subject: str | None = None,
     markdown: str = "A supported recommendation.",
 ) -> AnalysisOutput:
+    safe = outreach_v2()
+    legacy_safe_bodies = {
+        "Could we discuss your freight needs?",
+        "Could we compare freight needs?",
+        "Would you be open to comparing notes on your freight needs?",
+        "Would you be open to comparing notes on your ATL-to-DAL freight needs?",
+    }
+    resolved_body = safe.body if draft in legacy_safe_bodies else draft
+    resolved_subject = (
+        safe.subject
+        if subject in (None, "Freight conversation", "ATL to DAL freight conversation")
+        else subject
+    )
+    lane = LaneFitResult(
+        origin="PHX",
+        destination="LAX",
+        shipper_loads_per_week=8,
+        matched_loads_per_week=8,
+        backhaul_fill=Decimal("1"),
+        density=Decimal("0.5"),
+        equipment_match=Decimal("0.75"),
+        fit_score=Decimal("0.8"),
+        modeled_annual_revenue=Decimal("582400"),
+        deadhead_miles_avoided=249600,
+    )
     return AnalysisOutput(
         verdict=FitVerdict.FIT,
         brief=ProspectBrief(
@@ -64,65 +100,14 @@ def analysis(
             markdown=markdown,
             recommended_next_step=RecommendedNextStep.NEW_LANE_PITCH,
             recommendation="Review the supported outreach.",
-            lanes=(),
+            lanes=(ScoredLane(score=lane, evidence=()),),
         ),
-        outreach=OutreachDraft(subject=subject, body=draft),
+        outreach=OutreachDraft(subject=resolved_subject, body=resolved_body),
         source_coverage=(
             SourceCoverage(source="CRM", status=SourceCoverageStatus.COMPLETE),
             SourceCoverage(source="Network", status=SourceCoverageStatus.COMPLETE),
         ),
     )
-
-
-@pytest.mark.parametrize(
-    "outreach",
-    [
-        OutreachDraft(subject="Freight conversation", body="Could we discuss your freight needs?"),
-        OutreachDraft(subject="Freight conversation", body="Could we compare freight needs?"),
-        OutreachDraft(
-            subject="Freight conversation",
-            body="Would you be open to comparing notes on your freight needs?",
-        ),
-        OutreachDraft(
-            subject="ATL to DAL freight conversation",
-            body="Would you be open to comparing notes on your ATL-to-DAL freight needs?",
-        ),
-    ],
-)
-def test_outreach_allowlist_accepts_only_approved_v1_templates(
-    outreach: OutreachDraft,
-) -> None:
-    validate_customer_outreach(outreach)
-
-
-@pytest.mark.parametrize(
-    "outreach",
-    [
-        OutreachDraft(
-            subject="ATL to DAL freight conversation",
-            body="Would you be open to comparing notes on your ATL-to-DFW freight needs?",
-        ),
-        OutreachDraft(
-            subject="atl to DAL freight conversation",
-            body="Would you be open to comparing notes on your atl-to-DAL freight needs?",
-        ),
-        OutreachDraft(
-            subject="Freight conversation",
-            body="Would you be open to comparing notes on your ATL-to-DAL freight needs?",
-        ),
-        OutreachDraft(subject="Freight conversation!", body="Could we discuss your freight needs?"),
-        OutreachDraft(subject="Freight conversation", body="Could we discuss freight together?"),
-        OutreachDraft(
-            subject="ATL<script> to DAL freight conversation",
-            body="Would you be open to comparing notes on your ATL<script>-to-DAL freight needs?",
-        ),
-    ],
-)
-def test_outreach_allowlist_rejects_near_miss_or_unpaired_templates(
-    outreach: OutreachDraft,
-) -> None:
-    with pytest.raises(UnsafeOutreachError):
-        validate_customer_outreach(outreach)
 
 
 def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
@@ -148,6 +133,8 @@ def test_run_waits_for_review_and_approved_send_is_idempotent() -> None:
 
     assert first.status is RunStatus.COMPLETED
     assert second.status is RunStatus.COMPLETED
+    assert first.stage == "Simulated send complete"
+    assert second.stage == "Simulated send complete"
     assert first.send_receipt_id == second.send_receipt_id
 
 
@@ -211,33 +198,30 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
         edited.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(edited.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we discuss your freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we discuss transportation priorities next week?"
         ),
     )
 
-    assert reviewed.reviewed_outreach == OutreachDraft(
-        subject="Freight conversation",
-        body="Could we discuss your freight needs?",
+    assert reviewed.reviewed_outreach == outreach_v2(
+        question="Could we discuss transportation priorities next week?"
     )
+    assert reviewed.stage == "Simulated send complete"
     preferences = service.get_preferences("tenant-demo", "rep-a")
     assert len(preferences) == 1
-    assert preferences[0].summary == (
-        "Tone: direct. Length: about 6 words. Format: generic invitation."
-    )
+    assert preferences[0].summary.startswith("Tone: consultative.")
     assert service.get_preferences("tenant-demo", "rep-b") == ()
 
     altered_replay = service.review_run(
         edited.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(edited.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we compare freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we compare transportation priorities next week?"
         ),
     )
     assert altered_replay == reviewed
+    assert altered_replay.stage == "Simulated send complete"
     assert service.get_preferences("tenant-demo", "rep-a") == preferences
 
     replacement = service.create_run(auth_context(rep_id="rep-a"), account.id)
@@ -250,17 +234,14 @@ def test_reject_does_not_send_and_edit_updates_scoped_preferences() -> None:
         replacement.id,
         ReviewAction.EDIT,
         tool_call_id=review_tool_call_id(replacement.id),
-        edited_outreach=OutreachDraft(
-            subject="Freight conversation",
-            body="Could we compare freight needs?",
+        edited_outreach=outreach_v2(
+            question="Could we compare transportation priorities next week?"
         ),
     )
 
     current = service.get_preferences("tenant-demo", "rep-a")
     assert len(current) == 1
-    assert current[0].summary == (
-        "Tone: comparative. Length: about 5 words. Format: generic invitation."
-    )
+    assert current[0].summary.startswith("Tone: consultative.")
 
 
 def test_internal_business_data_is_blocked_from_customer_outreach() -> None:
@@ -269,7 +250,7 @@ def test_internal_business_data_is_blocked_from_customer_outreach() -> None:
     run = service.create_run(auth_context(rep_id="rep-demo"), account.id)
     service.start_run(run.id)
 
-    with pytest.raises(UnsafeOutreachError, match="internal-only"):
+    with pytest.raises(UnsafeOutreachError, match="prohibited"):
         service.submit_analysis(
             run.id,
             analysis(
@@ -277,6 +258,31 @@ def test_internal_business_data_is_blocked_from_customer_outreach() -> None:
                 markdown="Internal details may remain in the brief.",
             ),
         )
+
+
+@pytest.mark.parametrize("flow", ["generated", "edited"])
+def test_other_assigned_account_is_blocked_at_the_service_boundary(flow: str) -> None:
+    service = build_service()
+    run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
+    service.start_run(run.id)
+    draft = outreach_v2(
+        question="Would Northstar Retail be open to comparing priorities next week?"
+    )
+
+    with pytest.raises(UnsafeOutreachError, match="another assigned account"):
+        if flow == "generated":
+            service.submit_analysis(
+                run.id,
+                analysis(draft.body, subject=draft.subject),
+            )
+        else:
+            service.submit_analysis(run.id, analysis("Could we compare freight needs?"))
+            service.review_run(
+                run.id,
+                ReviewAction.EDIT,
+                tool_call_id=review_tool_call_id(run.id),
+                edited_outreach=draft,
+            )
 
 
 @pytest.mark.parametrize(

@@ -114,37 +114,6 @@ def upgrade() -> None:
         ["lease_expires_at"],
     )
 
-    accounts = sa.table(
-        "prospect_accounts",
-        sa.column("tenant_id", sa.String()),
-        sa.column("account_id", sa.String()),
-        sa.column("name", sa.String()),
-        sa.column("relationship", sa.String()),
-        sa.column("industry", sa.String()),
-        sa.column("location", sa.String()),
-    )
-    op.bulk_insert(
-        accounts,
-        [
-            {
-                "tenant_id": "tenant-demo",
-                "account_id": "acme-foods",
-                "name": "Acme Foods",
-                "relationship": "Prospect",
-                "industry": "Food distribution",
-                "location": "Dallas, TX",
-            },
-            {
-                "tenant_id": "tenant-demo",
-                "account_id": "northstar-retail",
-                "name": "Northstar Retail",
-                "relationship": "Customer",
-                "industry": "Retail",
-                "location": "Atlanta, GA",
-            },
-        ],
-    )
-
 
 def downgrade() -> None:
     op.drop_table("prospect_worker_jobs")
