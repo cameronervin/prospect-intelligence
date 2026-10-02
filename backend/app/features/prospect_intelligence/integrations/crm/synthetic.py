@@ -46,7 +46,7 @@ class SyntheticCrmSource:
             evidence = (
                 (
                     Evidence(
-                        claim="Synthetic CRM demo account alias",
+                        claim="Reviewed CRM demo account record",
                         provenance=Provenance(
                             source="CRM fixture",
                             mode=SourceMode.FIXTURE,
@@ -74,6 +74,11 @@ class SyntheticCrmSource:
                     ),
                     industry=alias.industry if alias is not None else scenario.account.industry,
                     location=alias.location if alias is not None else scenario.account.headquarters,
+                    contact_name=alias.contact_name if alias is not None else "Operations team",
+                    contact_role=(
+                        alias.contact_role if alias is not None else "Transportation contact"
+                    ),
+                    fmcsa_usdot_number=(alias.fmcsa_usdot_number if alias is not None else None),
                 ),
                 coverage=coverage,
                 evidence=evidence,

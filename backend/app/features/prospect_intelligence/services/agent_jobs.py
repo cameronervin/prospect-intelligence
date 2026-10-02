@@ -23,9 +23,7 @@ from app.features.prospect_intelligence.contracts.models import (
     RunStatus,
     ScoredLane,
 )
-from app.features.prospect_intelligence.contracts.quality_evaluation import (
-    OnlineQualityProjector,
-)
+from app.features.prospect_intelligence.contracts.quality_evaluation import OnlineQualityProjector
 from app.features.prospect_intelligence.contracts.runtime_guardrails import RuntimeGuardrail
 from app.features.prospect_intelligence.contracts.sources import (
     ProspectSources,
@@ -160,15 +158,16 @@ class ProspectAgentJobHandler:
             destination = payload.get("destination_zone")
             if not isinstance(origin, str) or not isinstance(destination, str):
                 raise ValueError("market lookup requires origin_zone and destination_zone")
+            freight = self.sources.freight.get_activity(context, run.account)
+            queries = freight.value.market_queries if freight.value is not None else ()
+            allowed = {(query.origin_zone, query.destination_zone) for query in queries}
+            if (origin, destination) not in allowed:
+                raise ValueError("market lookup is outside reviewed freight context")
             return self.sources.market.get_lane(context, origin, destination)
 
-        def carrier(payload: dict[str, object]) -> object:
-            usdot = payload.get("usdot_number")
-            legal_name = payload.get("legal_name", run.account.name)
+        def carrier(_: dict[str, object]) -> object:
             return self.sources.carrier_registry.lookup(
-                context,
-                usdot_number=usdot if isinstance(usdot, str) else None,
-                legal_name=legal_name if isinstance(legal_name, str) else None,
+                context, usdot_number=run.account.fmcsa_usdot_number
             )
 
         def score(_: dict[str, object]) -> object:

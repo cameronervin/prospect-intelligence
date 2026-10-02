@@ -34,6 +34,7 @@ class AccountRecord(Base):
     location: Mapped[str | None] = mapped_column(String(200), nullable=True)
     contact_name: Mapped[str] = mapped_column(String(200))
     contact_role: Mapped[str] = mapped_column(String(200))
+    fmcsa_usdot_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class AccountAssignmentRecord(Base):

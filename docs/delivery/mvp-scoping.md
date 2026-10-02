@@ -13,13 +13,14 @@ behavior.
 | CRM | Deterministic synthetic adapter plus an unwired `SalesforceCrmSource` shell. | Finalize Salesforce delegated auth, paging, field mapping, tenant authorization, rate limits, audit logging, and approved writeback. |
 | Freight intelligence | Deterministic GenLogs-shaped fixtures plus an unwired `GenLogsFreightIntelligenceSource` shell. | Finalize the licensed GenLogs contract, credentials, quotas, schema mapping, freshness rules, restricted-field handling, and commercial usage approval. |
 | Carrier network | Deterministic tenant-scoped capacity plus an unwired `TmsCarrierNetworkSource` shell. | Connect the carrier's TMS/data warehouse, enforce tenant predicates, define equipment/location normalization, freshness SLAs, and reconcile late or corrected loads. |
-| Carrier registry | Optional FMCSA QCMobile read adapter with exact-USDOT preference and sanitized failure. | Validate credentials and payloads in a provider sandbox, add operational monitoring, confirm API terms, and establish an outage/staleness policy. |
+| Carrier registry | Optional FMCSA QCMobile read adapter scoped to the selected prospect's reviewed exact USDOT, with sanitized fail-closed behavior. | Validate credentials and payloads in a provider sandbox, add operational monitoring, confirm API terms, and establish an outage/staleness policy. |
 | Company research | Optional SEC EDGAR and Tavily adapters with bounded retries, provenance, and untrusted-text normalization. | Run credentialed smoke tests, add provider-specific metrics/budgets, review search licensing, and implement stronger content/prompt-injection screening before model use. |
 | Market data | Packaged, checksummed FAF5.7.1 snapshot with project-owned load estimates. | Establish refresh ownership and cadence, automate reviewed snapshot promotion, monitor upstream revisions, and complete legal review for broader redistribution. |
 
-Carrier network and carrier registry intentionally remain separate: network data is private
-operational capacity, while registry data is public authority and safety information. They require
-different credentials, normalized types, provenance, and failure policies.
+Carrier network and carrier registry intentionally remain separate: network data is the seller's
+private operational capacity, while registry data is public authority and safety information for a
+selected prospect with a reviewed carrier/private-fleet identity. They require different
+credentials, normalized types, provenance, and failure policies.
 
 ## Agent and product behavior
 

@@ -20,7 +20,7 @@ test("runs the durable rep-review journey through the real application stack", a
   await page.getByRole("button", { name: "Enter" }).click();
   await expect(page).toHaveURL(/\/$/, { timeout: 30_000 });
   await expect(page.getByText("Alex Morgan · Sales rep")).toBeVisible();
-  const account = page.getByRole("button", { name: /Acme Foods/ });
+  const account = page.getByRole("button", { name: /Sysco Corporation/ });
   await account.focus();
   await page.keyboard.press("Enter");
   await expect(account).toHaveAttribute("aria-pressed", "true");
@@ -41,7 +41,7 @@ test("runs the durable rep-review journey through the real application stack", a
   await expect(page.getByRole("region", { name: "Agent progress" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  const review = page.getByRole("region", { name: /Review the outreach to Acme Foods/ });
+  const review = page.getByRole("region", { name: /Review the outreach to Sysco Corporation/ });
   await expect(review).toBeVisible({ timeout: 120_000 });
   await expect(page.getByRole("table", { name: "Top lanes" })).toBeVisible();
   const runEvidence = page.getByRole("region", { name: "Run evidence" });
@@ -52,7 +52,7 @@ test("runs the durable rep-review journey through the real application stack", a
 
   await page.reload();
   await expect(review).toBeVisible();
-  await expect(page.getByRole("button", { name: /Acme Foods/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Sysco Corporation/ })).toBeDisabled();
   await review.getByRole("button", { name: "Approve send" }).click();
 
   await expect(page.getByRole("heading", { name: "Communications sent" })).toBeFocused();

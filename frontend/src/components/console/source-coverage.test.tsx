@@ -68,4 +68,22 @@ describe("SourceCoverage", () => {
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Run evidence" })).not.toBeInTheDocument();
   });
+
+  it("renders all seven completed source families without changing their identities", () => {
+    const completed: Coverage[] = [
+      { source: "CRM fixture", status: "complete", mode: "fixture" },
+      { source: "GenLogs fixture", status: "complete", mode: "fixture" },
+      { source: "Carrier network fixture", status: "complete", mode: "fixture" },
+      { source: "SEC EDGAR", status: "complete", mode: "live" },
+      { source: "Tavily Search", status: "complete", mode: "live" },
+      { source: "FMCSA QCMobile", status: "complete", mode: "live" },
+      { source: "BTS/FHWA FAF5.7.1", status: "complete", mode: "snapshot" },
+    ];
+
+    render(<SourceCoverage coverage={completed} />);
+
+    expect(screen.getByText("All 7 complete")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 7 sources" }));
+    for (const item of completed) expect(screen.getByText(item.source)).toBeInTheDocument();
+  });
 });

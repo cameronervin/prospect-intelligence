@@ -7,7 +7,7 @@ help:
 	@echo "LangChain take-home development targets"
 	@echo "  setup          Install backend and frontend dependencies"
 	@echo "  dev            Start PostgreSQL, backend, and frontend for development"
-	@echo "  seed-demo-data Seed the fictional login, membership, contacts, and assignments"
+	@echo "  seed-demo-data Seed the demo login, membership, contact, and prospect assignment"
 	@echo "  verify         Run repository checks and tests"
 	@echo "  test-e2e       Run Playwright browser tests"
 	@echo "  audit          Audit production dependencies"

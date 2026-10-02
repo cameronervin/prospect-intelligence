@@ -15,7 +15,7 @@ from .sec_payloads import (
     declared_agent,
     has_valid_company_entry,
     normalize_filings,
-    select_company,
+    select_companies,
 )
 
 _SOURCE = "SEC EDGAR"
@@ -71,8 +71,14 @@ class SecEdgarSource:
         tickers = self._request_json(_TICKERS_URL)
         if tickers is None:
             return put_cached(context, key, self._unavailable("provider request failed"))
-        match = select_company(tickers, query)
-        if match is None:
+        matches = select_companies(tickers, query)
+        if len(matches) > 1:
+            return put_cached(
+                context,
+                key,
+                self._unavailable("company identity is ambiguous"),
+            )
+        if not matches:
             if tickers and not has_valid_company_entry(tickers):
                 return put_cached(
                     context,
@@ -80,7 +86,7 @@ class SecEdgarSource:
                     self._unavailable("provider response was invalid"),
                 )
             return put_cached(context, key, self._unavailable("no matching company found"))
-        cik, title = match
+        cik, title = matches[0]
 
         submissions_url = f"{_SUBMISSIONS_ROOT}/CIK{cik:010d}.json"
         submissions = self._request_json(submissions_url)

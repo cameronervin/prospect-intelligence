@@ -174,6 +174,7 @@ def test_accounts_ignore_browser_scope_headers_and_use_verified_token() -> None:
     )
     assert response.status_code == 200
     assert response.json()["items"][0]["name"] == "Acme Foods"
+    assert "fmcsa_usdot_number" not in response.json()["items"][0]
 
 
 def test_create_and_poll_run() -> None:

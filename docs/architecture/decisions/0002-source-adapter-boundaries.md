@@ -29,9 +29,11 @@ than a runtime integration. FAF is a real snapshot-backed market-data adapter. S
 FMCSA are live public-source adapters when external access is enabled.
 
 Carrier network and carrier registry remain separate packages. Carrier network represents the
-carrier's private, tenant-owned capacity and lane history. Carrier registry represents public,
-carrier-level authority and safety facts from FMCSA. Their subjects overlap, but their ownership,
-credentials, data shape, failure policy, and replacement path do not.
+seller's private, tenant-owned capacity and lane history. Carrier registry represents public
+authority and safety facts for the selected prospect's reviewed carrier/private-fleet identity.
+The selected account supplies an exact USDOT; the model cannot substitute a different identity.
+Their subjects, ownership, credentials, data shape, failure policy, and replacement path remain
+distinct.
 
 ## Rationale
 

@@ -215,7 +215,7 @@ async def test_source_tools_report_outcome_for_the_active_step_without_payloads(
     with bind_runtime_context(context), bind_step("account-context"):
         await cast(Any, crm).coroutine(runtime=_runtime(context))
     with bind_step("external-research"), pytest.raises(RuntimeError):
-        await cast(Any, fmcsa).coroutine(usdot_number="123", runtime=_runtime(context))
+        await cast(Any, fmcsa).coroutine(runtime=_runtime(context))
 
     assert sink.events == [
         ("source", "account-context", "get_crm_account", True),

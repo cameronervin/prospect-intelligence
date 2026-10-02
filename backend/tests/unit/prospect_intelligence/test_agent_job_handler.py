@@ -2,8 +2,9 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
@@ -24,6 +25,8 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
 )
 from app.features.prospect_intelligence.contracts.lane_analysis import LaneAnalysisArtifact
 from app.features.prospect_intelligence.contracts.models import (
+    Account,
+    AccountRelationship,
     AnalysisOutput,
     FitVerdict,
     OutreachDraft,
@@ -33,6 +36,7 @@ from app.features.prospect_intelligence.contracts.models import (
     RunStatus,
 )
 from app.features.prospect_intelligence.contracts.progress import RunStepStatus
+from app.features.prospect_intelligence.contracts.sources import RunSourceCache, SourceCallContext
 from app.features.prospect_intelligence.contracts.workflow import review_tool_call_id
 from app.features.prospect_intelligence.domain.errors import (
     InvalidRunTransitionError,
@@ -51,6 +55,125 @@ from tests.deterministic_pipeline import DeterministicProspectPipeline
 from tests.fakes import auth_context, synthetic_prospect_sources
 from tests.prospect_repositories import InMemoryAccountRepository, outreach_v2
 from tests.unit.prospect_intelligence.agent_test_support import completed_files
+
+
+def _sysco_accounts() -> InMemoryAccountRepository:
+    return InMemoryAccountRepository(
+        (
+            Account(
+                id="sysco-corporation",
+                tenant_id="tenant-demo",
+                name="Sysco Corporation",
+                relationship=AccountRelationship.PROSPECT,
+                industry="Food distribution",
+                location="Houston, TX",
+                contact_name="Jordan Lee",
+                contact_role="Director of Transportation",
+                fmcsa_usdot_number="2215799",
+            ),
+        )
+    )
+
+
+def test_tool_handlers_scope_fmcsa_to_selected_account_usdot() -> None:
+    class RecordingRegistry:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str | None, str | None]] = []
+
+        def lookup(
+            self,
+            _context: SourceCallContext,
+            *,
+            usdot_number: str | None = None,
+            legal_name: str | None = None,
+        ) -> object:
+            self.calls.append((usdot_number, legal_name))
+            return {"selected": usdot_number}
+
+    service = ProspectRunService(
+        accounts=_sysco_accounts(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run(auth_context(rep_id="rep-demo"), "sysco-corporation")
+    registry = RecordingRegistry()
+    sources = replace(
+        synthetic_prospect_sources(aliases={"sysco-corporation": "core_01"}),
+        carrier_registry=registry,
+    )
+    handler = ProspectAgentJobHandler(
+        runtime=cast(Any, None),
+        service=service,
+        sources=sources,
+    )
+    context = SourceCallContext(
+        run_id=run.id,
+        tenant_id=run.tenant_id,
+        rep_id=run.rep_id,
+        cache=RunSourceCache(run.id, run.tenant_id, run.rep_id),
+    )
+
+    result = handler._tool_handlers(run, context)["get_fmcsa"](  # pyright: ignore[reportPrivateUsage]
+        {"usdot_number": "9999999", "legal_name": "Attacker Controlled"}
+    )
+
+    assert result == {"selected": "2215799"}
+    assert registry.calls == [("2215799", None)]
+
+
+def test_market_tool_allows_only_exact_reviewed_account_queries() -> None:
+    class RecordingMarket:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def get_lane(
+            self, _context: SourceCallContext, origin_zone: str, destination_zone: str
+        ) -> object:
+            self.calls.append((origin_zone, destination_zone))
+            return {"pair": f"{origin_zone}->{destination_zone}"}
+
+    service = ProspectRunService(
+        accounts=_sysco_accounts(),
+        runs=InMemoryRunRepository(),
+        receipts=InMemorySendReceiptRepository(),
+        preferences=InMemoryPreferenceRepository(),
+        clock=lambda: datetime(2026, 9, 29, 12, tzinfo=UTC),
+    )
+    run = service.create_run(auth_context(rep_id="rep-demo"), "sysco-corporation")
+    market = RecordingMarket()
+    sources = replace(
+        synthetic_prospect_sources(aliases={"sysco-corporation": "core_01"}),
+        market=market,
+    )
+    handler = ProspectAgentJobHandler(
+        runtime=cast(Any, None),
+        service=service,
+        sources=sources,
+    )
+    context = SourceCallContext(
+        run_id=run.id,
+        tenant_id=run.tenant_id,
+        rep_id=run.rep_id,
+        cache=RunSourceCache(run.id, run.tenant_id, run.rep_id),
+    )
+    tool = handler._tool_handlers(run, context)[  # pyright: ignore[reportPrivateUsage]
+        "get_faf_market_volume"
+    ]
+
+    assert tool({"origin_zone": "041", "destination_zone": "061"}) == {"pair": "041->061"}
+    payloads: tuple[dict[str, object], ...] = (
+        {"origin_zone": "PHX", "destination_zone": "LAX"},
+        {"origin_zone": "081", "destination_zone": "531"},
+        {"origin_zone": "41", "destination_zone": "061"},
+    )
+    for payload in payloads:
+        with pytest.raises(ValueError, match="outside reviewed freight context") as error:
+            tool(payload)
+        assert not any(str(value) in str(error.value) for value in payload.values())
+
+    assert market.calls == [("041", "061")]
 
 
 class _CompiledRuntime:

@@ -115,23 +115,12 @@ async def search_tavily(
 
 @tool(
     "get_fmcsa",
-    description="Look up an FMCSA carrier by USDOT number, legal name, or both.",
+    description="Look up FMCSA context for the selected prospect account.",
 )
 async def get_fmcsa(
     runtime: ToolRuntime[ProspectRuntimeContext, ProspectDeepAgentState],
-    usdot_number: str | None = None,
-    legal_name: str | None = None,
 ) -> str:
-    payload: dict[str, object] = {
-        key: value
-        for key, value in {"usdot_number": usdot_number, "legal_name": legal_name}.items()
-        if value is not None
-    }
-    return await _invoke_source(
-        "get_fmcsa",
-        payload,
-        runtime,
-    )
+    return await _invoke_source("get_fmcsa", {}, runtime)
 
 
 @tool(

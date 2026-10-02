@@ -67,11 +67,13 @@ def review_findings(
     )
 
 
-def completed_files() -> dict[str, FileData]:
+def completed_files(account_name: str = "Acme Foods") -> dict[str, FileData]:
     return {
-        "/task/brief.md": file_data("Research Acme freight fit."),
+        "/task/brief.md": file_data(f"Research {account_name} freight fit."),
         "/INDEX.md": file_data("# Prospect artifact manifest\n"),
-        "/context/account.json": file_data(_sourced({"account": "Acme"}, source="CRM fixture")),
+        "/context/account.json": file_data(
+            _sourced({"account": account_name}, source="CRM fixture")
+        ),
         "/context/our_network.json": file_data(
             _sourced(
                 {
@@ -114,13 +116,13 @@ def completed_files() -> dict[str, FileData]:
         ),
         "/analysis/lane_fit.md": file_data("ATL to DAL: 8 matched loads; fit score 0.8."),
         "/output/brief.md": file_data(
-            "Acme has 8 matched weekly loads on ATL to DAL with fit score 0.8."
+            f"{account_name} has 8 matched weekly loads on ATL to DAL with fit score 0.8."
         ),
         "/output/outreach_draft.md": file_data(
-            "Subject: A freight conversation for Acme Foods\n\n"
+            f"Subject: A freight conversation for {account_name}\n\n"
             "Hi Jordan,\n\n"
             "I'm Alex Morgan, and I represent an asset-based truckload carrier.\n\n"
-            "Acme Foods' distribution footprint and ATL-to-DAL freight activity may align "
+            f"{account_name}' distribution footprint and ATL-to-DAL freight activity may align "
             "with lanes our team supports.\n\n"
             "Would you be open to a brief conversation next week to compare network needs?"
         ),
@@ -178,6 +180,7 @@ class TrajectoryModel(BaseChatModel):
     memory_path: str = "/memories/tenant-demo/rep-demo/preferences.md"
     first_call_delay_seconds: float = 0.0
     delay_applied: bool = False
+    account_name: str = "Acme Foods"
 
     @property
     def _llm_type(self) -> str:
@@ -229,7 +232,7 @@ class TrajectoryModel(BaseChatModel):
         )
 
     def _orchestrator(self, turn: int, messages: list[BaseMessage]) -> list[dict[str, object]]:
-        files = completed_files()
+        files = completed_files(self.account_name)
         if turn == 0:
             return [
                 self._tool("read_file", "read-task", file_path="/task/brief.md"),
@@ -332,7 +335,7 @@ class TrajectoryModel(BaseChatModel):
             self.injected_failures += 1
             raise RuntimeError("synthetic late root failure")
         self.call_counts[role] = self.call_counts.get(role, 0) + 1
-        files = completed_files()
+        files = completed_files(self.account_name)
         tool_calls: list[dict[str, object]] = []
         if role == "orchestrator":
             tool_calls = self._orchestrator(turn, messages)

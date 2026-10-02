@@ -49,9 +49,14 @@ class FmcsaCarrierRegistrySource:
         usdot_number: str | None = None,
         legal_name: str | None = None,
     ) -> SourceResult[CarrierProfile]:
-        dot = "".join(character for character in (usdot_number or "") if character.isdigit())
+        raw_dot = (usdot_number or "").strip()
+        dot = raw_dot if raw_dot.isdigit() else ""
         name = " ".join((legal_name or "").split())
-        key = f"fmcsa:carrier:{dot}:{name.casefold()}"
+        key = (
+            f"fmcsa:carrier:dot:{dot or 'invalid'}"
+            if raw_dot
+            else f"fmcsa:carrier:name:{name.casefold()}"
+        )
         cached = context.cache.get(key)
         if isinstance(cached, SourceResult):
             return cast(SourceResult[CarrierProfile], cached)
@@ -59,13 +64,14 @@ class FmcsaCarrierRegistrySource:
             return put_cached(context, key, self._unavailable("live source disabled"))
         if not self._web_key:
             return put_cached(context, key, self._unavailable("provider credential unavailable"))
+        if raw_dot and not dot:
+            return put_cached(context, key, self._unavailable("carrier identifier is invalid"))
         if not dot and not name:
             return put_cached(context, key, self._unavailable("carrier identifier is required"))
 
         if dot:
             exact = self._request(f"{_ROOT}/{dot}", expected_dot=dot)
-            if exact.value is not None or not name or exact.coverage.detail != "carrier not found":
-                return put_cached(context, key, exact)
+            return put_cached(context, key, exact)
         result = self._request(f"{_ROOT}/name/{quote(name, safe='')}", expected_name=name)
         return put_cached(context, key, result)
 
@@ -101,10 +107,12 @@ class FmcsaCarrierRegistrySource:
         carriers = _carrier_records(payload)
         if carriers is None:
             return self._unavailable("provider response was invalid")
-        selected = _select(carriers, expected_dot=expected_dot, expected_name=expected_name)
-        if selected is None:
+        matches = _select(carriers, expected_dot=expected_dot, expected_name=expected_name)
+        if len(matches) > 1:
+            return self._unavailable("carrier identity is ambiguous")
+        if not matches:
             return self._unavailable("carrier not found")
-        carrier, evidence_location = selected
+        carrier, evidence_location = matches[0]
         profile = _profile(carrier)
         if profile is None:
             return self._unavailable("provider response was invalid")
@@ -180,28 +188,28 @@ def _select(
     *,
     expected_dot: str | None,
     expected_name: str | None,
-) -> CarrierRecord | None:
+) -> tuple[CarrierRecord, ...]:
     if expected_dot:
-        return next(
-            (record for record in carriers if str(record[0].get("dotNumber", "")) == expected_dot),
-            None,
+        matches = tuple(
+            record for record in carriers if str(record[0].get("dotNumber", "")) == expected_dot
         )
-    if expected_name:
+    elif expected_name:
         target = expected_name.casefold()
-        exact = next(
-            (
-                record
-                for record in carriers
-                if target
-                in {
-                    str(record[0].get("legalName", "")).casefold(),
-                    str(record[0].get("dbaName", "")).casefold(),
-                }
-            ),
-            None,
+        matches = tuple(
+            record
+            for record in carriers
+            if target
+            in {
+                str(record[0].get("legalName", "")).casefold(),
+                str(record[0].get("dbaName", "")).casefold(),
+            }
         )
-        return exact
-    return None
+    else:
+        return ()
+    by_dot: dict[str, CarrierRecord] = {}
+    for record in matches:
+        by_dot.setdefault(str(record[0].get("dotNumber", "")), record)
+    return tuple(by_dot.values())
 
 
 def _profile(carrier: Mapping[str, object]) -> CarrierProfile | None:
@@ -209,10 +217,19 @@ def _profile(carrier: Mapping[str, object]) -> CarrierProfile | None:
     name = normalize_text(carrier.get("legalName"), limit=200)
     if dot is None or name is None:
         return None
-    allowed = str(carrier.get("allowToOperate", "")).upper()
-    out_of_service = str(carrier.get("outOfService", "")).upper()
-    status = "authorized" if allowed == "Y" and out_of_service != "Y" else "not_authorized"
-    if allowed not in {"Y", "N"} and out_of_service not in {"Y", "N"}:
+    documented_allowed = _yes_no(carrier, "allowToOperate")
+    live_allowed = _yes_no(carrier, "allowedToOperate")
+    out_of_service = _yes_no(carrier, "outOfService")
+    if documented_allowed is False or live_allowed is False or out_of_service is False:
+        return None
+    if documented_allowed and live_allowed and documented_allowed != live_allowed:
+        return None
+    allowed = live_allowed or documented_allowed
+    if out_of_service == "Y" or allowed == "N":
+        status = "not_authorized"
+    elif allowed == "Y":
+        status = "authorized"
+    else:
         status = "unknown"
     return CarrierProfile(
         usdot_number=dot,
@@ -220,3 +237,10 @@ def _profile(carrier: Mapping[str, object]) -> CarrierProfile | None:
         operating_status=status,
         safety_rating=normalize_text(carrier.get("safetyRating"), limit=64),
     )
+
+
+def _yes_no(carrier: Mapping[str, object], field: str) -> str | bool | None:
+    if field not in carrier or carrier[field] is None or str(carrier[field]).strip() == "":
+        return None
+    value = str(carrier[field]).strip().upper()
+    return value if value in {"Y", "N"} else False

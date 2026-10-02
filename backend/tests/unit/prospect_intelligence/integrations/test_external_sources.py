@@ -10,6 +10,7 @@ from typing import cast
 from uuid import UUID
 
 import httpx
+import pytest
 from structlog.testing import capture_logs
 
 from app.features.prospect_intelligence.contracts.models import SourceCoverageStatus, SourceMode
@@ -426,6 +427,113 @@ def test_sec_nonempty_malformed_company_index_is_not_treated_as_no_match() -> No
     assert result.evidence == ()
 
 
+def test_sec_resolves_a_unique_corporate_suffix_alias() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("company_tickers.json"):
+            return httpx.Response(
+                200,
+                json={"0": {"cik_str": 96021, "ticker": "SYY", "title": "SYSCO CORP"}},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "name": "SYSCO CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0000096021-26-000001"],
+                        "filingDate": ["2026-09-27"],
+                        "form": ["8-K"],
+                        "primaryDocument": ["sysco-8k.htm"],
+                    }
+                },
+            },
+            request=request,
+        )
+
+    result = SecEdgarSource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        user_agent="Freight Prospect research@example.com",
+        now=lambda: NOW,
+        sleeper=lambda _: None,
+    ).search_company(source_context(), "Sysco Corporation")
+
+    assert result.coverage.status is SourceCoverageStatus.COMPLETE
+    assert result.value is not None
+    assert result.value[0].title == "SYSCO CORP 8-K filing"
+
+
+def test_sec_rejects_ambiguous_corporate_name_matches() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "0": {"cik_str": 1, "title": "SYSCO CORP"},
+                "1": {"cik_str": 2, "title": "Sysco Corporation"},
+            },
+            request=request,
+        )
+
+    result = SecEdgarSource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        user_agent="Freight Prospect research@example.com",
+        sleeper=lambda _: None,
+    ).search_company(source_context(), "Sysco Corporation")
+
+    assert result.value is None
+    assert result.coverage.detail == "company identity is ambiguous"
+    assert result.evidence == ()
+    assert calls == 1
+
+
+def test_sec_deduplicates_matching_share_classes_for_one_cik() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("company_tickers.json"):
+            return httpx.Response(
+                200,
+                json={
+                    "0": {"cik_str": 96021, "ticker": "SYY", "title": "SYSCO CORP"},
+                    "1": {
+                        "cik_str": 96021,
+                        "ticker": "SYY.A",
+                        "title": "Sysco Corporation",
+                    },
+                },
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "name": "SYSCO CORP",
+                "filings": {
+                    "recent": {
+                        "accessionNumber": ["0000096021-26-000001"],
+                        "filingDate": ["2026-09-27"],
+                        "form": ["8-K"],
+                        "primaryDocument": ["sysco-8k.htm"],
+                    }
+                },
+            },
+            request=request,
+        )
+
+    result = SecEdgarSource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        user_agent="Freight Prospect research@example.com",
+        sleeper=lambda _: None,
+    ).search_company(source_context(), "Sysco Corporation")
+
+    assert result.coverage.status is SourceCoverageStatus.COMPLETE
+    assert result.value is not None
+
+
 def test_sec_discloses_nonempty_malformed_filing_rows() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("company_tickers.json"):
@@ -506,7 +614,7 @@ def test_sec_throttle_serializes_concurrent_request_starts() -> None:
     assert all(later - earlier >= 0.015 for earlier, later in pairwise(request_times))
 
 
-def test_fmcsa_prefers_exact_usdot_and_never_exposes_web_key() -> None:
+def test_fmcsa_prefers_exact_usdot_accepts_live_spelling_and_never_exposes_web_key() -> None:
     requests: list[httpx.Request] = []
     secret = "super-secret-web-key"
 
@@ -519,7 +627,7 @@ def test_fmcsa_prefers_exact_usdot_and_never_exposes_web_key() -> None:
                     "carrier": {
                         "dotNumber": 1234567,
                         "legalName": "Acme Transport LLC",
-                        "allowToOperate": "Y",
+                        "allowedToOperate": "Y",
                         "safetyRating": "Satisfactory",
                     }
                 }
@@ -578,7 +686,7 @@ def test_fmcsa_failure_is_sanitized_cached_and_does_not_leak_web_key() -> None:
     assert calls == 3
 
 
-def test_fmcsa_falls_back_to_name_only_when_exact_usdot_is_not_found() -> None:
+def test_fmcsa_does_not_fallback_from_a_missing_exact_usdot_to_name() -> None:
     paths: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -612,14 +720,273 @@ def test_fmcsa_falls_back_to_name_only_when_exact_usdot_is_not_found() -> None:
         source_context(), usdot_number="1234567", legal_name="Acme Transport LLC"
     )
 
+    assert result.value is None
+    assert result.coverage.detail == "carrier not found"
+    assert paths == ["/qc/services/carriers/1234567"]
+
+
+def test_fmcsa_accepts_documented_operating_field_spelling() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "content": {
+                    "carrier": {
+                        "dotNumber": 2215799,
+                        "legalName": "SYSCO CORPORATION",
+                        "allowToOperate": "Y",
+                    }
+                }
+            },
+            request=request,
+        )
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), usdot_number="2215799")
+
     assert result.value is not None
-    assert result.value.usdot_number == "7654321"
-    assert result.value.operating_status == "not_authorized"
-    assert paths == [
-        "/qc/services/carriers/1234567",
-        "/qc/services/carriers/name/Acme Transport LLC",
-    ]
-    assert result.evidence[0].provenance.evidence_location == "content[0].carrier"
+    assert result.value.operating_status == "authorized"
+
+
+def test_fmcsa_rejects_conflicting_operating_field_spellings() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "content": {
+                    "carrier": {
+                        "dotNumber": 2215799,
+                        "legalName": "SYSCO CORPORATION",
+                        "allowToOperate": "N",
+                        "allowedToOperate": "Y",
+                    }
+                }
+            },
+            request=request,
+        )
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), usdot_number="2215799")
+
+    assert result.value is None
+    assert result.coverage.status is SourceCoverageStatus.UNAVAILABLE
+    assert result.coverage.detail == "provider response was invalid"
+    assert result.evidence == ()
+
+
+def test_fmcsa_accepts_matching_operating_field_spellings() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "content": {
+                    "carrier": {
+                        "dotNumber": 2215799,
+                        "legalName": "SYSCO CORPORATION",
+                        "allowToOperate": "Y",
+                        "allowedToOperate": "Y",
+                    }
+                }
+            },
+            request=request,
+        )
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), usdot_number="2215799")
+
+    assert result.value is not None
+    assert result.value.operating_status == "authorized"
+
+
+@pytest.mark.parametrize("out_of_service", ["MAYBE", "UNKNOWN", "1"])
+def test_fmcsa_rejects_malformed_explicit_out_of_service(out_of_service: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "content": {
+                    "carrier": {
+                        "dotNumber": 2215799,
+                        "legalName": "SYSCO CORPORATION",
+                        "allowedToOperate": "Y",
+                        "outOfService": out_of_service,
+                    }
+                }
+            },
+            request=request,
+        )
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), usdot_number="2215799")
+
+    assert result.value is None
+    assert result.coverage.status is SourceCoverageStatus.UNAVAILABLE
+    assert result.coverage.detail == "provider response was invalid"
+
+
+@pytest.mark.parametrize(
+    ("allowed", "out_of_service", "expected"),
+    [
+        (None, "N", "unknown"),
+        (None, "Y", "not_authorized"),
+        ("N", "N", "not_authorized"),
+        ("Y", "Y", "not_authorized"),
+        ("Y", "N", "authorized"),
+    ],
+)
+def test_fmcsa_operating_status_truth_table(
+    allowed: str | None,
+    out_of_service: str,
+    expected: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        carrier: dict[str, object] = {
+            "dotNumber": 2215799,
+            "legalName": "SYSCO CORPORATION",
+            "outOfService": out_of_service,
+        }
+        if allowed is not None:
+            carrier["allowedToOperate"] = allowed
+        return httpx.Response(200, json={"content": {"carrier": carrier}}, request=request)
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), usdot_number="2215799")
+
+    assert result.value is not None
+    assert result.value.operating_status == expected
+
+
+def test_fmcsa_rejects_ambiguous_exact_name_matches() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "carrier": {
+                            "dotNumber": 2215799,
+                            "legalName": "SYSCO CORPORATION",
+                            "allowedToOperate": "Y",
+                        }
+                    },
+                    {
+                        "carrier": {
+                            "dotNumber": 74957,
+                            "legalName": "SYSCO CORPORATION",
+                            "allowedToOperate": "Y",
+                        }
+                    },
+                ]
+            },
+            request=request,
+        )
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), legal_name="Sysco Corporation")
+
+    assert result.value is None
+    assert result.coverage.detail == "carrier identity is ambiguous"
+
+
+def test_fmcsa_deduplicates_repeated_rows_for_one_usdot() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        carrier = {
+            "dotNumber": 2215799,
+            "legalName": "SYSCO CORPORATION",
+            "allowedToOperate": "Y",
+        }
+        return httpx.Response(
+            200,
+            json={"content": [{"carrier": carrier}, {"carrier": carrier}]},
+            request=request,
+        )
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    ).lookup(source_context(), legal_name="Sysco Corporation")
+
+    assert result.value is not None
+    assert result.value.usdot_number == "2215799"
+
+
+def test_fmcsa_exact_usdot_cache_ignores_non_authoritative_name() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "content": {
+                    "carrier": {
+                        "dotNumber": 2215799,
+                        "legalName": "SYSCO CORPORATION",
+                        "allowedToOperate": "Y",
+                    }
+                }
+            },
+            request=request,
+        )
+
+    source = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        live_enabled=True,
+        web_key="synthetic-key",
+        sleeper=lambda _: None,
+    )
+    context = source_context()
+
+    first = source.lookup(context, usdot_number="2215799", legal_name="Sysco Corporation")
+    repeated = source.lookup(context, usdot_number="2215799", legal_name="Ignored Name")
+
+    assert repeated is first
+    assert calls == 1
+
+
+def test_fmcsa_rejects_invalid_usdot_without_name_fallback_or_provider_io() -> None:
+    def fail_if_called(_: httpx.Request) -> httpx.Response:
+        raise AssertionError("invalid USDOT must not call provider")
+
+    result = FmcsaCarrierRegistrySource(
+        client=httpx.Client(transport=httpx.MockTransport(fail_if_called)),
+        live_enabled=True,
+        web_key="synthetic-key",
+    ).lookup(
+        source_context(),
+        usdot_number="22x15799",
+        legal_name="Sysco Corporation",
+    )
+
+    assert result.value is None
+    assert result.coverage.detail == "carrier identifier is invalid"
 
 
 def test_fmcsa_rejects_non_exact_name_result_and_malformed_payload() -> None:

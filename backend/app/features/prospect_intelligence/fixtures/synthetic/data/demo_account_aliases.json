@@ -1,18 +1,14 @@
 {
   "accounts": {
-    "acme-foods": {
+    "sysco-corporation": {
+      "contact_name": "Jordan Lee",
+      "contact_role": "Director of Transportation",
+      "fmcsa_usdot_number": "2215799",
       "industry": "Food distribution",
-      "location": "Dallas, TX",
-      "name": "Acme Foods",
+      "location": "Houston, TX",
+      "name": "Sysco Corporation",
       "relationship": "Prospect",
       "scenario_id": "core_01"
-    },
-    "northstar-retail": {
-      "industry": "Retail",
-      "location": "Atlanta, GA",
-      "name": "Northstar Retail",
-      "relationship": "Customer",
-      "scenario_id": "core_03"
     }
   },
   "dataset_version": "freight-prospect-v1"

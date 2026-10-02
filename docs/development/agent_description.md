@@ -53,13 +53,15 @@ instead of unsupported commercial claims.
 | ------------------- | -------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GenLogs             | Paid API (~$100K/yr) | Shipper lanes, facilities, volumes                     | Mock service matching public API docs schema (docs.genlogs.io): shipper lanes, shipper facilities, shipper by region. Seed from FAF5 so volumes are realistic. |
 | FHWA FAF5           | Free public dataset  | Region-to-region freight volumes by commodity          | Load locally, expose as `market_lane_volume` tool                                                                                                              |
-| FMCSA QCMobile      | Free API (web key)   | Carrier/competitor context, safety data                | Real integration                                                                                                                                               |
+| FMCSA QCMobile      | Free API (web key)   | Selected prospect carrier/private-fleet context        | Real integration using an account-owned exact USDOT                                                                                                            |
 | SEC EDGAR           | Free API             | Public shipper financials, facility/expansion mentions | Real integration                                                                                                                                               |
 | Web search (Tavily) | Free tier API        | Company news, expansion signals                        | Real integration                                                                                                                                               |
 | CRM                 | Internal             | Account record, contacts, current business             | Mock                                                                                                                                                           |
 | Our network         | Internal             | Our lanes, weekly loads, backhaul imbalance by region  | Mock (seeded, deterministic)                                                                                                                                   |
 
-All mocks are deterministic and seeded so offline evals have ground truth.
+All private-source fixtures are deterministic and seeded so offline evals have ground truth. The
+visible demo prospect is Sysco Corporation, while its CRM, freight, contact, and carrier-network
+facts remain explicitly labeled fixtures rather than claimed live facts.
 
 Source access is injected through narrow CRM, freight-intelligence, carrier-network, market-data,
 SEC, web-search, and carrier-registry Protocols. Bootstrap selects implementations. The MVP uses

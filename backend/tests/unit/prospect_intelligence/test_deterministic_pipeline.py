@@ -13,7 +13,10 @@ from app.features.prospect_intelligence.contracts.sources import (
     SourceResult,
 )
 from app.features.prospect_intelligence.domain.models import NetworkLane
-from app.features.prospect_intelligence.fixtures.synthetic import SyntheticSourceCatalog
+from app.features.prospect_intelligence.fixtures.synthetic import (
+    SyntheticSourceCatalog,
+    generate_synthetic_scenarios,
+)
 from app.features.prospect_intelligence.repositories.memory import (
     InMemoryPreferenceRepository,
     InMemoryRunRepository,
@@ -103,7 +106,10 @@ def test_pipeline_returns_needs_more_data_without_lane_evidence() -> None:
 
 
 def test_pipeline_matches_each_default_alias_scenario_reference() -> None:
-    catalog = SyntheticSourceCatalog.reviewed()
+    catalog = SyntheticSourceCatalog(
+        generate_synthetic_scenarios(),
+        {"acme-foods": "core_01", "northstar-retail": "core_03"},
+    )
     for account_id in ("acme-foods", "northstar-retail"):
         service = ProspectRunService(
             accounts=InMemoryAccountRepository.seeded(),

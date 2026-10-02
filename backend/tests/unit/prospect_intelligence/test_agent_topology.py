@@ -82,6 +82,11 @@ def test_specs_define_exact_root_and_specialist_capabilities() -> None:
     assert analyst.ptc_tool_names == ("read_file", "glob", "score_lane_fit_v1")
     assert "write_file" not in analyst.ptc_tool_names
     assert "send_outreach" not in analyst.ptc_tool_names
+    external = next(spec for spec in specialists if spec.name == "external-research")
+    assert "evidence `citation_id` exactly" in external.system_prompt
+    assert "`provenance.source` exactly" in external.system_prompt
+    assert "publisher, title, or domain" in external.system_prompt
+    assert "Do not copy the tools' `value` objects" in external.system_prompt
 
     root = orchestrator_spec()
     assert root.model_class is ModelClass.ORCHESTRATOR
@@ -122,16 +127,7 @@ def test_model_facing_tools_have_explicit_input_schemas_and_descriptions() -> No
         "search_genlogs": {},
         "search_sec": {},
         "search_tavily": {},
-        "get_fmcsa": {
-            "usdot_number": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-            },
-            "legal_name": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-            },
-        },
+        "get_fmcsa": {},
         "get_faf_market_volume": {
             "origin_zone": {"type": "string"},
             "destination_zone": {"type": "string"},
@@ -154,7 +150,7 @@ def test_model_facing_tools_have_explicit_input_schemas_and_descriptions() -> No
 
 
 @pytest.mark.asyncio
-async def test_fmcsa_lookup_omits_unset_optional_arguments() -> None:
+async def test_fmcsa_lookup_is_selected_account_scoped_and_has_no_arguments() -> None:
     payloads: list[dict[str, object]] = []
 
     def lookup(payload: dict[str, object]) -> object:

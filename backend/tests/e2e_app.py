@@ -25,6 +25,7 @@ class ScriptedModelRuntime:
             TrajectoryModel(
                 memory_path=_FRONTEND_DEMO_MEMORY,
                 first_call_delay_seconds=1.75,
+                account_name="Sysco Corporation",
             )
         )
 

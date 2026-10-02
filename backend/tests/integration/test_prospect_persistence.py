@@ -49,6 +49,7 @@ from app.features.prospect_intelligence.domain.progress import SourceCalled, Ste
 from app.features.prospect_intelligence.domain.quality_events import build_quality_event
 from app.features.prospect_intelligence.models.records import (
     AccountAssignmentRecord,
+    AccountRecord,
     ApprovalRecord,
     ProspectRunRecord,
     QualityEventOutboxRecord,
@@ -186,6 +187,32 @@ def postgres_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(url)))
     seed_demo_data(store.engine)
     with Session(store.engine) as session, session.begin():
+        session.add_all(
+            (
+                AccountRecord(
+                    tenant_id="tenant-demo",
+                    account_id="acme-foods",
+                    name="Acme Foods",
+                    relationship="Prospect",
+                    industry="Food distribution",
+                    location="Dallas, TX",
+                    contact_name="Jordan Lee",
+                    contact_role="Director of Transportation",
+                    fmcsa_usdot_number=None,
+                ),
+                AccountRecord(
+                    tenant_id="tenant-demo",
+                    account_id="northstar-retail",
+                    name="Northstar Retail",
+                    relationship="Customer",
+                    industry="Retail",
+                    location="Atlanta, GA",
+                    contact_name="Taylor Brooks",
+                    contact_role="Vice President of Logistics",
+                    fmcsa_usdot_number=None,
+                ),
+            )
+        )
         for rep_id in ("rep-a", "rep-b"):
             session.add(
                 UserRecord(
@@ -255,7 +282,7 @@ def test_api_creation_atomically_enqueues_a_pollable_run_across_restart(
     created = build_api(build_service(first_store)).post(
         "/api/v1/prospect-runs",
         headers={"X-Tenant-Id": "tenant-demo", "X-Rep-Id": "rep-a"},
-        json={"account_id": "acme-foods"},
+        json={"account_id": "sysco-corporation"},
     )
 
     assert created.status_code == 202

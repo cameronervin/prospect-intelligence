@@ -1,5 +1,6 @@
 """SEC company matching and filing response normalization."""
 
+import re
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import cast
@@ -23,8 +24,10 @@ def declared_agent(value: str) -> bool:
     return "@" in value and ".invalid" not in lowered and len(value.split()) >= 2
 
 
-def select_company(payload: Mapping[str, object], company_name: str) -> tuple[int, str] | None:
-    query = company_name.casefold()
+def select_companies(
+    payload: Mapping[str, object], company_name: str
+) -> tuple[tuple[int, str], ...]:
+    query = _company_key(company_name)
     candidates: list[tuple[int, str]] = []
     for raw in payload.values():
         if not isinstance(raw, dict):
@@ -34,11 +37,31 @@ def select_company(payload: Mapping[str, object], company_name: str) -> tuple[in
         cik = item.get("cik_str")
         if title is None or not isinstance(cik, int):
             continue
-        if query == title.casefold():
-            return (cik, title)
-        if query in title.casefold():
+        if query and query == _company_key(title):
             candidates.append((cik, title))
-    return min(candidates, key=lambda item: (len(item[1]), item[1])) if candidates else None
+    by_cik: dict[int, tuple[int, str]] = {}
+    for candidate in sorted(candidates, key=lambda item: (len(item[1]), item[1].casefold())):
+        by_cik.setdefault(candidate[0], candidate)
+    return tuple(sorted(by_cik.values(), key=lambda item: (item[1].casefold(), item[0])))
+
+
+def _company_key(value: str) -> str:
+    tokens = re.findall(r"[a-z0-9]+", value.casefold())
+    corporate_suffixes = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "ltd",
+        "plc",
+    }
+    while tokens and tokens[-1] in corporate_suffixes:
+        tokens.pop()
+    return " ".join(tokens)
 
 
 def has_valid_company_entry(payload: Mapping[str, object]) -> bool:

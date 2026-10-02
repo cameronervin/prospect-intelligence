@@ -100,11 +100,8 @@ def auth_context(
 def synthetic_prospect_sources(*, aliases: Mapping[str, str] | None = None) -> ProspectSources:
     """Build the production source bundle with offline synthetic private sources."""
 
-    catalog = (
-        SyntheticSourceCatalog(generate_synthetic_scenarios(), aliases)
-        if aliases is not None
-        else SyntheticSourceCatalog.reviewed()
-    )
+    test_aliases = aliases or {"acme-foods": "core_01", "northstar-retail": "core_03"}
+    catalog = SyntheticSourceCatalog(generate_synthetic_scenarios(), test_aliases)
     return build_source_bundle(
         Settings(environment=Environment.TEST),
         httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(599))),

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.features.authentication.models import MembershipRecord, UserRecord
 from app.features.authentication.repositories import PostgresUserRepository
-from app.features.prospect_intelligence.models import AccountRecord
+from app.features.prospect_intelligence.models import AccountAssignmentRecord, AccountRecord
 from app.features.prospect_intelligence.repositories.postgres import (
     PostgresAccountRepository,
     PostgresProspectStore,
@@ -56,6 +56,45 @@ def test_demo_seed_is_atomic_idempotent_and_actor_scoped(postgres_url: str) -> N
             )
 
         seed_demo_data(store.engine)
+        with Session(store.engine) as session, session.begin():
+            for account_id in ("acme-foods", "northstar-retail"):
+                account_exists = session.scalar(
+                    select(AccountRecord.id).where(
+                        AccountRecord.tenant_id == "tenant-demo",
+                        AccountRecord.account_id == account_id,
+                    )
+                )
+                if account_exists is None:
+                    session.add(
+                        AccountRecord(
+                            tenant_id="tenant-demo",
+                            account_id=account_id,
+                            name=account_id.replace("-", " ").title(),
+                            relationship="Prospect",
+                            industry="Legacy",
+                            location=None,
+                            contact_name="Legacy Contact",
+                            contact_role="Legacy Role",
+                        )
+                    )
+                assignment_exists = session.scalar(
+                    select(AccountAssignmentRecord.account_id).where(
+                        AccountAssignmentRecord.tenant_id == "tenant-demo",
+                        AccountAssignmentRecord.subject == "usr_alex_morgan",
+                        AccountAssignmentRecord.rep_id == "alex-morgan",
+                        AccountAssignmentRecord.account_id == account_id,
+                    )
+                )
+                if assignment_exists is None:
+                    session.add(
+                        AccountAssignmentRecord(
+                            tenant_id="tenant-demo",
+                            subject="usr_alex_morgan",
+                            rep_id="alex-morgan",
+                            account_id=account_id,
+                        )
+                    )
+        seed_demo_data(store.engine)
         first_hash = _demo_hash(store)
         seed_demo_data(store.engine)
 
@@ -72,11 +111,21 @@ def test_demo_seed_is_atomic_idempotent_and_actor_scoped(postgres_url: str) -> N
 
         accounts = PostgresAccountRepository(store)
         visible = accounts.list_for_actor("tenant-demo", "usr_alex_morgan", "alex-morgan")
-        assert [account.id for account in visible] == ["acme-foods", "northstar-retail"]
+        assert [account.id for account in visible] == ["sysco-corporation"]
         assert visible[0].contact_name == "Jordan Lee"
+        assert visible[0].fmcsa_usdot_number == "2215799"
+        with Session(store.engine) as session:
+            historical_ids = set(
+                session.scalars(
+                    select(AccountRecord.account_id).where(AccountRecord.tenant_id == "tenant-demo")
+                )
+            )
+        assert {"acme-foods", "northstar-retail"}.issubset(historical_ids)
         assert accounts.list_for_actor("tenant-demo", "other-user", "alex-morgan") == ()
         assert (
-            accounts.get_for_actor("tenant-demo", "usr_alex_morgan", "other-rep", "acme-foods")
+            accounts.get_for_actor(
+                "tenant-demo", "usr_alex_morgan", "other-rep", "sysco-corporation"
+            )
             is None
         )
         assert (
@@ -96,7 +145,7 @@ def test_demo_seed_is_atomic_idempotent_and_actor_scoped(postgres_url: str) -> N
                     "tenant-demo", "usr_alex_morgan", "alex-morgan"
                 )
             )
-            == 2
+            == 1
         )
     finally:
         restarted.close()

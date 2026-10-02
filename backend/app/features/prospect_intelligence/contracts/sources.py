@@ -68,10 +68,17 @@ class Facility:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketLaneQuery:
+    origin_zone: str
+    destination_zone: str
+
+
+@dataclass(frozen=True, slots=True)
 class FreightActivity:
     account_id: str
     lanes: tuple[ShipperLane, ...]
     facilities: tuple[Facility, ...]
+    market_queries: tuple[MarketLaneQuery, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

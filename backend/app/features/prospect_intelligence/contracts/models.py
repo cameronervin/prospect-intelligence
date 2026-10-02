@@ -52,6 +52,7 @@ class Account:
     location: str | None = None
     contact_name: str = "Operations team"
     contact_role: str = "Transportation contact"
+    fmcsa_usdot_number: str | None = None
 
 
 class RunStatus(StrEnum):
@@ -243,7 +244,6 @@ class QualityEvent:
 
     def to_storage_payload(self) -> dict[str, object]:
         """Include bounded evaluator state only in the durable internal record."""
-
         payload = self.to_payload()
         if self.evaluation is not None:
             payload["evaluation"] = self.evaluation.to_payload()

@@ -20,6 +20,9 @@ class SyntheticAccountAlias:
     relationship: AccountRelationship
     industry: str
     location: str
+    fmcsa_usdot_number: str | None = None
+    contact_name: str = "Operations team"
+    contact_role: str = "Transportation contact"
 
 
 ACCOUNT_ALIAS_ARTIFACT = (
@@ -39,12 +42,20 @@ def _load_default_aliases() -> Mapping[str, SyntheticAccountAlias]:
             raise ValueError("synthetic account alias fixture is invalid")
         item = cast(dict[str, object], value)
         try:
+            raw_usdot = item.get("fmcsa_usdot_number")
+            if raw_usdot is not None and (
+                not isinstance(raw_usdot, str) or not raw_usdot.isdigit()
+            ):
+                raise ValueError("synthetic account alias fixture is invalid")
             aliases[account_id] = SyntheticAccountAlias(
                 scenario_id=cast(str, item["scenario_id"]),
                 name=cast(str, item["name"]),
                 relationship=AccountRelationship(cast(str, item["relationship"])),
                 industry=cast(str, item["industry"]),
                 location=cast(str, item["location"]),
+                fmcsa_usdot_number=raw_usdot,
+                contact_name=cast(str, item["contact_name"]),
+                contact_role=cast(str, item["contact_role"]),
             )
         except (KeyError, ValueError) as error:
             raise ValueError("synthetic account alias fixture is invalid") from error
@@ -79,6 +90,7 @@ class SyntheticSourceCatalog:
                     by_scenario_id[alias].account.headquarters
                     if alias in by_scenario_id
                     else "Unknown",
+                    None,
                 )
             )
             for account_id, alias in aliases.items()

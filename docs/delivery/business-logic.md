@@ -121,11 +121,35 @@ Evidence: [human-review flow](../evaluation/human-in-the-loop-flow.md).
 - Only an approved edit may update preference memory. The current tenant/representative profile is
   limited to customer-neutral tone, approximate length, and invitation format. Draft text, account
   names, contacts, routes, and customer facts are not retained as preferences.
-- Demo users, accounts, and contacts are fictional. The local token issuer demonstrates the boundary
-  but is not the proposed production identity system.
+- The demo user and contact are fictional. The assigned prospect is Sysco Corporation so live public
+  sources can resolve a real legal entity; its CRM, freight, and carrier-network facts remain clearly
+  labeled deterministic fixtures and must not be represented as live Sysco operating facts. The
+  local token issuer demonstrates the boundary but is not the proposed production identity system.
 
 Production requires enterprise identity, authorization provisioning, retention, deletion/export,
 consent, and audit policies before customer data is introduced.
+
+## Real-source demo identity and lookup boundaries
+
+- The development seed assigns only `sysco-corporation` to the demo representative and maps that
+  account to the reviewed `core_01` private-data fixture. Reseeding removes the retired Acme and
+  Northstar assignments but deliberately preserves their account and run rows so completed history
+  is not rewritten.
+- Sysco's reviewed primary FMCSA identity is USDOT `2215799`. The model-facing FMCSA tool accepts no
+  identity arguments and looks up only this selected-account value. A missing, invalid, unmatched,
+  or ambiguous identity remains unavailable; an exact-USDOT failure never falls back to name search.
+- SEC company matching normalizes punctuation and a bounded set of trailing corporate suffixes so
+  `Sysco Corporation` can match `SYSCO CORP`. More than one distinct matching CIK is ambiguous and
+  remains unavailable.
+- FAF calls are authorized only by the selected account's explicit reviewed DMS market queries.
+  Sysco's ported fixture exposes `041→061`. Display terminal lanes such as `PHX→LAX` are never
+  translated into FAF zones, and the snapshot adapter retains exact-match behavior.
+- Source modes remain mixed and explicit: CRM, GenLogs, and carrier-network data are fixtures; SEC,
+  Tavily, and FMCSA are live; FAF is a verified snapshot. Live evidence never validates or converts
+  the private fixture facts.
+- Rollback may restore the retired demo assignments and remove Sysco's assignment, but it must not
+  delete historical accounts or runs. Downgrading the nullable account migration drops only the
+  trusted USDOT lookup field; completed persisted source artifacts remain unchanged.
 
 ## Operational logging safety boundary
 

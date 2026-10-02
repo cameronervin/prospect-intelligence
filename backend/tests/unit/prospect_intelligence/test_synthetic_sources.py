@@ -50,25 +50,17 @@ def test_catalog_derives_demo_aliases_from_reviewed_core_scenarios() -> None:
     scenarios = generate_synthetic_scenarios(seed=SYNTHETIC_DATASET_SEED)
     catalog = SyntheticSourceCatalog.reviewed(scenarios)
 
-    acme = catalog.scenario_for_account("acme-foods")
-    northstar = catalog.scenario_for_account("northstar-retail")
+    sysco = catalog.scenario_for_account("sysco-corporation")
 
-    assert acme is not None and acme.scenario_id == "core_01"
-    assert northstar is not None and northstar.scenario_id == "core_03"
-    assert acme.shipper_lanes == next(
+    assert sysco is not None and sysco.scenario_id == "core_01"
+    assert sysco.shipper_lanes == next(
         scenario.shipper_lanes for scenario in scenarios if scenario.scenario_id == "core_01"
-    )
-    assert northstar.network_lanes == next(
-        scenario.network_lanes for scenario in scenarios if scenario.scenario_id == "core_03"
     )
     assert len(scenarios) == 32
     assert sum(scenario.split == "core" for scenario in scenarios) == 16
     assert sum(scenario.split == "edge" for scenario in scenarios) == 8
     assert sum(scenario.split == "traffic" for scenario in scenarios) == 8
-    assert {scenario.scenario_id for scenario in catalog.runtime_scenarios} == {
-        "core_01",
-        "core_03",
-    }
+    assert {scenario.scenario_id for scenario in catalog.runtime_scenarios} == {"core_01"}
 
 
 def test_private_source_adapters_are_structural_and_return_normalized_data() -> None:
@@ -82,35 +74,43 @@ def test_private_source_adapters_are_structural_and_return_normalized_data() -> 
     assert isinstance(freight, FreightIntelligenceSource)
     assert isinstance(network, CarrierNetworkSource)
 
-    account_result = crm.get_account(context, "acme-foods")
+    account_result = crm.get_account(context, "sysco-corporation")
     assert account_result.value is not None
-    assert account_result.value.id == "acme-foods"
-    assert account_result.value.name == "Acme Foods"
+    assert account_result.value.id == "sysco-corporation"
+    assert account_result.value.name == "Sysco Corporation"
     assert account_result.value.industry == "Food distribution"
-    assert account_result.value.location == "Dallas, TX"
+    assert account_result.value.location == "Houston, TX"
+    assert account_result.value.contact_name == "Jordan Lee"
+    assert account_result.value.contact_role == "Director of Transportation"
+    assert account_result.value.fmcsa_usdot_number == "2215799"
     assert account_result.value.tenant_id == "tenant-demo"
     assert account_result.coverage.status is SourceCoverageStatus.COMPLETE
     assert {item.provenance.source for item in account_result.evidence} == {"CRM fixture"}
     assert account_result.evidence[0].provenance.endpoint_or_artifact.endswith(
         "fixtures/synthetic/data/demo_account_aliases.json"
     )
-    assert account_result.evidence[0].provenance.evidence_location == "$.accounts['acme-foods']"
-    northstar = crm.get_account(_context(run_suffix=2), "northstar-retail")
-    assert northstar.value is not None
-    assert northstar.value.name == "Northstar Retail"
-    assert northstar.value.relationship.value == "Customer"
-    assert northstar.value.location == "Atlanta, GA"
+    assert account_result.evidence[0].provenance.evidence_location == (
+        "$.accounts['sysco-corporation']"
+    )
 
     freight_result = freight.get_activity(context, account_result.value)
     assert freight_result.value is not None
-    assert freight_result.value.account_id == "acme-foods"
-    assert freight_result.value.lanes == catalog.scenario_for_account("acme-foods").shipper_lanes  # type: ignore[union-attr]
+    assert freight_result.value.account_id == "sysco-corporation"
+    sysco = catalog.scenario_for_account("sysco-corporation")
+    assert sysco is not None
+    assert freight_result.value.lanes == sysco.shipper_lanes
+    assert [
+        (query.origin_zone, query.destination_zone) for query in freight_result.value.market_queries
+    ] == [("041", "061")]
+    assert ("PHX", "LAX") not in {
+        (query.origin_zone, query.destination_zone) for query in freight_result.value.market_queries
+    }
     assert freight_result.value.facilities
     assert {item.provenance.source for item in freight_result.evidence} == {"GenLogs fixture"}
 
     network_result = network.get_network(context)
     assert network_result.value is not None
-    scenario = catalog.scenario_for_account("acme-foods")
+    scenario = catalog.scenario_for_account("sysco-corporation")
     assert scenario is not None
     assert all(lane in network_result.value.lanes for lane in scenario.network_lanes)
     assert {item.provenance.source for item in network_result.evidence} == {
@@ -127,7 +127,7 @@ def test_private_source_adapters_are_structural_and_return_normalized_data() -> 
 def test_unwired_production_shells_preserve_source_protocols_and_fail_closed() -> None:
     catalog = SyntheticSourceCatalog.reviewed()
     context = _context()
-    account = SyntheticCrmSource(catalog).get_account(context, "acme-foods").value
+    account = SyntheticCrmSource(catalog).get_account(context, "sysco-corporation").value
     assert account is not None
     crm = SalesforceCrmSource()
     freight = GenLogsFreightIntelligenceSource()

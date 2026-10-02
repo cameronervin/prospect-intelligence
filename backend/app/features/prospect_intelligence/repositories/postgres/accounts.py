@@ -69,4 +69,5 @@ def account_from_record(row: AccountRecord) -> Account:
         location=row.location,
         contact_name=row.contact_name,
         contact_role=row.contact_role,
+        fmcsa_usdot_number=row.fmcsa_usdot_number,
     )

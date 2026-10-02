@@ -7,6 +7,7 @@ from ...contracts.sources import (
     INJECTION_CANARY_CACHE_KEY,
     Facility,
     FreightActivity,
+    MarketLaneQuery,
     SourceCallContext,
     SourceResult,
 )
@@ -60,6 +61,13 @@ class SyntheticFreightIntelligenceSource:
                             facility_type=item.facility_type,
                         )
                         for item in scenario.facilities
+                    ),
+                    market_queries=tuple(
+                        MarketLaneQuery(
+                            origin_zone=item.origin_zone,
+                            destination_zone=item.destination_zone,
+                        )
+                        for item in scenario.market_lanes
                     ),
                 )
             )

@@ -136,7 +136,9 @@ scenarios, `datasets/golden/freight_prospect_v1.json` is the reviewed artifact, 
 feature did not remove the evaluation harness; it removed a duplicate integration-shaped copy.
 
 Carrier-network and carrier-registry adapters remain separate. The former is private operational
-capacity owned by the carrier; the latter is public FMCSA identity, authority, and safety data.
+capacity owned by the carrier; the latter is public FMCSA identity, authority, and safety data for
+the selected prospect when it operates a reviewed private fleet. The account record, not the model,
+supplies the exact USDOT identity.
 
 ## Authentication boundary
 

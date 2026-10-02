@@ -1,7 +1,7 @@
-"""Idempotently seed the fictional local demo identity and assigned accounts."""
+"""Idempotently seed the local demo identity and its assigned prospect account."""
 
 from pwdlib import PasswordHash
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -17,25 +17,17 @@ _EMAIL = "alex.morgan@example.test"
 _ACCOUNTS = (
     {
         "tenant_id": _TENANT_ID,
-        "account_id": "acme-foods",
-        "name": "Acme Foods",
+        "account_id": "sysco-corporation",
+        "name": "Sysco Corporation",
         "relationship": "Prospect",
         "industry": "Food distribution",
-        "location": "Dallas, TX",
+        "location": "Houston, TX",
         "contact_name": "Jordan Lee",
         "contact_role": "Director of Transportation",
-    },
-    {
-        "tenant_id": _TENANT_ID,
-        "account_id": "northstar-retail",
-        "name": "Northstar Retail",
-        "relationship": "Customer",
-        "industry": "Retail",
-        "location": "Atlanta, GA",
-        "contact_name": "Taylor Brooks",
-        "contact_role": "Vice President of Logistics",
+        "fmcsa_usdot_number": "2215799",
     },
 )
+_RETIRED_ACCOUNT_IDS = ("acme-foods", "northstar-retail")
 
 
 def demo_password_hash(existing: str | None) -> str:
@@ -93,6 +85,15 @@ def seed_demo_data(engine: Engine) -> None:
             membership.on_conflict_do_update(
                 index_elements=[MembershipRecord.subject],
                 set_=membership_values,
+            )
+        )
+
+        session.execute(
+            delete(AccountAssignmentRecord).where(
+                AccountAssignmentRecord.tenant_id == _TENANT_ID,
+                AccountAssignmentRecord.subject == _SUBJECT,
+                AccountAssignmentRecord.rep_id == _REP_ID,
+                AccountAssignmentRecord.account_id.in_(_RETIRED_ACCOUNT_IDS),
             )
         )
 
