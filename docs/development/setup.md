@@ -29,8 +29,12 @@ demo user, and runs FastAPI and Next.js locally. Alternatively, run the full non
 ```sh
 cp deploy/envs/.env.local.example deploy/envs/.env.local
 make docker-up
-make seed-demo-user
+make seed-demo-data
 ```
+
+If an existing ignored `.env.local` predates the authentication settings, refresh it from the
+example or add `TAKEHOME_DEMO_AUTH_ENABLED=true` and a local-only random
+`TAKEHOME_JWT_SIGNING_SECRET` of at least 32 bytes before rebuilding the stack.
 
 The seed command is deliberately separate from migrations so deploys never create application users
 implicitly. It stores only a newly generated Argon2 hash in `auth_users`. `make dev` runs the command
@@ -40,6 +44,27 @@ development launch paths must set `TAKEHOME_JWT_SIGNING_SECRET` to at least 32 r
 HttpOnly cookie.
 `TAKEHOME_RUNTIME_JEV_GUARDRAILS_ENABLED` defaults to `false`; enabling it also requires
 `TYPESAFE_API_KEY` and adds synchronous provider latency to each run.
+
+For container-only development with backend and frontend reload, use the same Compose project and
+PostgreSQL volume as the immutable stack:
+
+```sh
+make docker-dev-up
+```
+
+The development override mounts only backend application source and frontend source/configuration,
+all read-only. Dependencies remain baked into the images and Next.js writes only to an in-memory
+`.next` filesystem. Restore the immutable production-style services when finished:
+
+```sh
+make docker-prod-restore
+```
+
+Both commands may recreate the application containers but preserve the existing PostgreSQL volume.
+`make test-e2e` reuses a standard stack only when its containers are healthy, explicitly marked as
+E2E-safe, and labeled with the current workspace source fingerprint. If any other standard stack is
+present, the command fails instead of starting a parallel project. When no standard stack exists, it
+creates and removes an isolated E2E project.
 
 ## Create a feature
 
@@ -77,30 +102,18 @@ The smoke proves that the Jev, GPT-5.6 Sol comparison, and failure-explanation p
 the time of execution. It does not prove a hosted LangSmith experiment, replace `make verify`, or
 establish semantic promotion thresholds; CAM-41 owns human calibration and threshold selection.
 
-## Hosted experiment matrix
+## Hosted experiment evidence
 
-Run CAM-40 from `backend/` only when LangSmith persistence and provider calls are intended:
+The CAM-40 `freight-prospect-v1` hosted matrix is archived, read-only historical evidence for the v1
+graph and prompt revisions. The old `evaluation.experiments.offline --live` path now fails closed
+before publishing or calling a provider; do not use it to evaluate outreach-v2 or interpret its
+retained results as v2 evidence. A future hosted v2 run requires a separately reviewed dataset,
+experiment plan, revision metadata, and explicit authorization. Never place credentials in tracked
+files, shell history, committed output, or screenshots.
 
-```sh
-uv run python -m evaluation.experiments.offline --live
-```
-
-Put `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, and `TYPESAFE_API_KEY` in the ignored
-`backend/.env` before running the command; never put credential values on the command line.
-
-The explicit live path publishes or verifies the synthetic-only `freight-prospect-v1` dataset and
-runs the `baseline`, `lower-cost`, `prompt-revision`, and `interpreter-off` experiments three times
-per example. LangSmith retains completed experiments according to workspace policy. If the command
-fails after an experiment is uploaded, the strict runner keeps the partial attempt as diagnostic
-evidence and produces no automated gate decision. Do not combine attempts. The CAM-40 retained
-evidence memo is an owner-approved MVP exception and does not change this runner contract. Never
-place credentials in tracked files, shell history, committed output, or screenshots.
-The command verifies each variant from LangSmith after upload (72 roots, exact repetitions, metadata,
-and evaluator feedback) and fails closed before report generation if hosted persistence is partial.
-
-The default command without `--live` is still the credential-free CAM-38 repository gate. Passing
-repository checks does not imply a successful hosted run, and a hosted run does not replace
-`make verify`.
+The credential-free CAM-38 repository gate remains available with
+`uv run python -m evaluation.experiments.offline`. Passing repository checks does not imply a
+successful hosted run, and historical hosted evidence does not replace `make verify`.
 
 ## Online quality operations
 

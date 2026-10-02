@@ -88,18 +88,17 @@ Suggested areas: LangChain/LangGraph API behavior, checkpointing, human review, 
   the targeted run plus unavailable-only retry provides 60/60 valid ordered-score attempts without
   rewriting the original evidence. Holdout remains separately authorized and unrun.
 
-### 2026-10-01 — Docker Desktop metadata error blocks aggregate verification
+### 2026-10-01 — Docker Desktop metadata error delayed aggregate verification (resolved)
 
-- **Delivery impact:** `make verify` cannot start its PostgreSQL test dependency and `make test-e2e`
-  cannot start its full-stack services because Docker Desktop returns an input/output error while
-  writing containerd's `meta.db`. The failure occurs before containerized tests and is reproducible.
-- **Workaround or decision:** Keep the failure distinct from application evidence. Run Ruff, strict
-  Pyright, the complete credential-free backend suite (833 passed, 19 database-only skipped),
-  frontend lint/typecheck/build and 91 unit tests, 11 mocked Playwright journeys, secret scanning,
-  dependency audit, and quiet Compose rendering independently.
-- **Follow-up:** Repair or reset Docker Desktop's containerd metadata store, then rerun `make verify`
-  and the full-stack portion of `make test-e2e`; this also prevents executing the new seed command
-  against local PostgreSQL. `make docker-config` passes for this slice.
+- **Delivery impact:** Docker Desktop returned an input/output error while writing containerd's
+  `meta.db`, temporarily preventing `make verify` from starting PostgreSQL and `make test-e2e` from
+  starting its full-stack services.
+- **Workaround or decision:** Kept the infrastructure failure distinct from application evidence
+  and ran the credential-free backend/frontend, secret, dependency, and Compose checks separately
+  while Docker was unavailable.
+- **Follow-up:** Resolved after Docker Desktop recovered. Later aggregate verification reached the
+  database test phase, and the subsequent full-stack E2E run built images and passed; no outstanding
+  delivery risk remains from this metadata error.
 
 ### 2026-10-01 — LangSmith missing-project query returns 404 before composite creation
 
@@ -114,3 +113,27 @@ Suggested areas: LangChain/LangGraph API behavior, checkpointing, human review, 
 - **Follow-up:** Focused tests cover missing-project creation and still reject unexpected LangSmith
   failures. Remove the compatibility branch if the SDK/API later makes missing-project list queries
   return an empty result consistently.
+
+### 2026-10-01 — Docker build context excludes required backend scripts
+
+- **Delivery impact:** The mocked browser suite passes, but `make test-e2e` cannot build the
+  full-stack backend or migration images. `backend.Dockerfile` copies `backend/scripts`, while its
+  Dockerfile-specific ignore file excludes that directory from the build context; BuildKit fails
+  before any full-stack browser test runs.
+- **Workaround or decision:** Resolved in the demo-flow slice by admitting `backend/scripts/**` to
+  the Docker build context while continuing to exclude its caches and bytecode. An architecture
+  regression test now keeps the Dockerfile copy source and its allowlist in sync.
+- **Follow-up:** Resolved. `make docker-config` and `make test-e2e` pass, including image builds,
+  non-root runtime health checks, 11 mocked journeys, and the real full-stack browser journey.
+
+### 2026-10-01 — Next.js development startup rewrites its root type declaration
+
+- **Delivery impact:** Next.js 16 rewrites `/app/next-env.d.ts` when development and production
+  type paths differ. Mounting the file read-only, while otherwise keeping the development container
+  immutable, raised `EROFS` during `next dev` and left the frontend health check unresponsive.
+- **Workaround or decision:** Do not bind-mount the generated file. The development image instead
+  links `/app/next-env.d.ts` to `.next/next-env.d.ts`; the existing UID-owned `.next` tmpfs is the
+  only writable application location. Architecture and live-container checks cover the link,
+  read-only source mounts, and tmpfs boundary.
+- **Follow-up:** Recheck the workaround when Next.js provides a supported no-write development mode
+  or stops rewriting `next-env.d.ts`; keep the root filesystem read-only in the meantime.

@@ -11,7 +11,7 @@ slots.
 cp .env.example .env
 uv sync
 uv run alembic upgrade head
-uv run python -m scripts.seed_demo_user
+uv run python -m scripts.seed_demo_data
 uv run uvicorn app.main:create_app --factory --reload
 ```
 
@@ -22,9 +22,10 @@ started prospect runtime when prospect routes are enabled.
 
 Prospect routes require an HS256 demo bearer token from `POST /api/v1/auth/token`; tenant, rep,
 subject, and role scope come only from verified claims. The explicit seed command owns the fictional
-user row; migrations create only the schema, and runtime authentication reads `auth_users` through a
-repository. Browser tenant/rep/authorization headers are discarded by the Next.js BFF. Accounts are
-tenant-scoped, runs are tenant/rep/subject-scoped, and an
+user, membership, fictional contacts, accounts, and actor assignments in one transaction; migrations
+create only the schema. Runtime authentication joins `auth_users` to `auth_memberships`, so tenant,
+rep, and role authority is not stored on the profile row. Browser tenant/rep/authorization headers
+are discarded by the Next.js BFF. Accounts and runs are tenant/rep/subject-scoped, and an
 unknown or out-of-scope account/run returns the same sanitized `404 not_found` envelope. The demo
 credentials are `alex.morgan@example.test` / `prospect-demo`; only a generated Argon2 hash is stored.
 

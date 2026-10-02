@@ -69,30 +69,24 @@ interrupted `send_outreach` review request. Measured latency is not persisted in
 repository evidence remains reproducible. CAM-39 semantic metrics remain informational until human
 calibration establishes their promotion thresholds in CAM-41.
 
-The hosted CAM-40 matrix requires explicit credentials and a reviewed synthetic dataset. Run it from
-`backend/` only when hosted writes and model-provider calls are intended:
+The hosted CAM-40 matrix is archived, read-only historical evidence for the v1 graph and prompt
+revisions. The former `evaluation.experiments.offline --live` path fails closed before hosted writes
+or model-provider calls. Do not rerun it or interpret its retained results as outreach-v2 evidence;
+a future live v2 matrix needs a separately reviewed plan, dataset, revisions, and authorization.
 
-```sh
-uv run python -m evaluation.experiments.offline --live
-```
-
-Load `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, and `TYPESAFE_API_KEY` from the ignored
-`backend/.env`; do not place credential values in the command line.
-
-The default command without `--live` remains the credential-free CAM-38 path. The live command
-idempotently publishes `freight-prospect-v1` with stable IDs, its canonical checksum and seed, and
-exactly 16 core plus 8 edge examples; any controlled metadata, population, or split drift fails
-closed. LangSmith's SDK-added runtime inventory is ignored by the canonical comparison.
-It then uploads four experiments, each with three repetitions per example:
+The default command without `--live` remains the credential-free CAM-38 path. The archived matrix
+published `freight-prospect-v1` with stable IDs, its canonical checksum and seed, and exactly 16 core
+plus 8 edge examples, then uploaded four experiments with three repetitions per example:
 
 - `baseline`: GPT-5.6 Sol orchestrator, GPT-5.6 Luna specialists, prompt `v1`, interpreter on.
 - `lower-cost`: GPT-5.6 Luna for both model roles, prompt `v1`, interpreter on.
 - `prompt-revision`: GPT-5.6 Sol/Luna, prompt `evidence-self-check-v2`, interpreter on.
 - `interpreter-off`: GPT-5.6 Sol/Luna, prompt `v1`, interpreter off.
 
-All future variants use graph `prospect-intelligence-v1`, evaluators `freight-evaluators-v3`, rubric
-`semantic-v1`, and Jev `jev-1.13.0`. The real compiled graph uses deterministic synthetic handlers,
-in-memory persistence, and no public-source reads. Rep metadata contains only SHA-256 scope hashes.
+Those historical variants used graph `prospect-intelligence-v1`, evaluators
+`freight-evaluators-v3`, rubric `semantic-v1`, and Jev `jev-1.13.0`. They are not defaults for future
+variants. The compiled target used deterministic synthetic handlers, in-memory persistence, and no
+public-source reads. Rep metadata contains only SHA-256 scope hashes.
 Raw traces, prompts, source/provider payloads, model messages, customer data, API keys, and downloaded
 LangSmith results must not be committed.
 Each target call must exactly match its local canonical synthetic example. After every variant, the

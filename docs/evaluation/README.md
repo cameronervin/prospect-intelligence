@@ -54,6 +54,12 @@ contacts, credentials, provider payloads, tenant/rep identifiers, or automatic L
 `make verify` executes that combined population with deterministic evaluators only; semantic and
 hosted paths retain their existing explicit credential boundary.
 
+The current credential-free target is graph `prospect-compiled-script-v2` with prompt bundle
+`outreach-v2`. It projects digit-free fictional display names plus a fictional contact, role, and
+representative into runtime middleware without changing the historical `freight-prospect-v1`
+dataset bytes, IDs, payloads, or checksum. Its scripted fit draft must pass the production
+outreach-v2 validator before the scripted reviewer may return `pass`.
+
 The CAM-38 deterministic release profile requires 100% grounding, analysis correctness, file
 contract, trajectory safety, and injection resistance; reference-aware lane precision@3 at least
 0.80; and verdict accuracy at least 0.90. The precision denominator is the larger of the unique
@@ -149,18 +155,14 @@ three times locally and refresh the sanitized report in
 `backend/evaluation/reports/cam_38_offline.md`. The report is repository evidence from a scripted
 compiled graph, not live-model or hosted LangSmith evidence.
 
-## Hosted CAM-40 experiment suite
+## Archived hosted CAM-40 experiment suite
 
-From `backend/`, run the hosted matrix only with all three credentials and the explicit opt-in:
+CAM-40 is retained as immutable historical v1 evidence and cannot be rerun from the current v2
+source. The `--live` boundary fails closed before dataset publication or provider/model work. A
+future hosted run requires a separately reviewed v2 plan whose graph, prompt, and experiment names
+all identify v2; it must not append current outputs to the historical CAM-40 v1 comparison.
 
-```sh
-uv run python -m evaluation.experiments.offline --live
-```
-
-Load `LANGSMITH_API_KEY`, `OPENAI_API_KEY`, and `TYPESAFE_API_KEY` from the ignored
-`backend/.env`; never put credential values on the command line.
-
-The command idempotently publishes `freight-prospect-v1` with seed `28029`, its canonical SHA-256
+The historical command published `freight-prospect-v1` with seed `28029`, its canonical SHA-256
 checksum, stable example IDs, and exactly 16 `core` plus 8 `edge` examples. Existing controlled
 metadata, example payloads, IDs, or split membership must match byte-stable repository expectations
 or the run fails closed; SDK-added runtime inventory is excluded from the canonical comparison.
@@ -175,7 +177,7 @@ retention policy; the repository receives only a sanitized aggregate report at
 | `prompt-revision` | `gpt-5.6-sol` | `gpt-5.6-luna` | `evidence-self-check-v2` | on |
 | `interpreter-off` | `gpt-5.6-sol` | `gpt-5.6-luna` | `v1` | off |
 
-Each variant runs all 24 examples three times through graph revision
+Each retained variant ran all 24 examples three times through graph revision
 `prospect-intelligence-v1`, deterministic evaluator revision `freight-evaluators-v3`, semantic rubric
 `semantic-v1`, and Jev `jev-1.13.0`. The `evidence-self-check-v2` prompt adds one bounded
 orchestrator verification pass before drafting/review. The target uses the real compiled graph and
@@ -188,7 +190,7 @@ each variant, the runner reads LangSmith back and requires all 72 roots, exact r
 rep/code metadata, and all evaluator feedback before continuing. The same commit-plus-worktree
 fingerprint is recorded in experiment metadata and the final report.
 
-The hosted target reports provider-observed tokens, wall latency, and estimated target cost. The
+The historical hosted target reported provider-observed tokens, wall latency, and estimated target cost. The
 CAM-40 OpenAI standard price card is `$4.00/M` input, `$0.40/M` cached input, and `$20.00/M` output
 for GPT-5.6 Sol, and `$0.20/M`, `$0.02/M`, and `$1.20/M` respectively for GPT-5.6 Luna. Jev cost is
 reported separately using the CAM-39 TypeSafe 2026-09-15 card (`$0.042/M` input, free output).

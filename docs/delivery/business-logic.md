@@ -60,10 +60,13 @@ include credentials, private customer data, raw traces, or generated result expo
   HS256 JWTs. The application contains no built-in Alex identity: an explicit, idempotent development
   script writes the user and a newly generated Argon2 hash to PostgreSQL after migrations. Tokens
   last one hour; refresh rotates `jti`, preserves `sid`/`auth_time`, and cannot exceed eight hours.
-  Next.js stores the token only in an HttpOnly Strict cookie. Verified claims, not browser headers,
-  establish tenant, rep, subject, and the sole `sales_rep` role. Runs persist an immutable actor
-  snapshot and review requires the current subject/tenant/rep to match it. JWT issuance and
-  verification are internal authentication services; `integrations` is reserved for outbound systems.
+  Login uses query-free JSON POSTs through the Next.js BFF, which stores the token only in an
+  HttpOnly Strict cookie and does not follow or expose authentication redirects. Backend and BFF
+  authentication responses, including validation and unexpected failures, are explicitly
+  non-cacheable. Verified claims, not browser headers, establish tenant, rep, subject, and the sole
+  `sales_rep` role. Runs persist an immutable actor snapshot and review requires the current
+  subject/tenant/rep to match it. JWT issuance and verification are internal authentication
+  services; `integrations` is reserved for outbound systems.
 - **Decision:** Disabled-by-default `runtime-jev-v1` nodes surround the Deep Agent. Explicit policy
   rejection is non-retryable; provider/protocol failure is `guardrail_unavailable` and retryable.
   Checkpoints retain only status, version, decision keys, and hashes. The platform owns the generic
@@ -770,6 +773,10 @@ include credentials, private customer data, raw traces, or generated result expo
   collected before failure. Live failures never silently fall back to synthetic facts. A run may
   reuse a normalized success or terminal unavailable result, but no cache entry crosses a run,
   tenant, or rep boundary.
+- **Decision:** A successful SEC company-index response with no matching company and a successful
+  Tavily response with no results are terminal unavailable results with no facts or evidence. They
+  remain cacheable within the run. Nonempty malformed provider results remain explicitly invalid
+  rather than being treated as legitimate no-match responses.
 - **Decision:** Critical freight or carrier-network coverage must be complete before the
   prospect workflow can recommend outreach; degraded inputs produce `needs_more_data`.
   The synthetic carrier network is tenant-scoped and the two demo aliases select reviewed scenarios
@@ -1052,11 +1059,12 @@ include credentials, private customer data, raw traces, or generated result expo
     persisted with the analysis.
 
   Both changes are additive; older persisted rows decode with `mode = null`, shown as "Mode not
-  reported". Mode labels are Live, Snapshot and Synthetic fixture.
+  reported". Live and Snapshot mode labels are visible. Fixture provenance remains visible in the
+  source name and artifact metadata, so its redundant mode label is omitted.
 - **Decision:** Degraded and unavailable sources are always listed with their mode and detail.
   Complete sources collapse behind "Show all N sources". Each evidence item shows:
   - its claim;
-  - the source, mode and UTC retrieval date;
+  - the source, visible mode when live or snapshot, and UTC retrieval date;
   - its version, location and artifact.
 
   The brief is dated by its most recent evidence retrieval.
@@ -1071,7 +1079,7 @@ include credentials, private customer data, raw traces, or generated result expo
   continues on the server. Progress is announced through one polite live region.
 - **Decision:** The outreach editor holds only the customer-facing subject and body. Scores,
   modeled figures, sources and evidence never appear in the review column. The primary action
-  reads "Approve simulated send" for an unchanged draft and "Submit edit" once the draft differs.
+  reads "Approve send" for an unchanged draft and "Submit edit" once the draft differs.
   All review buttons are disabled while a decision is in flight, and duplicate submissions are
   ignored.
 - **Decision:** Review failures are announced inline with `role="alert"` inside the checkpoint,
@@ -1094,7 +1102,7 @@ include credentials, private customer data, raw traces, or generated result expo
     stored error message.
 - **Decision:** Reject requires an inline confirmation ("Reject draft" / "Keep reviewing"). A
   successful decision moves focus to the outcome heading:
-  - "Simulated send recorded … No real email or CRM write occurred."
+  - "Communications sent"
   - "Draft rejected. No message was sent."
 - **Decision:** The same-origin proxy returns the typed retryable `service_unavailable` envelope
   when the backend is unreachable, so the UI treats it like any other retryable 503. It rejects `.`
@@ -1297,3 +1305,163 @@ include credentials, private customer data, raw traces, or generated result expo
   incompatible rather than being judged under the changed v3 rules.
 - **Evidence:** Focused numeric and parity tests, the 72-row credential-free regression, retained
   LangSmith root counts and experiment links, and `evaluation/reports/cam_40_hosted.md`.
+
+### 2026-10-01 — Demo-flow active-run feedback
+
+- **Decision:** Active run state is communicated by the stage line, percentage, determinate progress
+  meter, and agent tracker rather than a duplicate dot and Queued/Running pill beside the account
+  name. Review and terminal pills remain because they identify durable workflow outcomes.
+- **Decision:** While a run is active, the meter's completed black portion advances toward each
+  backend-reported percentage and pulses. Pending tracker rows keep the explicit "Pending" label
+  beside a decorative spinner, while the Running pill pulses for active agent work. The human-review
+  state never pulses, and all animation and progress transitions stop under reduced motion.
+- **Decision:** Development CSP permits `unsafe-eval` only so React can provide development
+  diagnostics. Production CSP remains unchanged and does not permit `unsafe-eval`.
+- **Reasoning:** The demo needs visible feedback during real work without duplicating status near the
+  account name, obscuring status meaning, or making the human checkpoint look automated.
+- **Evidence:** CSP, run-view, tracker, reduced-motion, and mocked-browser regression tests plus
+  desktop Playwright inspection of development and production behavior.
+
+### 2026-10-01 — Demo evidence-label cleanup
+
+- **Decision:** Hide Next.js's on-screen development indicator so compile activity does not compete
+  with application status feedback. Development errors remain enabled.
+- **Decision:** Supporting evidence and source coverage omit the redundant "Synthetic fixture" mode
+  label. Fixture provenance remains explicit in source names such as "GenLogs fixture" and in the
+  version, evidence location, and artifact path; Live and Snapshot mode labels remain visible.
+- **Reasoning:** Framework activity is not product state, and repeating fixture provenance beside an
+  already identified fixture source adds noise without changing the evidence interpretation.
+- **Evidence:** Next configuration, source coverage, and lane evidence component tests.
+
+### 2026-10-01 — Review-header metadata hierarchy
+
+- **Decision:** While outreach awaits a decision, the durable "Awaiting your review" pill is the
+  sole review-ready label; the redundant stage copy is hidden. The evidence date and completed agent
+  run summary share the next row, with provenance on the left and execution metadata on the right.
+- **Reasoning:** The review state remains unambiguous while the compact metadata row preserves both
+  evidence recency and access to the full agent trace.
+- **Evidence:** Run-view, workspace polling, and agent-summary component tests.
+
+### 2026-10-01 — Hydration-safe active-run restoration
+
+- **Decision:** The first server and browser render always use the generic workspace loading state.
+  After hydration, the client checks tab-local active-run storage, keeps navigation locked during
+  that check, and switches to the run-shaped restoration state only when a stored run exists.
+- **Reasoning:** Browser-only storage cannot safely choose server-rendered markup. Deferring that
+  choice prevents a React hydration mismatch while preserving the rule that a pending run must be
+  restored before account switching or a new run can unlock.
+- **Evidence:** Server-render regression plus active-run restoration and workspace component tests.
+
+### 2026-10-01 — Persisted account ownership and synthetic contacts
+
+- **Decision:** A verified user has one tenant/rep membership, and account visibility requires an
+  explicit assignment matching tenant, subject, and rep. Missing, unassigned, and cross-scope
+  accounts all use the same not-found behavior. Legacy accounts are retained but remain unassigned.
+- **Decision:** Demo accounts and named contacts are fictional, contain no email addresses or
+  private information, and are created only by the transactional, idempotent demo-data seed. A run
+  snapshots the initiating representative's display name so restart and later identity edits cannot
+  change approved outreach.
+- **Reasoning:** Tenant membership establishes authority; assignments make the narrower account
+  boundary reviewable and prevent a caller-controlled account id from widening access.
+- **Evidence:** Fresh-schema, migration-backfill, seed-idempotency, actor-isolation, adversarial
+  access, hash-preservation, and restart tests.
+
+### 2026-10-01 — Complete source projection and stable citations
+
+- **Decision:** Every canonical source artifact contributes its normalized coverage and evidence to
+  the final run. Every factual evidence entry must explicitly carry the tool-issued opaque
+  `citation_id`; a missing id fails both artifact validation and normalized projection. Citation ids
+  are derived again from normalized provenance and the supplied id must match exactly. Duplicate ids
+  collapse only when their claims are identical, and a reused id with different claim text fails
+  closed. Only normalized evidence is persisted; the API derives and exposes the same stable opaque
+  id.
+- **Decision:** Repeated coverage for one source is complete only when every call is complete,
+  unavailable only when every call is unavailable, and degraded for mixed or degraded results. An
+  all-unavailable artifact may have no evidence; any complete or degraded factual artifact must
+  retain provenance. Progress activity remains a separate contract from final coverage. Progress
+  and final coverage use exact normalized identities for the seven source families; unknown or
+  lookalike successful-source labels fail closed instead of satisfying coverage by substring.
+- **Reasoning:** An unavailable FAF result is a valid result, not a provenance failure, while
+  factual results must remain traceable through persistence, API serialization, and rendering.
+- **Evidence:** The confirmed empty-FAF regression, all-source projection, mixed aggregation,
+  citation validation/deduplication, legacy JSONB decoding, API, and UI tests.
+
+### 2026-10-01 — Outreach-v2 context and safety contract
+
+- **Decision:** Account, fictional contact, and initiating-representative context is injected from
+  request-scoped LangGraph runtime context by agent middleware, not copied into checkpointed task
+  instructions. Generated and rep-edited drafts must use the selected run's account, contact, rep,
+  and top lane. The service separately checks draft text against all account names assigned to the
+  initiating actor and rejects another assigned account without exposing those names to the model.
+- **Decision:** A valid draft has an account-specific subject and four blank-line-separated
+  paragraphs: contact greeting, named-rep introduction as representing an asset-based truckload
+  carrier, evidence-grounded account and lane relevance, and a specific low-friction question. It
+  has no digits, invented carrier brand, HTML or Markdown markup, control characters,
+  source/provider names (including EDGAR, BTS, FHWA, and QCMobile), internal metrics or capacity
+  terminology, other customers, or unsupported claims. `no_fit` and `needs_more_data` produce no
+  customer outreach.
+- **Decision:** Rep edits may vary wording within that deterministic boundary. Model-generated copy
+  also passes the evidence-aware reviewer. The prompt revision is `outreach-v2`; historical v1
+  experiment evidence is not attributed to it.
+- **Decision:** New product runs, online-quality projections, and credential-free scripted evidence
+  identify graph/agent revision `prospect-intelligence-v2` (scripted target
+  `prospect-compiled-script-v2`) and prompt bundle `outreach-v2`. Existing persisted rows keep their
+  recorded revisions and remain readable. The retained CAM-40 graph/prompt matrix and its
+  `freight-prospect-v1` dataset are immutable historical evidence; the incompatible live runner is
+  archived and fails before external work rather than replaying changed prompts under v1 labels.
+- **Decision:** The v2 scripted target derives a digit-free fictional account display name and uses
+  a fixed fictional contact, role, and representative through runtime middleware. This projection
+  leaves the historical dataset bytes, stable IDs, input payloads, and checksum unchanged. A fit
+  draft must pass the same deterministic outreach-v2 validator before its scripted reviewer records
+  a pass.
+- **Decision:** The compiled workflow branches on the validated `lane_fit_v1` artifact. Only `fit`
+  may create outreach and reviewer artifacts or pause at `send_outreach`; `no_fit` and
+  `needs_more_data` terminate after the internal brief and are committed without a human-review
+  interrupt. A terminal non-review checkpoint is reused after a product-state commit retry.
+- **Decision:** Credential-free scripted evaluation follows the same authoritative branch. Fit rows
+  still require all twelve artifacts and the drafting, quality-review, and review-request stages;
+  `no_fit` and `needs_more_data` rows require the ten non-review artifacts and the research-through-
+  analysis trajectory, with draft-dependent semantic observations marked unavailable.
+- **Reasoning:** Runtime middleware is the canonical context-engineering boundary and keeps selected
+  business context consistent across the orchestrator and isolated specialists without persisting
+  it as conversational state.
+- **Evidence:** Middleware projection, selected-account/contact isolation, rep-name injection,
+  paragraph round-trip, edit safety, forbidden-language, compiled non-review branches, terminal
+  checkpoint retry, offline fit/non-fit parity, revision-label archival, scripted v2 validation,
+  and insufficient-evidence tests.
+
+### 2026-10-01 — Same-project development containers
+
+- **Decision:** Production Compose remains immutable. The development override keeps the same
+  project and PostgreSQL volume, mounts only source/config read-only, runs Uvicorn reload, bakes
+  frontend dependencies into its development image, and gives only `.next` writable tmpfs storage.
+  Both application services remain non-root with one server process.
+- **Decision:** Local E2E reuses a standard stack only when it is healthy, explicitly E2E-safe, and
+  labeled with the current workspace source fingerprint. An unsafe, unhealthy, or stale standard
+  stack fails closed rather than allowing a parallel project; an absent stack uses the isolated path.
+- **Reasoning:** This gives a reviewable reload workflow without parallel stacks, host dependency
+  mounts, mounted secrets, or production-image mutation.
+- **Evidence:** Automated rendered base/development Compose invariant tests and E2E stack-selection
+  tests cover safe/current reuse, stale and unsafe refusal, CI refusal, and the absent-stack path.
+  Marker-based live reload and production restoration remain an explicit manual verification step.
+
+### 2026-10-02 — Completed-review presentation and stage compatibility
+
+- **Decision:** Approved and edited fit runs retain the canonical nonempty
+  `Simulated send complete` stage in domain and API state, but the completed-fit header does not
+  render that stage line. Rejected, failed, no-fit, and needs-more-data stage lines remain visible.
+  A legacy completed-fit run with a simulated-send receipt and a blank persisted stage is normalized
+  to the canonical value only at the response boundary; stored history is not rewritten.
+- **Decision:** The completed-fit outcome heading reads "Communications sent", keeps the approved
+  subject, and omits the no-email/CRM disclaimer. This is intentionally demo-oriented copy: the
+  receipt remains simulated and no external delivery integration is implied by the implementation.
+- **Decision:** Fit recommendation text remains persisted, serialized, and visible beside the human
+  review editor, but is omitted after a fit decision completes. Actionable recommendation text for
+  no-fit and needs-more-data outcomes remains visible.
+- **Decision:** The current tab retains a completed run id so the completed-review outcome survives
+  reload. Selecting another account or signing out clears it, and starting another run replaces it;
+  rejected and failed runs retain their existing non-restoring behavior.
+- **Reasoning:** Presentation changes must not weaken the nonempty run-stage contract or cause a
+  successful review response to be misclassified as an unavailable service.
+- **Evidence:** Review-service, serializer, schema, component, mocked-browser, and full-stack review
+  regressions cover new and legacy completed runs.
