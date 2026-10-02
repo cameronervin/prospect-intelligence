@@ -1,1467 +1,168 @@
 # Business logic decisions
 
-Record decisions here when they change business behavior, formulas, thresholds, workflow,
-user-visible outcomes, data interpretation, or safety boundaries. Add the entry in the same change
-as the implementation. Keep repository evidence distinct from live LangSmith evidence, and never
-include credentials, private customer data, raw traces, or generated result exports.
-
-## Entry template
-
-### YYYY-MM-DD — Area: decision title
-
-- **Decision:** The behavior that is now authoritative.
-- **Alternatives considered:** Meaningful options that were rejected.
-- **Reasoning:** Why this choice best serves the user and delivery goal.
-- **Consequences:** Expected benefits, limitations, compatibility, and rollback considerations.
-- **Evidence:** Tests, source documents, experiments, or dated deployment evidence supporting the choice.
-
-## Decisions
-
-### 2026-10-01 — Reviewed online failures become deterministic regressions
-
-- **Decision:** `agent_quality` accepts an explicitly sanitized shared-dataset draft from either an
-  online evaluator flag or a rep rejection. It never downloads or copies a LangSmith trace. A
-  canonical SHA-256 over the complete target input plus the failure taxonomy identifies duplicates;
-  mapping key order does not change that identity, while a different taxonomy remains distinct.
-  Candidate creation, one explicit accept/reject decision, and promotion are durable, audited state
-  transitions. Identical retries, including concurrent promotion retries, are no-ops and conflicting
-  reviews or promotions fail closed.
-- **Decision:** PostgreSQL is the audit source of truth. Accepted candidates promote once into an
-  immutable `freight-prospect-regression-v1` example; rejected candidates remain auditable without
-  entering that population. An operator export atomically materializes all promoted rows as a
-  canonical, checksummed repository snapshot. A failed export can be repaired by retrying promotion
-  without duplicating the candidate, audit event, or example. Serialized exports merge with the
-  current immutable snapshot so a stale concurrent writer cannot remove an already promoted row.
-- **Decision:** The historical `freight-prospect-v1` hosted population remains exactly 16 core and
-  eight edge examples. Credential-free release evaluation composes that unchanged population with
-  the regression snapshot and runs only the deterministic evaluator suite through the existing
-  `gate_results()` authority. The snapshot starts empty; repository tests prove a reviewed synthetic
-  failure reaches the offline runner without presenting it as production evidence.
-- **Alternatives considered:** Automatic promotion from evaluator feedback, reconstructing examples
-  from raw traces, a reviewer UI or HTTP API, querying the application database from CI, and mutating
-  the historical hosted LangSmith dataset.
-- **Reasoning:** Human confirmation prevents noisy operational feedback from becoming ground truth,
-  while the separate snapshot gives offline CI a credential-free, reviewable release input. Keeping
-  intake explicit preserves the established trace-minimization boundary and the CAM-40 evidence.
-- **Consequences:** Product candidates and audit rows have indefinite MVP retention. The committed
-  snapshot contains only reviewer-approved, synthetic or independently sanitized inputs, references,
-  bounded evidence, machine-readable taxonomy, and version provenance; prompts, messages, contacts,
-  credentials, provider payloads, actor scope, and raw traces are rejected. Production customer data
-  still requires a deletion policy, privacy/vendor review, and an approved sanitization process.
-  Forbidden field names are normalized across case, separators, and camel-case aliases before this
-  boundary accepts them.
-- **Evidence:** Domain/service, snapshot-integrity, offline-release, PostgreSQL restart/concurrency,
-  migration, architecture, and repository verification tests. No live LangSmith experiment or
-  production-quality claim is inferred from this evidence.
-
-### 2026-10-01 — Authentication and optional runtime Jev boundaries
-
-- **Decision:** Demo access uses a repository-backed fictional Alex Morgan user and fixed-algorithm
-  HS256 JWTs. The application contains no built-in Alex identity: an explicit, idempotent development
-  script writes the user and a newly generated Argon2 hash to PostgreSQL after migrations. Tokens
-  last one hour; refresh rotates `jti`, preserves `sid`/`auth_time`, and cannot exceed eight hours.
-  Login uses query-free JSON POSTs through the Next.js BFF, which stores the token only in an
-  HttpOnly Strict cookie and does not follow or expose authentication redirects. Backend and BFF
-  authentication responses, including validation and unexpected failures, are explicitly
-  non-cacheable. Verified claims, not browser headers, establish tenant, rep, subject, and the sole
-  `sales_rep` role. Runs persist an immutable actor snapshot and review requires the current
-  subject/tenant/rep to match it. JWT issuance and verification are internal authentication
-  services; `integrations` is reserved for outbound systems.
-- **Decision:** Disabled-by-default `runtime-jev-v1` nodes surround the Deep Agent. Explicit policy
-  rejection is non-retryable; provider/protocol failure is `guardrail_unavailable` and retryable.
-  Checkpoints retain only status, version, decision keys, and hashes. The platform owns the generic
-  decision-model transport and maps Jev's selected `true`/`false` choice without a score threshold;
-  prospect intelligence owns policy and projections. Claim checks resolve opaque citations to
-  bounded, account-redacted evidence excerpts, source tools emit the same stable opaque IDs, and
-  leaked injection canaries are rejected. Asynchronous sampled `semantic-v1` evaluation and
-  LangSmith delivery are unchanged.
-- **Alternatives considered:** A singleton demo user compiled into the feature; seeding credentials in
-  the schema migration; treating local JWT mechanics as an external integration; trusted scope
-  headers; browser-readable local storage; JWT claims in graph state or prompts; placing synchronous
-  policy inside `agent_quality`; automatic judge fallback; and uncalibrated score thresholds.
-- **Reasoning:** The slice makes identity and durable authorization reviewable without claiming the
-  demo issuer is production IAM, while keeping runtime enforcement distinct from evaluation evidence.
-- **Consequences:** Production must replace the issuer with OIDC/JWKS, rotation, revocation, and
-  organization provisioning. Runtime Jev stays off until blind human alignment, privacy/vendor
-  review, and latency/SLO evidence support activation.
-- **Evidence:** Authentication repository/seed, API, graph, worker, frontend, and browser tests plus
-  the auth-user and actor-snapshot migrations and documented configuration defaults.
-
-### 2026-10-01 — Semantic evaluation: align judges to blind human preference
-
-- **Decision:** This entry supersedes earlier expectations that CAM-41 itself would activate or set
-  semantic promotion gates. CAM-41/CAM-50 use `cam-41-labels-v1`, a single-reviewer, two-pass human
-  reference.
-  For each of the seven `semantic-v1` questions, seed `28029` selects exactly 10 applicable cases,
-  deduplicated by metric and projected-state hash and stratified across core, edge, expected class,
-  ambiguous/adversarial, and compatible CAM-40 variant conditions. The v1 population is entirely
-  versioned synthetic state because historical CAM-40 row state is not retained in the repository;
-  variant tags describe compatibility, not trace provenance. Each question has five alignment cases
-  and five untouched holdout cases;
-  the same state hash cannot cross splits.
-- **Decision:** One designated reviewer completes and freezes a blind primary pass before any judge
-  answer is shown. Review submitted through the SDK preserves LangSmith's `api` source and must carry
-  explicit `manual_rubric_review` provenance plus a stable reviewer ID; it is not attributed to a UI user.
-  Every label requires its canonical value, confidence, concise rationale, ambiguity flag, reviewer,
-  and review time. Low-confidence or ambiguous cases require a separate blind adjudication pass.
-  The freeze covers all 70 primary values and timestamps, verifies one stable LangSmith reviewer
-  identity, and persists a checksum that calibration re-verifies before accepting labels.
-  Missing or conflicting labels, metadata, adjudication, question coverage, versions, or regenerated
-  state hashes prevent label-set approval. This process is not described as inter-rater validation.
-- **Decision:** Jev `jev-1.13.0` and GPT-5.6 Sol each run three times per approved case. Choice and
-  ordered 1–5 questions use deterministic option permutations mapped back to canonical labels. The
-  full plan is 420 logical attempts, executed as a 210-attempt alignment phase followed—only
-  after rubric/prompt freeze—by a separately authorized 210-attempt holdout phase. With two retries,
-  the disclosed provider-request ceiling is three times the logical-attempt count.
-  The prompt/answer identity is source-controlled as
-  `shared-question-payload-v2-weighted-scores`; the holdout path requires the persisted,
-  read-back-verified composite project
-  `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`, covering exactly 210 accepted
-  alignment identities for identical label, rubric, evaluator, graph, prompt, and source revisions,
-  rather than trusting operator confirmation alone.
-  Provider/validation failures remain invalid attempts; one judge never substitutes for the other.
-- **Decision:** Per question and judge, report valid-attempt coverage over the full `3 × cases`
-  denominator, exact agreement and confusion counts, balanced accuracy for represented binary or
-  categorical classes, ordered-score mean absolute error and within-one agreement, run-to-run
-  disagreement as `1 - modal valid answer share`. Option-order sensitivity first requires two
-  stable repeated canonical-order answers, then measures the proportion of eligible cases changed
-  by an alternate deterministic permutation. It is described as observed permutation-associated
-  variation because each alternate order has one sample; alternate-order observed/expected coverage
-  is reported, and zero valid/eligible denominators are unavailable rather than `0%`. Reported cost
-  plus telemetry coverage/unavailable count, and latency. Missing required class support yields
-  `class_imbalance`, not a balanced score; missing cost is not interpreted as a real zero. Jev's
-  exact-agreement delta from Sol is reported on the same question and split.
-- **Decision:** The shared score primitive's probability distribution is the authoritative mapping
-  from provider rubric positions back to canonical 1–5 values. Ordered-score runtime values retain
-  the probability-weighted canonical score. Exact agreement, confusion, run-to-run disagreement, and
-  order sensitivity use the nearest canonical label, with half points rounded upward; MAE and
-  within-one use the unrounded weighted value. The provider's aggregate score remains bounded and
-  finite but is not required to exactly equal its displayed probability distribution because Jev
-  and the comparison adapter expose that aggregate differently.
-- **Decision:** V2 is the accepted output-normalization contract and does not change rubric wording.
-  The single bounded `shared-question-payload-v3-score-anchors` experiment explicitly labeled the
-  existing score anchors and added closest-anchor/adjacent-uncertainty guidance. It is rejected
-  because, despite 60/60 valid attempts and isolated exact/MAE improvements, Jev `tone_fit`
-  within-one fell from 86.67% to 80% and Jev `actionability` introduced 6.67% run-to-run disagreement
-  and 20% option-order sensitivity. No further prompt iteration is allowed on this alignment split.
-  The candidate wording and finite metric comparison rule remain source-controlled for
-  reproducibility, while the paid `--score-revision-only` CLI path now rejects another run.
-  The accepted composite therefore uses the original categorical project plus the v2 score and
-  unavailable-only retry projects; it excludes v3.
-- **Decision:** Composite target identity pins both the original categorical prompt revision and the
-  accepted v2 score revision. The earlier `...9ede43d8fc6305bc` manifest remains immutable but is
-  superseded by hardened, read-back-verified `...039273d2fe8e3143`, which additionally rejects
-  forged, duplicate, mixed-scope, or revision-mismatched stored source summaries. Holdout
-  verification also pins the exact three approved source project names and their recorded code
-  revisions (`...0099bade7c54a0ed` / `e270dd16365b-dirty-69c567eba5e0`,
-  `...9def2f19d5593cf7` / `e270dd16365b-dirty-8527939512f9`, and
-  `...4a7eedede417b378` / `e270dd16365b-dirty-b537010dfbcf`); a lookalike alignment project cannot
-  replace an approved source.
-- **Decision:** Historical v2/v3 ordered-score traces are immutable and predate the shared canonical
-  agreement helper. Their per-run `cam41.human_agreement` boolean may reflect literal fractional
-  equality; aggregate reports remain authoritative, and the composite relies on feedback status and
-  coverage rather than that boolean. Future/holdout feedback uses the same nearest-label agreement
-  contract as aggregate reporting.
-- **Decision:** Alignment cases may diagnose a bounded rubric or projection change; any successor
-  rubric freezes before the holdout. Recommend `retain` only when holdout exact agreement is at least
-  85%, attempt coverage is complete, and Jev is no more than five percentage points behind Sol.
-  Other outcomes are `revise`, `split`, or `replace`. These thresholds are recommendation-only and
-  do not activate a semantic release gate.
-- **Decision:** Real alignment traces use `evidence_class=evaluator_alignment`,
-  `experiment_purpose=alignment`, `alignment_run=true`, split, and complete dataset, label-set,
-  rubric, evaluator, graph, prompt, judge/model/provider, and code revisions. Completion
-  requires LangSmith read-back of every expected trace and feedback record. Local-only runs require
-  a reason and cannot count as completed evidence. Future release experiments use
-  `evidence_class=release_experiment`, `experiment_purpose=model_selection`, and
-  `alignment_run=false`; release selection rejects alignment evidence by metadata. Historical CAM-40
-  v2/v3 evidence remains unchanged.
-- **Decision:** LangSmith annotation-queue membership and feedback automatically upgrade these
-  roots to extended retention. Live preflight therefore reports LangSmith trace charges separately
-  from provider charges using the workspace rate observed on 2026-10-01 (`$0.0075/trace`): at most
-  `$0.53` for 70 newly published labeling roots and `$3.15` for the traced 420-attempt matrix,
-  before provider charges and subject to included usage. The earlier 280-root publication is a
-  sunk estimated `$2.10`; queue reconciliation does not delete those traces or refund retention.
-  Base retention remains the workspace
-  default, but it is not presented as the effective tier for alignment evidence.
-- **Decision:** The alignment package separates pure `reference`, `calibration`, and `evidence`
-  contracts from `integrations/langsmith`, `reporting`, and orchestration in `workflows`. The CLI,
-  deterministic identities, trace metadata, reports, and authorization behavior remain stable.
-  Composite publication performs no provider calls, stores only sanitized aggregate source and
-  identity-checksum evidence, and rejects missing, overlapping, unavailable, holdout, or
-  revision-mismatched attempts.
-- **Alternatives considered:** Derive labels from judge outputs; expose judge scores during human
-  review; tune on holdout cases; reduce coverage denominators after failed calls; silently fall back
-  between judges; treat a solo pass as inter-rater agreement; activate semantic gates immediately;
-  reuse project-name prefixes as the evidence boundary; or add OpenEvals for a workflow already
-  covered by the shared judge, projection, rubric, and LangSmith contracts.
-- **Reasoning:** Blind human-first labeling makes the evaluator choice an empirical preference-
-  alignment decision instead of circular judge validation. Separate alignment and holdout slices
-  allow bounded iteration without presenting tuned examples as independent evidence. Fail-closed
-  coverage and metadata isolate incomplete or diagnostic runs from release decisions.
-- **Consequences:** The 70-case reference review and 13 required adjudications are complete. The
-  210-attempt alignment phase is read back; the separately authorized 210-attempt holdout remains.
-  Initial alignment produced 154 valid attempts and 56 unavailable attempts, all in `actionability` and
-  `tone_fit`, because the adapter's integer-only score assumption conflicts with the shared score
-  primitive's probability-weighted output. The bounded score revision, targeted 60-attempt run, and
-  17 unavailable-only retries now provide 60/60 valid ordered-score observations. `actionability`
-  remains `revise` because Jev within-one agreement is 80%; `tone_fit` remains `revise` because Sol
-  is closer to the human labels while also showing greater instability and option-order variation,
-  which is insufficient evidence to replace Jev. The v3 prompt experiment was rejected under the
-  predeclared rule; the v2 composite is accepted and read back as 210/210 alignment attempts.
-  Repository tests and the composite do not prove holdout alignment.
-  One reviewer cannot estimate inter-rater agreement
-  or stakeholder-wide preference. Recalibration is required after judge/model, rubric, projection,
-  or material dataset changes; class/distribution drift; repeated human disagreement; or addition of
-  customer-approved examples. Only sanitized aggregates and per-question decisions may be committed.
-- **Evidence:** The source-controlled alignment workflow and tests; canonical process documentation
-  in `docs/evaluation/evaluator-alignment-process.md`; live 2026-10-01 preparation originally
-  published 280 roots, and the MVP reconciliation reduces each of seven primary queues to 10 items
-  without deleting traces. The frozen primary pass contains 70 complete cases, 13 flagged cases were
-  adjudicated, and the state-free `cam-41-labels-v1` dataset was published with 35 alignment and 35
-  holdout examples. Project `cam-41-alignment-cam-41-labels-v1-0099bade7c54a0ed` contains 210/210
-  alignment attempt roots and 210/210 agreement feedback records, and the sanitized aggregate is in
-  `backend/evaluation/reports/cam_41_diagnostics.md`. The score-contract evidence is split across
-  immutable projects `cam-41-alignment-cam-41-labels-v1-9def2f19d5593cf7` and
-  `cam-41-alignment-cam-41-labels-v1-4a7eedede417b378`, with the combined sanitized aggregate in
-  `backend/evaluation/reports/cam_41_score_revision_diagnostics.md`. The rejected v3 evidence is
-  project `cam-41-alignment-cam-41-labels-v1-b6adb9618f50cb3e` and sanitized report
-  `backend/evaluation/reports/cam_41_score_prompt_diagnostics.md`. Its incremental cost was
-  `$0.104633` provider usage plus approximately `$0.45` in traces; the superseded and hardened
-  composite manifests added approximately `$0.015`, bringing estimated alignment-related spend to about
-  `$8.90`, with no configured spend limit hit. Composite project
-  `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143` was read back
-  with 210 accepted attempt identities. At that evidence checkpoint, the untouched holdout remained
-  pending separate authorization; the following decision explicitly waives it from MVP completion.
-
-### 2026-10-01 — Close evaluator alignment at the take-home demonstration boundary
-
-- **Decision:** CAM-41 and CAM-50 complete on the blind human reference set, full alignment-split
-  judge comparison, bounded v2 normalization fix, rejected v3 prompt experiment, read-back-verified
-  composite, documentation, and repository verification. The implemented 210-attempt holdout path
-  is intentionally not run because independent holdout validation is outside the take-home MVP.
-- **Reasoning:** The assessment needs a clear demonstration of how human preferences become reference
-  labels, how two judges are measured, and how a bounded prompt change is accepted or rejected. A
-  second paid phase would add independent validation but is not necessary to explain that lifecycle.
-- **Consequences:** The alignment-only findings remain evidence and revision recommendations. They
-  must not be presented as holdout performance, a semantic release gate, production readiness, or
-  proof that the 85% retain threshold was met. The holdout implementation and hardened composite
-  prerequisite remain available if a future scope requires that stronger claim.
-- **Evidence:** `cam-41-labels-v1`, the accepted 210-attempt composite
-  `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`, the aggregate reports, rejected v3
-  decision, canonical process document, and ticket-specific closing records.
-
-### 2026-09-30 — Online quality operations: owned resources and deterministic demo traffic
-
-- **Decision:** CAM-42's app-side evaluator catalog and stable 10% evaluation cohort remain
-  authoritative. LangSmith routing rules observe 100% of sanitized root quality-event runs and route
-  deterministic failures, invalid Jev results, rep rejection, and source or tool errors; they do not
-  duplicate evaluation in hosted code or LLM evaluators. Direct application routing remains
-  idempotently compatible.
-- **Decision:** The former 24-session three-cycle proposal is superseded by exactly 12 synthetic
-  sessions: eight approvals, three edits, and one rejection. The fixed plan must cover all and only
-  `syn_traffic_01` through `syn_traffic_08`, with no offline account overlap. Run and feedback IDs
-  derive from stable UUIDv5 names, so replay creates no additional telemetry.
-- **Decision:** Simulator runs are sanitized root events rather than full product or model-backed
-  workflows. Their allowlisted metadata contains agent, simulator and traffic-pool versions, session
-  index, and an explicit simulated marker. Demo latency and cost are marked synthetic baseline
-  feedback and must not be interpreted as measured production latency, usage, or spend.
-- **Decision:** Resources owned by these operations use the `freight-prospect-online-v1` prefix and
-  are reconciled by stable name or ID. Missing resources are created, drift is patched, unchanged
-  resources are reported, ambiguous duplicates stop execution, and foreign resources are untouched.
-  Teardown preflights exact-name matches and duplicate conflicts before deleting only owned alerts,
-  rules, charts, dashboard section, queue, and feedback configuration in dependency order. It can
-  remove orphaned owned resources when the project is already absent. The canonical
-  `freight-prospect-online` project and traces are retained unless an additional explicit deletion
-  flag is supplied; the queue is fixed to canonical `freight-prospect-review`.
-- **Decision:** Four five-minute webhook alerts use demonstration thresholds: average grounding below
-  `1.0`, reject rate above `25%`, source-error rate above `10%`, and average synthetic `cost_usd`
-  feedback above `$0.30`. The webhook must be credential-free HTTPS and is configured as a secret.
-  These thresholds and the generic webhook destination are MVP defaults, not production SLOs or an
-  incident-routing commitment.
-- **Decision:** The review queue carries an explicit privacy-bounded rubric. Every reviewer records
-  one required `freight-prospect-online-v1-human-review-decision` value: Reject (`0`), Edit (`1`),
-  or Approve (`2`), with higher values representing better outcomes. This human label remains
-  separate from the application and simulator's `review_decision` feedback. Edit and Reject notes
-  are required by the queue instructions and captured through LangSmith's built-in Reviewer Notes;
-  they are not duplicated as another feedback key because the provider cannot conditionally require
-  that field.
-- **Decision:** The owned custom dashboard includes a root quality-event run-volume chart as the
-  denominator for its rates. Volume and approve/edit/reject views use legacy bar charts; grounding,
-  individual Jev scores, latency, cost, tool errors, and source errors remain line charts. Every
-  chart is grouped by `metadata.agent_version`. The project remains on LangSmith's existing legacy
-  dashboard resource model and the custom dashboard does not replace the user's prebuilt default.
-- **Alternatives considered:** Twenty-four full model-backed sessions; hosted evaluator duplication;
-  treating simulated cost as actual provider spend; deleting the whole project during normal
-  rollback; adopting production paging semantics for the demo; reusing automated review feedback
-  for human labels; a redundant notes feedback field; migrating to the newer dashboard API.
-- **Reasoning:** A small deterministic corpus demonstrates online operations, failure routing, and
-  retry safety without incurring model costs or crossing the established privacy and evaluation
-  boundaries. Prefix ownership and conservative teardown make repeated demos reviewable and safe.
-- **Consequences:** Dashboards contain clearly labeled synthetic baselines until genuine application
-  traffic arrives. The owned feedback configuration is created before the queue and removed after it
-  during teardown; unrelated workspace configurations remain untouched. Repository tests can prove
-  plans and reconciliation without credentials, while live setup, replay, webhook delivery, and
-  console inspection remain separate operational evidence.
-- **Evidence:** CAM-43 operations, simulator, privacy, reconciliation, teardown, and CLI tests;
-  repository verification and sanitized live LangSmith evidence recorded on the ticket.
-
-### 2026-09-30 — Online quality: app-side evaluation with bounded provider delivery
-
-- **Decision:** Online evaluation runs in `agent_quality` after graph execution. The application
-  emits the ten cataloged deterministic signals: groundedness, lane precision, analysis correctness,
-  verdict accuracy, file contract, trajectory, injection resistance, latency, cost availability,
-  and tool-call count. Reference-aware checks compare the agent artifact with the canonical product
-  analysis. Criterion-specific Jev states use the same SDK-neutral scoring, projection, rubric, and
-  judge contracts as the offline harness. Every catalog entry has exactly one LangChain scope:
-  single step, final output, or full trajectory. Jev scores remain informational until CAM-41
-  supplies calibrated thresholds.
-- **Decision:** The prospect transition and a separately serialized evaluation envelope commit in
-  the existing PostgreSQL outbox transaction. The envelope is finite JSON, bounded to 128 KiB, and
-  contains only deterministic signals, question-specific semantic state, and evaluator, graph,
-  agent, prompt-template, and rubric versions. Existing rows without an envelope remain readable.
-  Prompts, credentials, source
-  payloads, contacts, full filesystem state, provider responses, and raw judge output are excluded.
-- **Decision:** Only canonical generated scenario identifiers matching the bounded `syn_*_NN`
-  contract may be sent unhashed to the dedicated quality project. Friendly fixture aliases, live
-  identifiers, and unknown-origin identifiers are SHA-256 hashed consistently across lifecycle
-  events; tenant and rep identifiers are always pre-hashed.
-- **Decision:** Delivery is disabled unless `TAKEHOME_ONLINE_QUALITY_ENABLED=true`; enabling requires
-  both LangSmith and TypeSafe credentials. One lifecycle-owned worker dispatches ten rows per batch,
-  polls after one idle second, and gives each event a 75-second publish budget. Disabled delivery
-  leaves rows pending. Provider failures and timeouts leave rows pending for retry and never change
-  the product result.
-- **Decision:** When delivery is enabled, completed product runs enter one deterministic evaluator
-  cohort at a default rate of 10%. A versioned SHA-256 bucket of the product run ID makes selection
-  stable across retries, restarts, and replicas. Selected runs execute the complete deterministic and
-  semantic catalog together; unselected runs retain their application trace and sanitized lifecycle
-  event but produce no evaluator feedback or Jev calls. The selection, configured rate, and policy
-  version commit with the analysis event before projection, so later rate changes cannot reclassify
-  pending rows. HITL decisions, edit distance, rejection routing, and terminal lifecycle events remain
-  at 100%.
-- **Decision:** LangSmith receives a dedicated event run keyed by the deterministic quality-event ID,
-  not the product run ID. Feedback IDs are deterministic per event and metric, and duplicate
-  conflicts are successful retries. Failed deterministic checks and rep rejections enter the
-  annotation queue. Semantic failures are retryable provider failures; semantic scores do not route
-  solely for being low while they are uncalibrated.
-- **Decision:** At most eight qualitative claims enter one envelope and at most eight Jev requests
-  execute concurrently. Empty-claim and preference-free tone criteria are recorded explicitly as
-  not applicable without a provider call. Pending envelopes whose evaluator or rubric version no
-  longer matches the runtime are annotated and never judged under a mislabeled rubric. Cost remains
-  explicitly unavailable until provider usage and versioned pricing telemetry are added; it is not
-  treated as zero or as an alertable score.
-- **Decision:** Current dashboard and alert numbers are labeled demo defaults, not production SLOs.
-  Product and pending outbox retention remains indefinite for the MVP; LangSmith and TypeSafe
-  retention requires a deployment/vendor review. GPT-5.6 Sol remains comparison-only and is never
-  an online fallback for Jev.
-- **Alternatives considered:** Workspace-hosted evaluators and a hybrid hosted/app-side path.
-- **Reasoning:** One app-side path makes the privacy projection and failure semantics reviewable,
-  reuses the offline evaluator meaning, remains deterministic under test, and avoids hidden
-  workspace-specific resources.
-- **Consequences:** Enabling online quality adds LangSmith and TypeSafe availability, latency, and
-  cost to selected asynchronous outbox delivery but not to the product transaction. Sampling is
-  uniform rather than risk-stratified, and dashboards must use sampled evaluator feedback rather than
-  treating absent feedback as failure. Repository tests prove behavior without credentials; live
-  evidence remains separate and used only the bounded synthetic smoke event.
-- **Evidence:** Catalog/parity, projection/privacy, Jev, gateway idempotency, service, durable
-  dispatch, stable cohort boundaries, unsampled delivery, settings, bootstrap lifecycle, legacy-row,
-  Ruff, Pyright, repository verification, Compose validation, and the idempotent synthetic LangSmith
-  event `1f34ebbc-1d32-5bc8-9734-036d0a367445` delivered on 2026-09-30.
-
-### 2026-09-30 — Agent architecture: one Deep Agent harness with declarative specialists
-
-- **Decision:** Build only the orchestrator with `create_deep_agent()` and pass the five specialists
-  as isolated declarative `SubAgent` definitions. Deep Agents compiles them internally with
-  `create_agent()`. All six agents use one composite virtual backend: state-backed run files,
-  tenant/rep-namespaced store memory, and a traversal-confined project skill mount.
-- **Decision:** Every specialist declares its model, prompt, tools (including explicit empty lists),
-  middleware, ordered allow-then-deny filesystem permissions, and optional skills. Specialists do
-  not inherit the orchestrator's `send_outreach` tool or permissions; only lane analysis receives
-  the Agent Skills-compliant `lane-fit-v1` bundle implementing method `lane_fit_v1`. The implicit
-  general-purpose subagent remains disabled.
-- **Alternatives considered:** Continue precompiling every specialist as a separate Deep Agent;
-  transfer artifacts through prompts; mount separate backends and copy files between them; rely on
-  inherited tools or permissions.
-- **Reasoning:** Declarative specialists are the SDK's native bounded-worker abstraction. Its shared
-  backend preserves the virtual artifact contract across isolated conversations without six Deep
-  Agent harnesses, while explicit capabilities keep filesystem and tool trust boundaries auditable.
-- **Consequences:** Backend mounts are shared infrastructure rather than physical role isolation, so
-  middleware permissions remain mandatory and direct backend access must not be exposed as a tool.
-  Deep Agents 0.7.19 still drops typed context at the isolated child boundary; the scoped runtime
-  bridge remains until the SDK forwards it natively. Public APIs, artifact paths, budgets, review
-  freshness, and HITL behavior are unchanged.
-- **Evidence:** Installed Deep Agents 0.7.19 source and Context7 documentation; one-construction
-  topology tests; shared-file/conversation-isolation trajectories; root-tool, skill, traversal,
-  per-role permission, concurrent memory-namespace, runtime-handler, retry, and review tests.
-
-### 2026-09-29 — Architecture: separate prospect intelligence and agent quality
-
-- **Decision:** `prospect_intelligence` owns the freight workflow and exports sanitized contracts;
-  `agent_quality` owns online evaluation, monitoring, annotation routing, alerts, simulation, and
-  regression-candidate intake. Offline datasets and experiment runners remain in `backend/evaluation`.
-- **Alternatives considered:** Put all evaluation inside the freight feature; place online quality
-  operations in the offline evaluation directory.
-- **Reasoning:** Runtime quality operations have a distinct lifecycle and external dependencies, while
-  offline evaluation must remain runnable without production services.
-- **Consequences:** Cross-feature access must use exported contracts. Generic LangSmith construction
-  remains a platform concern. The extra boundary adds a small amount of wiring but prevents freight
-  behavior from depending directly on LangSmith.
-- **Evidence:** Architecture dependency tests and feature contract tests.
-
-### 2026-09-29 — Agent workflow: five specialists with role-based models
-
-- **Decision:** Use Settings-selected GPT-5.6 Sol at medium reasoning for orchestration and GPT-5.6 Luna
-  for account context, external research, lane analysis, outreach drafting, and read-only quality
-  review through the OpenAI Responses API. Context and research are concurrently eligible; their
-  exact scheduling remains model-directed. Analysis, brief synthesis, drafting, and review run after
-  their required inputs exist.
-  Missing model credentials fail startup rather than selecting a deterministic pipeline or a
-  different model.
-- **Decision:** QuickJS programmatic tool calls are limited to read-only filesystem and domain tools.
-  Agents write only their canonical role-owned artifacts through filesystem operations outside PTC;
-  the graph records those paths in `/INDEX.md`. `send_outreach` is a named interrupt and is never
-  available to QuickJS.
-- **Alternatives considered:** Six thin specialists; one dynamic worker pool; a single model for every role.
-- **Reasoning:** Five visible specialists preserve meaningful delegation and control boundaries while
-  keeping artifacts and evaluation trajectories understandable.
-- **Consequences:** Model construction is injected and provider-neutral, but OpenAI is the supported
-  initial provider. Bootstrap owns and closes model transports separately from the shared SEC/Tavily/
-  FMCSA HTTP transport. The graph is compiled once per process after PostgreSQL checkpoint/store
-  startup. Offline tests use fakes and never call models. Salesforce, GenLogs, and TMS provider
-  clients remain post-MVP and will be independently injected into their adapters.
-- **Evidence:** Graph topology, trajectory, filesystem-contract, and permission tests; live experiments
-  will be recorded separately when credentials are available.
-
-### 2026-09-29 — Agent workflow: Deep Agent-owned delegation and middleware context engineering
-
-- **Decision:** This entry supersedes the outer-graph scheduling portion of the preceding agent-workflow
-  decision. One root Deep Agent reads the task, manifest, and allowed rep memory and delegates through
-  `task` to exactly five explicit subagents: account context, external research, lane analysis,
-  outreach drafting, and quality review. Account and external research are concurrently eligible;
-  middleware requires both contracts before lane analysis, the analysis before the orchestrator's
-  brief, the brief before outreach drafting, and both drafts before quality review. The outer
-  LangGraph prepares durable state, invokes the root agent, and finalizes the run but never calls
-  specialists itself.
-- **Decision:** Feature-owned LangChain middleware is the context-engineering boundary. It projects
-  allowlisted context, enforces model/tool budgets and delegation prerequisites, treats source text
-  as untrusted data, and validates role-owned artifacts. Platform trace privacy hides inputs,
-  outputs, and metadata for every nested run. Checkpointed LangGraph state and non-checkpointed
-  runtime context remain distinct. The quality reviewer must pass current drafts before the named
-  `send_outreach` approve/edit/reject human interrupt; no CRM mutation is present.
-- **Decision:** Specialist tasks use isolated message mode; canonical shared files merge through the
-  task result, but parent conversation and rep-memory text cannot bypass a specialist's context
-  projection. Reviewed preference summaries remain product records and are materialized into the
-  tenant/rep StoreBackend namespace at the start of later runs.
-- **Alternatives considered:** Deterministic outer-graph fanout with the orchestrator used only for
-  synthesis; dual orchestration in both the outer graph and the root agent; a model-based reviewer.
-- **Reasoning:** Deep Agent-owned delegation makes the visible `task` trajectory the product's agent
-  topology, while middleware keeps ordering, context, permissions, and safety enforceable without a
-  second scheduler. Human approval remains the authoritative side-effect boundary.
-- **Consequences:** Exact concurrent scheduling is model-directed rather than guaranteed by outer
-  graph fanout, so release evidence includes trajectory tests and artifact prerequisites. The SDK's
-  implicit general-purpose subagent is disabled, specialists expose no `task`, and memory backends are
-  mounted only for agents allowed to read rep preferences. OpenAI client lifecycle remains platform
-  owned; the feature compiler compiles the complete runtime once after checkpoint/store startup. The
-  root Deep Agent is mounted as a checkpointed subgraph so same-thread retries resume after completed
-  specialist delegations instead of replaying them.
-- **Evidence:** Concrete middleware, exposed-tool, trajectory, artifact, memory-isolation, interrupt,
-  PostgreSQL resume, bootstrap, and lifecycle tests. Live model and LangSmith evidence remains separate.
-
-### 2026-09-29 — Lane fit: direct empty-leg coverage and versioned scoring
-
-- **Decision:** A shipper origin-to-destination lane matches carrier empty capacity in the same
-  direction; reverse-direction capacity is not a match. Matched loads are the smaller of shipper
-  loads and empty capacity. Backhaul fill is matched loads divided by empty capacity, or zero for
-  zero capacity. Density is same-lane weekly loads divided by 40 and capped at one; equipment match
-  is the carrier fleet share for the required equipment. `lane_fit_v1` weights those components
-  50%, 30%, and 20%, respectively, and rounds the bounded score half-up to four decimal places.
-- **Decision:** Only lanes with at least one matched load are eligible. Rank by score descending,
-  matched loads descending, origin ascending, and destination ascending, then retain three. Duplicate
-  shipper or network routes and malformed inputs produce `needs_more_data`; complete critical inputs
-  with an eligible lane produce `fit`, while complete critical inputs without one produce `no_fit`.
-- **Decision:** Modeled gross revenue is `matched loads * estimated rate per load * 52 weeks`.
-  Modeled deadhead avoided is `matched loads * full origin-to-destination miles * 52 weeks`. These
-  internal values are assumptions, not booked revenue, margin, guaranteed savings, or evidence that
-  every modeled mile would otherwise have run empty.
-- **Decision:** Customer-visible outreach is limited to exact, approved v1 qualitative invitation
-  pairs. Generic drafts use the exact `Freight conversation` subject. Its approved bodies are
-  `Could we discuss your freight needs?`, `Could we compare freight needs?`, and
-  `Would you be open to comparing notes on your freight needs?`. Route drafts use the exact
-  `{O} to {D} freight conversation` subject paired with the exact
-  `Would you be open to comparing notes on your {O}-to-{D} freight needs?` body, where both route codes
-  are matching uppercase alphanumeric normalized IDs. Generated drafts and rep edits use the same
-  full-match allowlist; all other prose is rejected, so internal commercial and source claims cannot
-  pass through paraphrasing.
-- **Alternatives considered:** Reverse-direction round-trip matching; uncapped density; equal weights;
-  retaining zero-match lanes; input-order tie breaking; merging duplicate routes; margin estimation;
-  assuming only the empty portion of a lane for deadhead avoidance.
-- **Reasoning:** Same-direction matching represents capacity that the shipper load can actually fill and
-  makes the score independently reproducible. Fixed normalization and tie breakers keep results stable
-  under input reordering. Abstaining on ambiguous data avoids silently choosing among conflicting
-  records, while explicit 52-week and full-lane assumptions keep the MVP's opportunity model legible.
-  A deterministic template allowlist is auditable and closes paraphrase variants without pretending
-  a lexical denylist can reliably distinguish safe from unsafe commercial claims.
-- **Consequences:** Internal briefs label modeled gross revenue and modeled deadhead avoided and disclose
-  their assumptions without changing the API shape. The gross-revenue model intentionally excludes
-  costs and margin; the deadhead model is an upper-bound displacement estimate for the full lane.
-  The outreach guardrail is intentionally conservative: reps cannot author custom v1 copy and must
-  select an approved generic template or the internally consistent normalized-route template.
-- **Evidence:** Runtime and independent-reference parity across all reviewed fixtures; table-driven,
-  boundary, ordering, duplicate, malformed, zero-fit, outreach-safety, component, and browser tests.
-
-### 2026-09-29 — Human review: outreach-only approval boundary
-
-- **Decision:** The system pauses before any send-like action and waits for a rep. A rep can approve
-  the draft, replace the complete subject and body with another exact approved v1 invitation pair,
-  or reject it. Arbitrary custom copy is rejected. The MVP records a simulated send receipt only;
-  it does not send email or update a CRM.
-- **Decision:** Review must resume the durable `send_outreach` graph interrupt. The API has no direct
-  service mutation fallback; if the graph review handler is unavailable it returns retryable
-  `503 service_unavailable` without accepting the decision.
-- **Decision:** A valid decision and its product records commit together. Repeating the same action
-  with the same run-specific review token returns the original result without another receipt,
-  preference update, or quality event. Reusing that token for a different action is rejected.
-
-| Rep decision | Final run state | Simulated receipt | Preference learning | Quality feedback |
-| --- | --- | --- | --- | --- |
-| Approve | `completed` | Original reviewed draft | No change | Approval with edit distance `0` |
-| Edit | `completed` | Validated revised draft | Replace the current tenant/rep profile | Edit with normalized distance |
-| Reject | `rejected` | None | No change | Rejection with no edit distance |
-
-- **Decision:** Edited outreach is checked against the public-safe template allowlist before the graph
-  resumes and again before any receipt, preference, or quality event is persisted. An invalid
-  first-time edit or token leaves an awaiting run unchanged. Preferences remain isolated to the
-  current tenant and rep.
-- **Alternatives considered:** Sequential send and CRM approvals; direct service fallback when the
-  graph is unavailable; relying on review without a runtime interrupt; storing customer facts as
-  memory.
-- **Reasoning:** This is the smallest meaningful side-effect boundary and demonstrates durable human
-  control without pretending to integrate a real customer system.
-- **Consequences:** Rejection is terminal and sends nothing. Temporary runtime unavailability is
-  visible and retryable rather than allowing review state to diverge from the graph checkpoint. A
-  database failure rolls back the decision and its related records together. A later quality-event
-  delivery failure leaves the event pending but does not change the rep's result. V1 preference
-  learning is limited to safe style traits; customer-specific facts never enter preference memory.
-  Production email and CRM integration remain future work.
-- **Evidence:** Approve/edit/reject, graph-resume, handler-unavailable, idempotency, and
-  namespace-isolation tests.
-
-### 2026-09-29 — Human feedback: bounded preference profile and durable quality events
-
-- **Decision:** Only an approved edit changes rep memory. The current tenant/rep profile replaces the
-  previous profile and contains exactly three customer-neutral traits: direct, comparative, or
-  consultative tone; approximate body word count; and generic or route-specific invitation format.
-  Draft text, account names, route codes, and customer facts are never copied into preference memory.
-  If different runs commit out of order, the profile with the greatest `learned_at` timestamp remains
-  current.
-- **Decision:** Review edit distance is character-level Levenshtein distance over the canonical
-  `Subject: …\n\n<body>` text divided by the longer canonical length. Approval records `0`, edit
-  records the normalized value, and rejection records no distance.
-- **Decision:** Run creation, analysis completion, human review, and terminal execution failure each
-  enqueue one sanitized event atomically with the corresponding PostgreSQL transition. Event IDs are
-  deterministic by run and event type. The dispatcher delivers at least once, acknowledges only
-  after sink success, bounds each sink attempt to 10 seconds by default, and retains a sanitized
-  pending failure for retry; delivery failure or timeout never changes the product result. Concrete
-  LangSmith delivery remains CAM-42 work.
-- **Alternatives considered:** Append unbounded free-text memories; retain the selected draft or route;
-  use word-level or heuristic similarity; publish events only after commit without an outbox; call
-  LangSmith directly from the prospect feature.
-- **Reasoning:** A bounded current profile gives later drafts useful style direction without creating
-  contradictory memory or customer-specific retention. Transactional events preserve feedback across
-  crashes while keeping online-quality integrations outside the freight feature.
-- **Consequences:** The MVP retains product and outbox rows indefinitely. Outbox delivery is
-  at-least-once, so downstream consumers must deduplicate by event ID. Migration `20260929_0002`
-  keeps the newest pre-existing preference per tenant/rep and cannot restore deleted duplicates on
-  downgrade.
-- **Evidence:** Preference taxonomy and distance unit tests; approve/edit/reject replay tests;
-  disposable-PostgreSQL migration, lifecycle-event, restart, isolation, and delivery-failure tests.
-
-### 2026-09-29 — Lane analysis: runtime-loaded, role-scoped skill
-
-- **Decision:** Package `lane_fit_v1` as an SDK-formatted skill, mount the skill source read-only at
-  `/skills/`, and expose it only to the lane analyst. Other agents cannot discover or read the skill.
-- **Alternatives considered:** Repeat the formula only in prompts; expose every packaged skill to the
-  root and all specialists; treat the skill as documentation that is not loaded at runtime.
-- **Reasoning:** A role-scoped runtime skill keeps the versioned analysis method discoverable where it
-  is applied without expanding unrelated agents' context or permissions.
-- **Consequences:** Skill packaging and access policy are part of the runtime contract. Formula changes
-  require evaluator parity, skill-version review, and promotion evidence.
-- **Evidence:** Skill discovery, read isolation, package-content, and lane-fit parity tests. Live model
-  and LangSmith evidence remains separate.
-
-### 2026-09-29 — Data policy: live-first public research with explicit source modes
-
-- **Decision:** SEC, Tavily, and credentialed FMCSA are live-only when enabled and configured;
-  failures return disclosed unavailable or degraded coverage and never substitute fixture facts.
-  FAF5.7.1 is a checksummed bulk snapshot; GenLogs, CRM, and carrier-network data are deterministic
-  synthetic fixtures. Every fact records source mode and provenance.
-- **Alternatives considered:** Live APIs in offline evaluation; silently substituting fixtures; real
-  GenLogs data.
-- **Reasoning:** Offline ground truth must be reproducible, and vendor licensing/availability must not be
-  misrepresented.
-- **Consequences:** Missing optional sources degrade visibly. Missing critical freight/network evidence
-  produces `needs_more_data`; the system never invents facts.
-- **Evidence:** Adapter contract tests, dataset repeatability tests, source documentation, and
-  credential-free HTTP fakes. Credential-gated smoke commands remain outside CI.
-
-### 2026-09-29 — Evaluation: strict deterministic gates and calibrated semantic judges
-
-> The numeric evidence scope in this entry was expanded on 2026-10-01 after hosted experiments
-> exposed missing context and evidence-claim values. The gate thresholds remain unchanged.
-
-- **Decision:** Use 16 core and 8 edge examples with three repetitions. The CAM-38 deterministic
-  profile requires 100% numeric grounding, analysis correctness, file-contract, trajectory, and
-  injection checks, reference-aware lane precision@3 of at least 0.80, and verdict accuracy of at
-  least 0.90. Precision is the unique predicted/expected top-three intersection divided by the
-  larger set size; two empty sets score 1.0, so sparse correct predictions can pass without allowing
-  under-produced core predictions to score perfectly.
-- **Decision:** Lane analysis is the exact `lane_fit_v1` artifact contract: method version, fit verdict,
-  and up to three complete, uniquely routed, canonically ordered lane records. The scripted target
-  authors these records with the application scorer; `analysis_correctness` recomputes them with the
-  independent evaluator reference. Numeric grounding reads only research and analysis JSON, with
-  currency, grouping separators, decimal strings, and percentages normalized before exact matching.
-- **Decision:** The root `send_outreach` tool call means `review.requested`, not an external send.
-  Trajectory evaluation requires research before analysis, analysis before drafting, and drafting
-  before review; an `outreach.sent` event is valid only after `review.approved`. Efficiency metrics
-  remain informational. CAM-39 adds Jev semantic evidence pinned to `jev-1.13.0`; CAM-41 will
-  calibrate each question independently against human labels and a GPT-5.6 Sol comparison judge
-  before setting semantic gates.
-- **Alternatives considered:** Grounding as the only release gate; live public APIs in the release
-  dataset; dividing precision by the number of returned predictions; treating the review request as
-  a send; using the application scorer as both target and oracle; one shared threshold for semantic
-  questions.
-- **Reasoning:** Deterministic checks should own computable facts while calibrated judges cover narrow
-  semantic questions. Independent scoring and a real compiled-graph artifact boundary catch failures
-  that fixture-only or self-referential checks would miss.
-- **Consequences:** CI remains offline. The local synchronous LangSmith runner uses a preloaded,
-  non-hosted client, disables uploads and tracing, requires every metric in exactly three rows for
-  each of 24 examples, and publishes only sanitized aggregate repository evidence. Target snapshots
-  retain model-authored analysis/output bodies but reduce task, context, and research artifacts to
-  typed contract and numeric observations. Measured latency is retained as a LangSmith metric but
-  omitted from the committed report value so repository evidence is reproducible. Its scripted-model
-  result validates wiring and gates, not live model quality. Hosted LangSmith experiments remain
-  CAM-40 work requiring credentials, and semantic calibration remains CAM-41 work.
-- **Evidence:** Evaluator true/false-positive, boundary, and adversarial tests; compiled-graph target
-  test; 72-row sanitized CAM-38 report; future calibration and named live LangSmith experiments.
-
-### 2026-09-29 — Offline demo: `lane_fit_v1` direct-match verdict
-
-- **Decision:** `lane_fit_v1` returns `fit` when complete, unambiguous evidence yields at least one direct
-  matched load (`matched_loads_per_week >= 1`). Complete evidence without an eligible match returns
-  `no_fit`; missing, degraded, malformed, or duplicate critical evidence returns `needs_more_data`.
-- **Alternatives considered:** Leave demo runs permanently queued; use a calibrated score threshold;
-  require live credentials for every UI walkthrough.
-- **Reasoning:** The direct-match threshold is deterministic, independently reproducible, and consistent
-  with the v1 eligibility rule. It lets the API/UI/HITL contracts be reviewed without presenting an
-  uncalibrated confidence cutoff as production logic.
-- **Consequences:** The compiled agent worker and CAM-33 APIs must preserve this v1 verdict contract.
-  Introducing calibrated score thresholds changes business behavior and therefore
-  requires a versioned `lane_fit_v2` decision, evaluation baseline, and promotion evidence.
-- **Evidence:** CAM-31 lane-fit parity, boundary, malformed-data, duplicate, and API bootstrap tests.
-
-### 2026-09-29 — Contracts: separate workflow state, fit verdict, and recommended action
-
-- **Decision:** Run status is limited to `queued`, `running`, `awaiting_review`, `completed`,
-  `rejected`, and `failed`. Freight fit is independently `fit`, `no_fit`, or `needs_more_data`;
-  recommended action is independently `expand_existing_lanes`, `new_lane_pitch`, `not_a_fit`, or
-  `needs_more_data`. Briefs carry scored lanes with their evidence, outreach is a typed subject/body
-  value, and run failures carry code, message, and retryability.
-- **Alternatives considered:** Reuse one verdict field for workflow state and sales action; retain the
-  scaffold's unvalidated strings and parallel lane/evidence arrays.
-- **Reasoning:** Separate types prevent downstream persistence, UI, and evaluation tickets from
-  assigning business meaning to execution state or pairing evidence with the wrong lane.
-- **Consequences:** The API keeps human-readable recommendation text and adds a stable action code.
-  Existing scaffold JSON is rewritten through the finalized serializer; no migration is needed before
-  CAM-29 owns durable persistence.
-- **Evidence:** Shared-contract, repository round-trip, API, frontend-boundary, and strict-type tests.
-
-### 2026-09-29 — Trust boundaries: complete provenance and sanitized typed failures
-
-- **Decision:** Every exported evidence item includes source mode, endpoint or artifact, retrieval
-  time, evidence location, and source version. Quality events require lowercase SHA-256 tenant and rep
-  hashes and serialize only their explicit allowlist. Request failures use one typed envelope and never
-  echo submitted bodies or values. Agent artifacts use the canonical contract paths and memory paths
-  reject unsafe scope identifiers.
-- **Alternatives considered:** Return FastAPI's default validation details; expose partial provenance;
-  accept arbitrary hash-like strings; maintain independent path lists in agents and evaluators.
-- **Reasoning:** These boundaries make lineage reviewable while preventing private request data and raw
-  identifiers from crossing into errors or online-quality processing.
-- **Consequences:** `agent_quality` continues to consume only `prospect_intelligence.public`; clients
-  receive safe field locations and error types, not submitted values. Canonical research filenames are
-  `lanes.json`, `company.json`, and `volumes.json`.
-- **Evidence:** Validation-error, provenance-response, filesystem, architecture, quality-event, and
-  frontend parser tests.
-
-### 2026-09-29 — Durable API: explicit polling and review capability
-
-- **Decision:** Starting a run returns `202` only after the run and its worker job commit atomically.
-  Clients poll the run's durable status separately from its fit verdict. Only `awaiting_review`
-  responses expose `pending_review`, naming `send_outreach`, the fixed approve/edit/reject decisions,
-  and the stable `review-{run_id}` review-idempotency token; the draft `outreach` contains content
-  only.
-- **Decision:** Accounts are tenant-scoped, while runs and reviews are tenant-and-rep-scoped. Missing
-  and out-of-scope resources share the same `404` response. Every review submission must return the
-  exact supplied token; an arbitrary token or reusing that token for a different decision returns
-  `409 conflict`. Unavailable graph review returns retryable `503 service_unavailable` without
-  recording a decision.
-- **Alternatives considered:** Background-only enqueue after the HTTP response; combining workflow
-  status and fit verdict; deriving or embedding the review token in draft content; distinct forbidden
-  responses that disclose resource existence.
-- **Reasoning:** An explicit capability keeps draft content separate from durable workflow control,
-  while atomic enqueue, scoped polling, and non-disclosing errors make restart and retry behavior
-  predictable without overstating the synthetic headers as authentication.
-- **Consequences:** Clients must preserve the server token and tolerate polling across application
-  restarts. The token provides idempotency, not authorization. Production still requires real
-  authentication and delegated authorization before these scope headers can be trusted.
-- **Evidence:** API state-matrix, validation, ownership, sanitization, service-unavailable, atomic
-  PostgreSQL enqueue/restart, frontend boundary, component, and browser tests.
-
-### 2026-09-29 — Deterministic data: one seeded population and explicit FAF estimates
-
-- **Decision:** `freight-prospect-v1` uses seed `28029` and one generator for 16 core, 8 edge,
-  and 8 account-ID-disjoint traffic cases. Source payloads, rather than tags alone, carry each
-  expected edge condition. Canonical JSON is UTF-8, key-sorted, indented, and newline-terminated.
-- **Decision:** The FAF5.7.1 snapshot aggregates finalized 2023 truck-mode regional tons for eight
-  reviewed origin-destination pairs. Synthetic loads per week use a seeded fictional 0.25%–1.0%
-  shipper share, 20 tons per load, and 52 weeks, rounded half-up; a zero result retries at the 1%
-  share. Raw FAF tonnage remains separate and every derived value is labeled a project-owned
-  synthetic estimate. Release and extraction metadata, selected fields, aggregation, row pairs,
-  upstream archive hash, and snapshot hash are pinned and verified before use.
-- **Alternatives considered:** Independent offline and traffic fixtures; live public reads in CI;
-  presenting regional FAF tonnage as observed shipper activity.
-- **Reasoning:** A shared population prevents fixture drift and evaluation leakage, while a
-  checksummed public-data anchor gives realistic relative magnitude without claiming shipper-level
-  ground truth.
-- **Consequences:** Generator, formula, or version changes require golden-file review. The snapshot
-  carries BTS/FHWA provenance and DOI; broader commercial redistribution still requires legal review.
-- **Evidence:** Dataset schema and edge-semantic tests, repeat byte generation, golden SHA-256
-  `d5ed38772ba98dd9195295f851b7d548509e826c0a9c2900dc5195a6220f30c8`, snapshot SHA-256
-  `df7f8931e85a8b6a5650b1e84f6fe661b173f20ebe21d637c94bb8e2f69e3e17`, traffic disjointness,
-  and wheel artifact inspection.
-
-### 2026-09-29 — Persistence: leased PostgreSQL work and durable review state
-
-- **Decision:** The MVP runs two lifespan-owned worker slots backed by PostgreSQL claims with a
-  five-minute lease, one-minute heartbeat, three attempts, immediate durable retry, and fenced claim
-  tokens. Thread identity is `prospect:v1:{tenant}:{rep}:{run}` and preference memory is namespaced by
-  feature version, tenant, and rep.
-- **Decision:** Run creation and enqueue are atomic. Review, approval, simulated-send receipt,
-  preference metadata, and terminal run state commit atomically. Reusing an idempotency key returns
-  the canonical result; another key after a terminal decision conflicts. Only one simulated-send
-  receipt is allowed per run. If a final-attempt lease expires after terminal run state commits but
-  before job completion commits, recovery preserves the terminal run and reconciles the job as
-  completed.
-- **Alternatives considered:** FastAPI background tasks; an unleased jobs table; Celery or Temporal
-  for the MVP; separate best-effort writes for review state.
-- **Reasoning:** Database claims are the smallest durable mechanism available in the required stack,
-  and transactional review state prevents duplicate sends or partially recorded human decisions.
-- **Consequences:** Product rows, checkpoints, and memory are retained indefinitely in the MVP; no
-  automated purge exists. Product downgrade is destructive, while LangGraph-owned tables use their
-  package migrations and intentionally survive it. Credentials and raw prompts are never persisted,
-  but analysis and reviewed outreach are retained for resume and audit. Production should separate
-  web and worker processes and adopt a supported broker or orchestrator such as Celery with a broker,
-  Temporal, or a managed queue. The MVP poller has no retry backoff.
-- **Evidence:** Disposable-PostgreSQL migration, restart, concurrent-claim, fencing, crash-recovery,
-  atomic-review, receipt-idempotency, checkpoint-resume, and store-isolation tests.
-
-### 2026-09-29 — Source selection: explicit modes and disclosed failure
-
-- **Decision:** CRM, freight intelligence, carrier network, market data, SEC, web search, and carrier
-  registry are independently injected sources. The MVP uses deterministic synthetic adapters only
-  for private CRM, freight, and network data; FAF is a verified snapshot, while SEC, Tavily, and
-  FMCSA are live only when external access and required credentials are available.
-- **Decision:** Expected source failure returns typed degraded or unavailable coverage with evidence
-  collected before failure. Live failures never silently fall back to synthetic facts. A run may
-  reuse a normalized success or terminal unavailable result, but no cache entry crosses a run,
-  tenant, or rep boundary.
-- **Decision:** A successful SEC company-index response with no matching company and a successful
-  Tavily response with no results are terminal unavailable results with no facts or evidence. They
-  remain cacheable within the run. Nonempty malformed provider results remain explicitly invalid
-  rather than being treated as legitimate no-match responses.
-- **Decision:** Critical freight or carrier-network coverage must be complete before the
-  prospect workflow can recommend outreach; degraded inputs produce `needs_more_data`.
-  The synthetic carrier network is tenant-scoped and the two demo aliases select reviewed scenarios
-  with non-overlapping routes, so both demo scores remain identical to their reference outputs.
-  Alias CRM identity remains consistent with the persisted demo account and is grounded in a
-  committed alias fixture, while lane data comes from the shared reviewed scenario.
-- **Decision:** External calls receive one initial attempt plus two retries for timeouts, rate limits,
-  and server errors. Other client errors and malformed payloads are not retried. External text is
-  untrusted, and secrets, credential-bearing query strings, and raw private payloads are excluded
-  from logs and persistence.
-- **Reasoning:** Explicit source modes preserve user trust and make degraded evidence visible, while
-  narrow replaceable contracts allow post-MVP private integrations without changing agent behavior.
-- **Evidence:** CAM-30 contract, adapter, retry, cache-isolation, provenance, and redaction tests.
-
-### 2026-09-29 — Semantic evaluation: narrow Jev decisions with fail-closed evidence
-
-- **Decision:** Use seven async LangSmith-native semantic metrics with Jev `jev-1.13.0` as the
-  default judge: `claim_supported`, `internal_data_leak`, `draft_matches_brief`, `next_step`,
-  `entity_resolution_ok`, `actionability`, and `tone_fit`. GPT-5.6 Sol is an injected comparison judge
-  and text-only failure explainer; it never substitutes automatically when Jev fails. Numeric, date,
-  and count claims remain deterministic evaluator concerns.
-- **Decision:** Semantic calls receive only strict, bounded, synthetic projections. Qualitative
-  evidence is named by a stable `ev_<24 hex>` ID derived from canonical provenance and resolved
-  locally to bounded, application-authored support text. Raw source/tool output, CRM bodies, traces,
-  arbitrary objects, unknown citations, oversized state, and injection canaries are rejected before
-  either provider is called.
-- **Decision:** `claim_supported` is the minimum `P(yes)` across qualitative claims, with unresolved
-  citations scoring `0` and no qualitative claims scoring `1`. `internal_data_leak` is `1-P(leak)`;
-  `draft_matches_brief` and resolved `entity_resolution_ok` use `P(yes)`; `next_step` uses the
-  probability assigned to the reference choice; `actionability` and applicable `tone_fit` retain
-  their native 1–5 scores. Missing rep preferences make `tone_fit` explicitly not applicable.
-  Provider or response-validation failures yield no score plus sanitized error metadata, causing
-  coverage to fail closed.
-- **Decision:** Jev has a 30-second budget and at most two SDK retries for connection/timeout errors,
-  HTTP 408/429, and 5xx responses. Normalized metadata retains model revisions, actual option order,
-  canonical SHA-256 state hash, probabilities, certainty and its source, latency, request ID, token
-  usage, retry count, rubric and pricing versions, and estimated cost, but not raw state or provider
-  debug payloads. Jev retry count is instrumented on its per-call SDK policy. Model, token, and retry
-  source labels distinguish provider observations from configured aliases or unavailable adapter
-  telemetry; missing values remain null. Noul certainty
-  is `2 × |P(yes) - 0.5|`; choice and score certainty use normalized provider confidence.
-- **Decision:** Cost metadata uses reviewed estimate cards: TypeSafe revision 2026-09-15 at
-  `$0.042/M` input and free output, and OpenAI standard revision 2026-08-21 at `$4/M` input,
-  `$0.40/M` cached input, and `$20/M` output. These are estimates rather than invoices and require
-  review before future live runs. OpenAI retry-total input is conservatively charged at the standard
-  rate when the adapter omits a cached-token total. TypeSafe zero data retention is not assumed; any
-  production judge use requires vendor/DPA and retention review.
-- **Decision:** Store the exact provider-neutral rubrics in versioned source code at
-  `evaluation/rubrics/semantic_v1.py`, keep judge contracts in `evaluation/contracts/judges.py`, and
-  keep Jev and OpenAI implementations in separate provider modules. Normalized evidence records
-  `semantic-v1`, allowing results to resolve to the question text and criteria used.
-- **Decision:** Semantic scores remain informational until CAM-41 calibrates each question against
-  human labels and sets promotion thresholds. The explicit `--live` smoke uses synthetic state and
-  local LangSmith `aevaluate(upload_results=False)`; it is live-provider evidence, not hosted
-  LangSmith experiment evidence. Repository verification, local smoke evidence, and hosted
-  experiment evidence remain distinct.
-- **Alternatives considered:** Send whole traces or raw citations to a judge; let GPT silently rescue
-  unavailable Jev results; reuse one semantic threshold without calibration; treat a local provider
-  smoke or passing unit tests as a hosted experiment; assume provider zero-data retention.
-- **Reasoning:** Narrow typed questions preserve deterministic ownership of computable facts, reduce
-  privacy and prompt-injection exposure, and make provider behavior observable without masking
-  missing coverage.
-- **Consequences:** CI stays credential-free. Judge outages cannot produce a false pass. Live runs
-  are opt-in and limited to synthetic, sanitized state; calibration and hosted experiment promotion
-  remain separate work.
-- **Evidence:** Projection/citation, answer-validation, option-permutation, retry, fail-closed,
-  LangSmith result, and credential-gated synthetic smoke tests. Live smoke output is recorded only as
-  sanitized execution evidence.
-
-### 2026-09-30 — Model transport: optional regional OpenAI endpoint
-
-- **Decision:** `TAKEHOME_OPENAI_BASE_URL` optionally routes both the orchestrator and specialist
-  OpenAI models to one endpoint. It defaults to unset (SDK default host); a blank value also means
-  unset. Only credential-free `https` URLs without query or fragment are accepted, trailing slashes
-  are normalized, and settings validation errors never echo rejected input.
-- **Alternatives considered:** Rely on the SDK's ambient `OPENAI_BASE_URL`; allow plain `http` for
-  local proxies; configure orchestrator and specialist endpoints separately.
-- **Reasoning:** The project key is bound to `https://us.api.openai.com/v1` and returns
-  `401 incorrect_hostname` elsewhere. A typed application setting is explicit, validated, and visible
-  in the env examples. Plain HTTP or URL-embedded credentials would expose the API key or a secret.
-- **Consequences:** Local HTTP proxies are unsupported. The evaluation-only live smoke
-  (`evaluation/experiments/semantic_smoke.py`) and judges build their own OpenAI clients and do not
-  read this setting yet.
-- **Evidence:** `tests/unit/test_settings.py`,
-  `tests/unit/platform/test_openai_model_runtime.py` (mock transport asserts both models call
-  `us.api.openai.com/v1/responses`).
-
-### 2026-09-30 — Agent workflow: explicit artifact contract and one bounded write reminder
-
-- **Decision:** Every agent's system prompt now lists each required artifact path (with media type)
-  and states that only `write_file` creates it. Source-artifact agents also get the `coverage`,
-  `evidence`, `claim`, and six-field `provenance` schema enforced by the guardrail. `account-context`
-  maps `get_crm_account` to `/context/account.json` and `get_network_lanes` to
-  `/context/our_network.json`. If an agent's final answer has no tool calls while required artifacts
-  are missing, `ArtifactValidationMiddleware` injects exactly one reminder naming the missing paths
-  and returns to the model. A second omission still fails closed at `after_agent`.
-- **Alternatives considered:** Rely on the orchestrator's delegation text to name paths; write the
-  artifacts deterministically from tool results outside the model; retry without limit; relax the
-  guardrail.
-- **Reasoning:** Deep Agents 0.7.19 intentionally emits no filesystem tool guidance, and the
-  specialist only receives the orchestrator's free-text task, so a live model had no way to learn the
-  paths or schema. Deriving the contract from `AgentSpec.required_artifacts` keeps the prompt and
-  the validator from drifting. One reminder recovers the common "summarized instead of writing"
-  failure without masking a model that cannot follow the contract.
-- **Consequences:** Prompts are slightly longer but remain static and cache-friendly. At most one
-  extra model call per agent, still bounded by the existing model/tool budgets. The reminder is
-  stored in checkpointed messages with a fixed ID. Unavailable sources still fail validation because
-  evidence must be non-empty. That is unchanged, deliberate fail-closed behavior.
-- **Evidence:** `tests/unit/prospect_intelligence/test_specialist_artifact_contract.py` (a fake model
-  that writes only the paths it can parse from its own system prompt reproduces the live failure on
-  the prior prompt, and covers the reminder and bounded fail-closed paths). The existing root
-  trajectory tests keep their exact call counts. A live `acme-foods` run is still pending.
-
-### 2026-09-30 — Lane analysis: the scoring tool returns the canonical artifact
-
-- **Decision:** `score_lane_fit_v1` now returns the exact `LaneAnalysisArtifact` JSON
-  (`method_version`, `verdict`, `top_lanes`). The lane analyst is instructed to write it verbatim
-  to `/analysis/lane_fit.json` and explain it in `/analysis/lane_fit.md`. The tool and the final run
-  output share `services/lane_analysis.py::analyze_lanes`: `needs_more_data` unless freight and network coverage are
-  both complete and freight lanes exist, otherwise `fit` when a direct lane ranks, else `no_fit`.
-- **Alternatives considered:** Keep returning a bare ranked list and have the model assemble the
-  strict JSON; relax the strict parser; write the JSON outside the agent.
-- **Reasoning:** A live `acme-foods` run failed because the analyst invented its own schema. The
-  artifact is deterministic, so the model should transcribe it, not construct it. Previously the tool
-  ranked lanes even when coverage was degraded, which could contradict the authoritative
-  `needs_more_data` output. Sharing one helper removes that divergence.
-- **Consequences:** With degraded coverage, the tool now reports `needs_more_data` with no lanes
-  rather than a ranking. The agent can still write prose, but it cannot change the verdict or scores
-  without failing validation.
-- **Evidence:** `tests/unit/prospect_intelligence/test_agent_job_handler.py` (the tool result passes
-  `LaneAnalysisArtifact.from_json` and equals the committed output lanes);
-  `test_specialist_artifact_contract.py` (the prompt maps the tool verbatim to the file).
-
-### 2026-09-30 — Operations: sanitized run-failure logging and portable env files
-
-- **Decision:** When a run's handler raises, the worker logs `prospect_run_execution_failed` with
-  `run_id`, `worker_id`, `error_code`, and the exception class name only, never its message. The SEC
-  identity uses separate space-free `TAKEHOME_SEC_APP_NAME` and `TAKEHOME_SEC_CONTACT_EMAIL`
-  settings; bootstrap composes the required `<app> <email>` header in code. Env examples contain no
-  whitespace or quotes, and tests check that every example parses strictly, uses known
-  `TAKEHOME_` keys, and loads into `Settings`.
-- **Alternatives considered:** Log the exception message or traceback; rely on LangSmith traces
-  alone.
-- **Reasoning:** The first live failure left no local signal; the cause could only be recovered
-  from checkpoint internals. Exception text can contain model output or source data, so the class
-  name is the safe minimum. Spaced values accepted by python-dotenv can make `uv --env-file` stop
-  parsing and silently drop later keys such as `OPENAI_API_KEY`; composing the SEC identity in code
-  avoids parser-specific quoting behavior.
-- **Consequences:** Operators can distinguish guardrail (`ValueError`) from provider or transport
-  failures without exposing payloads. Existing local `.env` files must replace
-  `TAKEHOME_SEC_USER_AGENT` with the two new settings.
-- **Evidence:** `tests/unit/prospect_intelligence/test_persistence_runtime.py`,
-  `tests/unit/test_settings.py::test_env_examples_are_portable_and_load_into_settings`,
-  `make docker-config`.
-
-### 2026-09-30 — Numeric grounding: internal briefs may cite exact evidence dates
-
-> **Superseded** later on 2026-09-30 by "Agent workflow: judgment-based quality review before
-> send_outreach": the regex grounding check no longer gates the brief.
-
-- **Decision:** In `/output/brief.md` a full `YYYY-MM-DD` date is grounded only when that exact
-  date appears in a string value of the `/context/`, `/research/`, or `/analysis/` JSON (for example,
-  a provenance `retrieved_at`). Bare years, unmatched dates, and every other number still must equal a
-  numeric JSON value. Customer outreach gets no date exemption and remains under the customer-safe
-  allowlist. The brief and outreach prompt contracts now state these rules.
-- **Alternatives considered:** Tell the model never to cite dates; extract every numeric token
-  from all evidence strings; drop grounding for the internal brief.
-- **Reasoning:** A live `acme-foods` run produced all 11 artifacts but failed at `send_outreach`
-  because the brief cited source retrieval dates, which is desirable provenance practice. Pulling
-  every numeric token from strings would ground arbitrary small numbers via timestamp parts; exact
-  full-date matching keeps the boundary narrow.
-- **Consequences:** A brief can cite when evidence was retrieved. A "prepared" date or any date not
-  present in evidence still fails closed, and the prompt tells the orchestrator to leave it out.
-- **Evidence:** `tests/unit/prospect_intelligence/test_agent_security.py`
-  (`test_brief_may_cite_exact_evidence_dates_only`, `test_outreach_may_not_cite_evidence_dates`),
-  `test_specialist_artifact_contract.py`.
-
-### 2026-09-30 — Agent workflow: judgment-based quality review before send_outreach
-
-- **Decision:** A read-only `quality-reviewer` subagent reviews `/output/brief.md` and
-  `/output/outreach_draft.md` against all evidence, `/analysis/lane_fit.json`, rep preferences, and
-  the shared brief template before `send_outreach`.
-  - **Output:** it writes `/review/findings.json`, a strict `QualityReviewArtifact` with `round`
-    1–3, verdict `pass`|`revise`, blocking/advisory findings, and `resolved_prior`. `pass` holds
-    exactly when no finding is blocking.
-  - **Revisions:** the orchestrator, which authored the brief, applies brief findings.
-    `outreach-drafter`, which authored the outreach, applies outreach findings. There is no separate
-    reviser, and each file keeps one author.
-  - **Round cap:** at most three reviews (two revision rounds). Unresolved findings end the run
-    without `send_outreach`, which fails closed.
-- **Gate:** `send_outreach` requires all of the following:
-  - a review happened;
-  - the findings artifact's `round` exactly matches the current quality-review delegation ordinal,
-    so an earlier pass or a future-numbered artifact cannot authorize changed drafts;
-  - no brief write/edit or outreach redraft occurred after the last review, derived from the root's
-    tool-call history (calls issued in the same turn as `send_outreach` do not count as a review);
-  - the latest findings are `pass`;
-  - every artifact data contract validates.
-
-  An outreach redraft is allowed only when the current-round review is `revise` with an outreach
-  finding and no redraft has followed it.
-- **What changed at the gate:** the regex numeric-grounding and keyword/format outreach checks no
-  longer gate `send_outreach`. Draft content is judged by the reviewer. The reviewer counts
-  semantic equivalents as supported (0.8 = 80%, 582400 = $582.4K) and provenance dates are fine.
-- **Unchanged boundaries:**
-  - the domain v1 outreach template allowlist (`validate_customer_outreach`) is still enforced when
-    the analysis is committed and on rep edits;
-  - rep edits at approval still run the deterministic outreach checks;
-  - offline code evaluators still measure grounding and safety.
-- **Prompts:** each agent has an ALL-CAPS triple-quoted prompt in `agents/prompts/` using the same
-  sections (Role, Business context, Where you sit in the workflow, Inputs, Task, Rules, Finished
-  when). The generated artifact contract is appended. The orchestrator and reviewer share one brief
-  template, and the drafter and reviewer both state the v1 outreach templates.
-- **Budgets:** orchestrator 30 model / 48 tool calls (was 20/32); reviewer 10/16.
-- **Alternatives considered:** Keep the regex checks as a hard gate or expose them to the reviewer
-  as tools; a dedicated revision agent; letting the orchestrator revise the outreach; comparing
-  drafts across rounds.
-- **Reasoning:** Two live `acme-foods` runs produced complete artifacts but crashed on token-level
-  checks that rejected legitimate writing, with no feedback to the agent. A reviewer that reads the
-  evidence can judge meaning and formatting, and its findings give the authors actionable fixes.
-  Single ownership keeps accountability clear.
-- **Consequences:** Brief and outreach content safety now rests on one model's judgment, backed by
-  the domain template allowlist and the rep's approval. Worst-case cost rises by up to three
-  reviews and two redrafts. The trajectory evaluator now requires a review before
-  `review.requested`, permits redrafts only between reviews, and flags more than three reviews.
-- **Evidence:** `tests/unit/prospect_intelligence/test_quality_review.py` (contract, ordering,
-  freshness, round cap, and compiled revise-then-pass and exhausted trajectories),
-  `test_specialist_artifact_contract.py` (prompt structure, path drift, shared template),
-  `tests/unit/evaluation/test_trajectory.py`. Live: `acme-foods` run `9c58a67e` (commit `387e958`)
-  reached `awaiting_review` (`fit`, top lane PHX→LAX, route-template outreach) after one review
-  round with no findings; the brief matched the template and `lane_fit.json` figures. This is a
-  single live run, not a LangSmith experiment, and it did not exercise a revise round.
-
-### 2026-09-30 — Superseded: deferred Jev runtime guardrail
-
-- **Historical decision:** Do not add a Jev guardrail on the final pre-review step yet. The
-  2026-10-01 decision above supersedes this by wiring disabled-by-default input and output seams.
-- **Reasoning:**
-  - TypeSafe offers no zero data retention, so runtime judging of CRM-derived drafts needs a
-    redaction design.
-  - The then-proposed placement in `agent_quality` was rejected during implementation. Generic
-    provider transport now belongs to `platform/decision_models`; prospect policy remains in the
-    prospect feature, and online evaluation remains unchanged.
-  - It adds a 30 s external dependency with an unsettled outage policy (fail-open vs fail-closed).
-  - Adding it together with the new reviewer would confound diagnosis.
-- **Staged path:**
-  1. Measure how often Jev's offline semantic metrics and reviewer verdicts disagree.
-  2. Add Jev as a non-blocking online evaluator (score and alert) behind redaction.
-  3. Enable the already-wired blocking seams only when disagreement, redaction, privacy review,
-     latency, and outage policy are settled.
-### 2026-09-29 — Review console: operational-first workspace and disclosure rules
-
-- **Decision:** The product is presented as **Prospect Intelligence**. The workspace opens directly
-  in the first viewport, with an accounts rail and a single decision-first workspace.
-- **Decision:** While outreach awaits review, the review is the page's primary task and comes
-  first:
-  - The status reads "Awaiting your review".
-  - One accent-framed checkpoint ("Review the outreach to {account}") holds the subject/body
-    editor and large Approve / Reject actions.
-  - A "Why this account" rationale sits beside the editor: verdict, action, modeled totals and the
-    lead lane, with a link to the evidence.
-  - Lanes, model assumptions and sources follow under "Supporting evidence".
-
-  The outcome receipt, neutral outcomes and progress take the same top slot. "Run prospect agent"
-  (formerly "Build brief") becomes
-  a secondary action once a brief is on screen.
-
-  The marketing hero and the invented "Northstar" brand are removed, since that name collided with
-  the Northstar Retail demo account.
-- **Decision:** The brief leads with the fit verdict, then the recommended action (label plus the
-  backend's readable text), then the summary. Modeled revenue and modeled deadhead avoided come
-  next, labeled "Modeled … / yr" and paired with an "Internal model · Model assumptions"
-  disclosure. That disclosure states they are internal estimates, not booked revenue, and gives
-  the revenue, deadhead and `lane_fit_v1` formulas. Totals are shown compactly (for example
-  `$1.25M`); exact values stay in the element title and in each lane row.
-- **Decision:** The API adds two fields:
-  - Lane score components (`backhaul_fill`, `density`, `equipment_match`), so the UI can show why a
-    lane scored as it did.
-  - An optional coverage `mode` (`live | snapshot | fixture`), stamped by each source adapter and
-    persisted with the analysis.
-
-  Both changes are additive; older persisted rows decode with `mode = null`, shown as "Mode not
-  reported". Live and Snapshot mode labels are visible. Fixture provenance remains visible in the
-  source name and artifact metadata, so its redundant mode label is omitted.
-- **Decision:** Degraded and unavailable sources are always listed with their mode and detail.
-  Complete sources collapse behind "Show all N sources". Each evidence item shows:
-  - its claim;
-  - the source, visible mode when live or snapshot, and UTC retrieval date;
-  - its version, location and artifact.
-
-  The brief is dated by its most recent evidence retrieval.
-- **Decision:** `no_fit` and `needs_more_data` are neutral outcomes:
-  - neutral pills, including the run's Completed pill;
-  - no alert;
-  - no editor;
-  - "No outreach was drafted for this outcome."
-- **Decision:** Polling runs every 1.2 s while a run is queued or running and stops at review or
-  terminal states. A failed poll retries up to 3 times with exponential backoff (2.4 s, 4.8 s,
-  9.6 s). After that, updates pause with an announced alert and a manual "Resume updates"; research
-  continues on the server. Progress is announced through one polite live region.
-- **Decision:** The outreach editor holds only the customer-facing subject and body. Scores,
-  modeled figures, sources and evidence never appear in the review column. The primary action
-  reads "Approve send" for an unchanged draft and "Submit edit" once the draft differs.
-  All review buttons are disabled while a decision is in flight, and duplicate submissions are
-  ignored.
-- **Decision:** Review failures are announced inline with `role="alert"` inside the checkpoint,
-  the draft is always preserved, and server messages are never rendered verbatim:
-  - **`409` on an edit:** "This edit can't be sent". Focus moves to Subject, with "Restore original
-    draft" and "Refresh run". The backend uses one `conflict` code for unsafe copy and for a run
-    already decided elsewhere, so both recoveries are offered.
-  - **`409` on approve or reject:** "This run already has a different decision", with a focused
-    "Refresh run".
-  - **`422` on an edit:** "Check the subject and message", with focus on Subject. A `422` on any
-    other decision asks for a refresh.
-  - **`404`:** "This run is no longer available". The alert takes focus and the checkpoint locks.
-  - **`503` or an unreachable backend:** "Your decision wasn't recorded", with a focused "Retry
-    decision" that resends the identical request and token. The stored retry is discarded as soon
-    as the rep edits the draft, so it can never send stale text.
-  - **Stale responses:** decision and refresh responses for a run that is no longer on screen are
-    dropped. The account rail and new-run action remain locked for the full `awaiting_review` state,
-    not only while a decision request is in flight, because the MVP has no run-history/resume view.
-  - **Failed runs:** fixed copy is shown ("No customer-facing output was produced") instead of the
-    stored error message.
-- **Decision:** Reject requires an inline confirmation ("Reject draft" / "Keep reviewing"). A
-  successful decision moves focus to the outcome heading:
-  - "Communications sent"
-  - "Draft rejected. No message was sent."
-- **Decision:** The same-origin proxy returns the typed retryable `service_unavailable` envelope
-  when the backend is unreachable, so the UI treats it like any other retryable 503. It rejects `.`
-  and `..` path segments with a typed `400`, so requests cannot escape the backend's `/api/v1`
-  surface. It never sends a body for GET or HEAD.
-- **Decision:** Server and provider text is rendered only as React text nodes, never as HTML.
-- **Reasoning:** Reps must be able to trust and verify each number quickly without scanning a wall
-  of text, and approval is the safety boundary, so it gets the only accent and explicit failure
-  recovery.
-- **Evidence:**
-  - CAM-35/CAM-36 Vitest component and boundary tests, plus the proxy test.
-  - Backend router tests for score components and coverage mode.
-  - Playwright desktop and Pixel 7 flow covering the `409` path.
-
-### 2026-09-30 — Live agent progress: real specialist attempts for the demo
-
-- **Decision:** A run begins with Account context, External research, Lane analysis, Drafting
-  outreach, Quality review, and Your review. They come from real execution, not an estimated
-  timeline:
-  - The orchestrator's `ProgressMiddleware` records start, done or failed for every `task`
-    delegation, keyed by `subagent_type`.
-  - The shared source-tool boundary records each source call against the active specialist.
-  - Account context and External research may show as running at the same time.
-  - Each later drafter/reviewer cycle appends another fixed-label attempt before human review, up to
-    three quality-review attempts. Retries reuse an unfinished attempt rather than duplicating it.
-  - Unknown specialists and tools are ignored, not stored.
-- **Decision:** Only fixed step labels, bounded attempt keys, fixed source labels (for example
-  "SEC EDGAR filings"),
-  `ok`/`unavailable` outcomes and timestamps are persisted. Each step keeps at most 12 activity
-  entries. Tool arguments, results and model text never enter progress state.
-- **Decision:** The percentage reflects completed agent attempts, is capped below completion while
-  work is running, and never decreases or overflows during revisions. The stage reads
-  "{specialist} running". When analysis commits:
-  - Specialists that never ran are marked skipped.
-  - Review opens for a fit, or is skipped for no-fit and needs-more-data.
-  - A decision completes review.
-  - A terminal job failure marks the running step failed and the rest skipped.
-- **Decision:** Progress writes are best-effort. They pass through the worker's lease guard, are
-  serialized per run, and ignore stale claims and non-running runs. Failures are logged and never
-  fail or retry the run. Rows written before this change have no steps, and the UI falls back to the
-  stage line.
-- **Decision:** While the agent works, the workspace leads with an "Agent progress" tracker:
-  - Each step shows its status and elapsed time. The timer ticks client-side, and only while a step
-    is running.
-  - The running step's source log is open by default; finished steps can be opened.
-  - Only stage changes are announced, never the timer.
-  - Once review opens or the run ends, the tracker collapses to "Agent run · N steps · m:ss" with
-    "View steps".
-- **Decision:** Accounts still load automatically. A "Reload" control and an "N assigned" count sit
-  in the rail. The kickoff reads "Run prospect agent" and shows "Agent running…" while busy.
-- **Reasoning:** The demo narrates a real multi-agent run. Progress must be truthful so it holds up
-  to stakeholder questions and matches the LangSmith trace. Polling richer GET data avoids a new
-  streaming transport.
-- **Evidence:**
-  - Backend: progress domain, service, middleware, source-hook, worker, router and PostgreSQL tests.
-  - Frontend: tracker and workspace Vitest tests.
-  - Playwright tracker scenario on desktop and Pixel 7.
-
-### 2026-09-30 — Browser validation: desktop-only MVP support boundary
-
-- **Decision:** CAM-37 validates the MVP in desktop Chromium. Browser acceptance covers keyboard
-  account selection, truthful queued and running progress, sourced outcomes, durable human-review
-  resume, safe edit recovery, reject confirmation, simulated-send receipts, accessible primary
-  controls, and the absence of horizontal overflow. Mobile behavior is outside the MVP support and
-  validation boundary; existing responsive implementation remains but is not claimed as verified.
-- **Decision:** Browser validation uses repeatable DOM, state, accessibility, and API-boundary
-  assertions rather than committed screenshot baselines. Playwright traces, screenshots, reports,
-  and other generated browser artifacts remain uncommitted.
-- **Decision:** One browser suite uses mocked application APIs for complete state and failure
-  coverage. A separate credential-free suite exercises the deployed Next.js, FastAPI, PostgreSQL,
-  LangGraph checkpoint, and worker path with deterministic synthetic inputs. External model,
-  LangSmith, and public API access remain disabled in both CI paths.
-- **Alternatives considered:** Retain Pixel 7 acceptance; commit viewport screenshots as visual
-  baselines; exercise live model and provider integrations in browser CI.
-- **Reasoning:** Desktop behavior is the agreed one-week MVP and demo boundary. Behavioral checks
-  give reviewable coverage of the safety-critical workflow without treating generated pixels as a
-  stable design contract, while deterministic full-stack coverage proves durable integration without
-  credentials, network variability, or provider cost.
-- **Consequences:** Responsive code may continue to work, but mobile compatibility requires a later
-  explicit design and test pass before it can be promised. Visual regressions not represented by
-  layout, accessibility, or behavioral assertions can escape this suite. The boundary can be rolled
-  back by adding approved viewport projects and pinned visual baselines without changing product APIs.
-- **Evidence:** Mocked desktop Playwright scenarios, the isolated Compose full-stack journey, and
-  `make test-e2e`; repository verification and Compose validation remain separate required checks.
-
-### 2026-09-30 — Loading, account pagination, and active-run motion
-
-- **Decision:** Known account and workspace layouts use neutral skeletons only while their data or
-  run-start request is pending. Skeleton shapes are decorative, animate only when reduced motion is
-  not requested, and never replace empty, degraded, failed, review, or terminal content. Each
-  loading region exposes one concise status; animation frames are never announced.
-- **Decision:** The account rail paginates the already loaded tenant-scoped account list in groups
-  of five without changing the account API. Pagination appears only for multiple pages, preserves
-  API order, and reports both the visible range and current page. Manual page changes clear the
-  hidden account selection and any start error, move focus to the first newly visible account, and
-  leave a completed or failed run visible.
-  Pagination is locked with account switching during start, restoration, active execution, and
-  human review. Restoration opens the selected account's page; reloads reveal a retained account,
-  clamp a shortened list, or clear an account that disappeared.
-- **Decision:** Queued and running runs show a restrained activity cue, and only non-review running
-  steps pulse. Review and terminal states have no activity animation. Status text, color, and the
-  active-step ring remain the complete static signal for reduced-motion users.
-- **Reasoning:** The console should feel alive only when real work is pending, preserve the human
-  review boundary, and let a rep browse longer assigned-account lists without creating a hidden run
-  target or expanding the MVP API surface.
-- **Evidence:** CAM-49 component/accessibility tests and desktop Playwright coverage for skeleton
-  replacement, pagination, queued/running transitions, review handoff, reduced motion, and overflow.
-
-### 2026-09-30 — Hosted experiments: controlled synthetic matrix and promotion policy
-
-- **Decision:** The explicit CAM-40 `--live` path idempotently publishes `freight-prospect-v1` with
-  seed `28029`, its canonical SHA-256 checksum, stable example IDs, and exactly 16 core plus 8 edge
-  examples. Controlled hosted metadata, example, or split drift fails closed; LangSmith's injected
-  SDK runtime inventory is not part of the canonical dataset checksum. Each variant runs three
-  repetitions: baseline GPT-5.6 Sol/Luna with prompt `v1` and interpreter on; Luna/Luna lower cost;
-  Sol/Luna with `evidence-self-check-v2`; and Sol/Luna with the interpreter off.
-- **Decision:** The hosted target uses real models and graph `prospect-intelligence-v1`, but all
-  business-data tools resolve through deterministic synthetic handlers with in-memory persistence
-  and public-source reads disabled. Only synthetic inputs and sanitized outputs may be uploaded.
-  Every target invocation must exactly match the local canonical input for its stable example ID;
-  a hosted dataset edit between publication and execution fails before any model or tool call.
-  Per-example rep identity and the representative scope are SHA-256 digests; no real rep identifier,
-  prompt, raw source/provider payload, tool argument, canary, or private customer data enters the
-  committed report. File-contract normalization allowlists only the exact per-example hashed memory
-  path used by that run; other unexpected runtime files still fail the deterministic invariant.
-- **Decision:** `experiments.offline.results.gate_results()` remains the only deterministic release
-  authority.
-  The full deterministic suite and all seven Jev `jev-1.13.0`/`semantic-v1` metrics run for each
-  hosted variant, but semantic scores, coverage, judge latency, and judge cost remain evidence-only
-  pending CAM-41 calibration. Aggregate evidence is sliced by variant, core/edge split, dataset tag,
-  metric, and synthetic failure ID.
-- **Decision:** A live graph or output-normalization exception becomes a sanitized `target_error`
-  result rather than a dropped experiment row. The result exposes only the exception type, rep hash,
-  elapsed wall time, and provider-observed token/cost totals; it carries empty evaluation projections
-  so deterministic coverage fails closed without leaking the provider message or understating
-  measured spend.
-- **Decision:** Reject a candidate whose target cost or mean target latency exceeds baseline by more
-  than 20% unless it passes every deterministic gate, fixes at least one baseline deterministic
-  failure, and introduces no new deterministic failure. Semantic improvement alone cannot justify
-  the regression. Target estimates use the CAM-40 standard OpenAI card: Sol `$4/$0.40/$20` and Luna
-  `$0.20/$0.02/$1.20` per million input/cached/output tokens. Jev cost is reported separately using
-  the reviewed 2026-09-15 TypeSafe card; estimates are not invoices.
-- **Decision:** LangSmith persists the dataset, traces, evaluator feedback, metadata, and completed
-  experiment runs under workspace retention. A later-variant failure can leave earlier experiment
-  uploads in LangSmith, but a partial matrix yields no valid aggregate report or promotion decision;
-  rerun all four variants and do not merge attempts. Repository tests, the CAM-38 local report, the
-  CAM-39 provider smoke, and hosted CAM-40 records are separate evidence classes.
-- **Decision:** Local evaluator iteration is insufficient proof of hosted completion. After each
-  variant, the runner flushes pending traces and reads LangSmith back, requiring exactly 72 root
-  runs, three repetitions of every canonical example, the expected per-example rep hash and code
-  revision, and one feedback record for every deterministic and semantic evaluator. Any discrepancy
-  stops the matrix before report generation. The code revision is captured before model execution as
-  the commit plus a deterministic SHA-256 fingerprint of tracked changes and untracked, non-ignored
-  files, then reused in every experiment's metadata and the final report.
-- **Alternatives considered:** Upload live customer or public-source data; use semantic scores as
-  uncalibrated gates; allow a costlier candidate on judge quality alone; resume or merge partial
-  attempts; store raw hosted results in git.
-- **Reasoning:** A fixed synthetic population and controlled one-variable comparisons make model,
-  prompt, and interpreter trade-offs reviewable without exposing customer data. Reusing the strict
-  offline gate prevents hosted orchestration from changing release semantics, while retained hosted
-  traces support stakeholder inspection.
-- **Consequences:** The hosted command requires LangSmith, OpenAI, and TypeSafe credentials and can
-  incur provider cost. Interrupted suites may leave diagnostic hosted experiments that require clear
-  labeling and workspace-retention review. Human-calibrated semantic promotion remains CAM-41 work.
-- **Evidence:** CAM-40 dataset publication/drift, live-target, hosted-runner, aggregation, report
-  redaction, cost, regression-policy, credential-gating, and runtime-option tests; sanitized hosted
-  experiment evidence is recorded separately after a complete live run.
-
-### 2026-10-01: Numeric grounding syntax and CAM-40 MVP decision
-
-- **Decision:** Numeric grounding checks quantitative claims in the brief and outreach against
-  `/context/`, `/research/`, and `/analysis/` JSON. Numeric scalars and complete numeric strings are
-  evidence. Embedded values are extracted only from fields named `claim`, not from provenance URLs,
-  record identifiers, or arbitrary strings. The evaluator removes a complete ISO date or datetime,
-  an alpha-prefixed multi-dot version label such as `FAF5.7.1`, and a Markdown ordered-list marker
-  at the start of a line before extracting quantitative claims. It does not exempt a bare year,
-  standalone decimal, money, percentage, quantity, or number elsewhere in prose. Stable `ev_`
-  citation IDs remain outside the numeric token boundary. Date support is a citation and
-  claim-review concern, not a quantitative-grounding concern.
-- **Decision:** Keep the baseline configuration: GPT-5.6 Sol orchestrator, GPT-5.6 Luna specialists,
-  prompt `v1`, and interpreter enabled. Reject lower-cost routing because it produced 21 target
-  errors. Reject the prompt revision because it did not improve deterministic quality and increased
-  target cost and latency. Do not disable the interpreter because the retained sample showed no
-  useful cost, latency, or quality gain.
-- **Decision:** Close CAM-40 with a labeled retained-evidence memo instead of buying quota for
-  another run. Baseline, lower-cost, and prompt-revision each have 72 roots. Interpreter-off has 51
-  roots across all 24 examples, with every example represented at least twice. This is enough for
-  the MVP configuration choice, but it is not a completed four-variant release-gate result. The
-  strict hosted runner still requires 72 roots for every variant and never merges attempts.
-- **Alternatives considered:** Pay for more LangSmith traces and rerun all model and Jev calls;
-  weaken hosted persistence checks; treat the partial matrix as a formal gate pass.
-- **Reasoning:** The completed variants give a clear model and prompt decision. The partial
-  interpreter sample covers the full dataset and gives no signal that disabling the interpreter is
-  beneficial. Another paid run would add little value to the one-week MVP.
-- **Consequences:** The report separates original hosted feedback from the corrected local numeric
-  re-score under `freight-evaluators-v3`, records that the exact dirty source revision is
-  unavailable, and does not claim formal matrix completion. A later promotion decision can rerun
-  the unchanged strict matrix if stronger evidence is needed. Online quality events already queued
-  with `freight-evaluators-v2` remain durable, but their semantic inputs are routed to annotation as
-  incompatible rather than being judged under the changed v3 rules.
-- **Evidence:** Focused numeric and parity tests, the 72-row credential-free regression, retained
-  LangSmith root counts and experiment links, and `evaluation/reports/cam_40_hosted.md`.
-
-### 2026-10-01 — Demo-flow active-run feedback
-
-- **Decision:** Active run state is communicated by the stage line, percentage, determinate progress
-  meter, and agent tracker rather than a duplicate dot and Queued/Running pill beside the account
-  name. Review and terminal pills remain because they identify durable workflow outcomes.
-- **Decision:** While a run is active, the meter's completed black portion advances toward each
-  backend-reported percentage and pulses. Pending tracker rows keep the explicit "Pending" label
-  beside a decorative spinner, while the Running pill pulses for active agent work. The human-review
-  state never pulses, and all animation and progress transitions stop under reduced motion.
-- **Decision:** Development CSP permits `unsafe-eval` only so React can provide development
-  diagnostics. Production CSP remains unchanged and does not permit `unsafe-eval`.
-- **Reasoning:** The demo needs visible feedback during real work without duplicating status near the
-  account name, obscuring status meaning, or making the human checkpoint look automated.
-- **Evidence:** CSP, run-view, tracker, reduced-motion, and mocked-browser regression tests plus
-  desktop Playwright inspection of development and production behavior.
-
-### 2026-10-01 — Demo evidence-label cleanup
-
-- **Decision:** Hide Next.js's on-screen development indicator so compile activity does not compete
-  with application status feedback. Development errors remain enabled.
-- **Decision:** Supporting evidence and source coverage omit the redundant "Synthetic fixture" mode
-  label. Fixture provenance remains explicit in source names such as "GenLogs fixture" and in the
-  version, evidence location, and artifact path; Live and Snapshot mode labels remain visible.
-- **Reasoning:** Framework activity is not product state, and repeating fixture provenance beside an
-  already identified fixture source adds noise without changing the evidence interpretation.
-- **Evidence:** Next configuration, source coverage, and lane evidence component tests.
-
-### 2026-10-01 — Review-header metadata hierarchy
-
-- **Decision:** While outreach awaits a decision, the durable "Awaiting your review" pill is the
-  sole review-ready label; the redundant stage copy is hidden. The evidence date and completed agent
-  run summary share the next row, with provenance on the left and execution metadata on the right.
-- **Reasoning:** The review state remains unambiguous while the compact metadata row preserves both
-  evidence recency and access to the full agent trace.
-- **Evidence:** Run-view, workspace polling, and agent-summary component tests.
-
-### 2026-10-01 — Hydration-safe active-run restoration
-
-- **Decision:** The first server and browser render always use the generic workspace loading state.
-  After hydration, the client checks tab-local active-run storage, keeps navigation locked during
-  that check, and switches to the run-shaped restoration state only when a stored run exists.
-- **Reasoning:** Browser-only storage cannot safely choose server-rendered markup. Deferring that
-  choice prevents a React hydration mismatch while preserving the rule that a pending run must be
-  restored before account switching or a new run can unlock.
-- **Evidence:** Server-render regression plus active-run restoration and workspace component tests.
-
-### 2026-10-01 — Persisted account ownership and synthetic contacts
-
-- **Decision:** A verified user has one tenant/rep membership, and account visibility requires an
-  explicit assignment matching tenant, subject, and rep. Missing, unassigned, and cross-scope
-  accounts all use the same not-found behavior. Legacy accounts are retained but remain unassigned.
-- **Decision:** Demo accounts and named contacts are fictional, contain no email addresses or
-  private information, and are created only by the transactional, idempotent demo-data seed. A run
-  snapshots the initiating representative's display name so restart and later identity edits cannot
-  change approved outreach.
-- **Reasoning:** Tenant membership establishes authority; assignments make the narrower account
-  boundary reviewable and prevent a caller-controlled account id from widening access.
-- **Evidence:** Fresh-schema, migration-backfill, seed-idempotency, actor-isolation, adversarial
-  access, hash-preservation, and restart tests.
-
-### 2026-10-01 — Complete source projection and stable citations
-
-- **Decision:** Every canonical source artifact contributes its normalized coverage and evidence to
-  the final run. Every factual evidence entry must explicitly carry the tool-issued opaque
-  `citation_id`; a missing id fails both artifact validation and normalized projection. Citation ids
-  are derived again from normalized provenance and the supplied id must match exactly. Duplicate ids
-  collapse only when their claims are identical, and a reused id with different claim text fails
-  closed. Only normalized evidence is persisted; the API derives and exposes the same stable opaque
-  id.
-- **Decision:** Repeated coverage for one source is complete only when every call is complete,
-  unavailable only when every call is unavailable, and degraded for mixed or degraded results. An
-  all-unavailable artifact may have no evidence; any complete or degraded factual artifact must
-  retain provenance. Progress activity remains a separate contract from final coverage. Progress
-  and final coverage use exact normalized identities for the seven source families; unknown or
-  lookalike successful-source labels fail closed instead of satisfying coverage by substring.
-- **Reasoning:** An unavailable FAF result is a valid result, not a provenance failure, while
-  factual results must remain traceable through persistence, API serialization, and rendering.
-- **Evidence:** The confirmed empty-FAF regression, all-source projection, mixed aggregation,
-  citation validation/deduplication, legacy JSONB decoding, API, and UI tests.
-
-### 2026-10-01 — Outreach-v2 context and safety contract
-
-- **Decision:** Account, fictional contact, and initiating-representative context is injected from
-  request-scoped LangGraph runtime context by agent middleware, not copied into checkpointed task
-  instructions. Generated and rep-edited drafts must use the selected run's account, contact, rep,
-  and top lane. The service separately checks draft text against all account names assigned to the
-  initiating actor and rejects another assigned account without exposing those names to the model.
-- **Decision:** A valid draft has an account-specific subject and four blank-line-separated
-  paragraphs: contact greeting, named-rep introduction as representing an asset-based truckload
-  carrier, evidence-grounded account and lane relevance, and a specific low-friction question. It
-  has no digits, invented carrier brand, HTML or Markdown markup, control characters,
-  source/provider names (including EDGAR, BTS, FHWA, and QCMobile), internal metrics or capacity
-  terminology, other customers, or unsupported claims. `no_fit` and `needs_more_data` produce no
-  customer outreach.
-- **Decision:** Rep edits may vary wording within that deterministic boundary. Model-generated copy
-  also passes the evidence-aware reviewer. The prompt revision is `outreach-v2`; historical v1
-  experiment evidence is not attributed to it.
-- **Decision:** New product runs, online-quality projections, and credential-free scripted evidence
-  identify graph/agent revision `prospect-intelligence-v2` (scripted target
-  `prospect-compiled-script-v2`) and prompt bundle `outreach-v2`. Existing persisted rows keep their
-  recorded revisions and remain readable. The retained CAM-40 graph/prompt matrix and its
-  `freight-prospect-v1` dataset are immutable historical evidence; the incompatible live runner is
-  archived and fails before external work rather than replaying changed prompts under v1 labels.
-- **Decision:** The v2 scripted target derives a digit-free fictional account display name and uses
-  a fixed fictional contact, role, and representative through runtime middleware. This projection
-  leaves the historical dataset bytes, stable IDs, input payloads, and checksum unchanged. A fit
-  draft must pass the same deterministic outreach-v2 validator before its scripted reviewer records
-  a pass.
-- **Decision:** The compiled workflow branches on the validated `lane_fit_v1` artifact. Only `fit`
-  may create outreach and reviewer artifacts or pause at `send_outreach`; `no_fit` and
-  `needs_more_data` terminate after the internal brief and are committed without a human-review
-  interrupt. A terminal non-review checkpoint is reused after a product-state commit retry.
-- **Decision:** Credential-free scripted evaluation follows the same authoritative branch. Fit rows
-  still require all twelve artifacts and the drafting, quality-review, and review-request stages;
-  `no_fit` and `needs_more_data` rows require the ten non-review artifacts and the research-through-
-  analysis trajectory, with draft-dependent semantic observations marked unavailable.
-- **Reasoning:** Runtime middleware is the canonical context-engineering boundary and keeps selected
-  business context consistent across the orchestrator and isolated specialists without persisting
-  it as conversational state.
-- **Evidence:** Middleware projection, selected-account/contact isolation, rep-name injection,
-  paragraph round-trip, edit safety, forbidden-language, compiled non-review branches, terminal
-  checkpoint retry, offline fit/non-fit parity, revision-label archival, scripted v2 validation,
-  and insufficient-evidence tests.
-
-### 2026-10-01 — Same-project development containers
-
-- **Decision:** Production Compose remains immutable. The development override keeps the same
-  project and PostgreSQL volume, mounts only source/config read-only, runs Uvicorn reload, bakes
-  frontend dependencies into its development image, and gives only `.next` writable tmpfs storage.
-  Both application services remain non-root with one server process.
-- **Decision:** Local E2E reuses a standard stack only when it is healthy, explicitly E2E-safe, and
-  labeled with the current workspace source fingerprint. An unsafe, unhealthy, or stale standard
-  stack fails closed rather than allowing a parallel project; an absent stack uses the isolated path.
-- **Reasoning:** This gives a reviewable reload workflow without parallel stacks, host dependency
-  mounts, mounted secrets, or production-image mutation.
-- **Evidence:** Automated rendered base/development Compose invariant tests and E2E stack-selection
-  tests cover safe/current reuse, stale and unsafe refusal, CI refusal, and the absent-stack path.
-  Marker-based live reload and production restoration remain an explicit manual verification step.
-
-### 2026-10-02 — Completed-review presentation and stage compatibility
-
-- **Decision:** Approved and edited fit runs retain the canonical nonempty
-  `Simulated send complete` stage in domain and API state, but the completed-fit header does not
-  render that stage line. Rejected, failed, no-fit, and needs-more-data stage lines remain visible.
-  A legacy completed-fit run with a simulated-send receipt and a blank persisted stage is normalized
-  to the canonical value only at the response boundary; stored history is not rewritten.
-- **Decision:** The completed-fit outcome heading reads "Communications sent", keeps the approved
-  subject, and omits the no-email/CRM disclaimer. This is intentionally demo-oriented copy: the
-  receipt remains simulated and no external delivery integration is implied by the implementation.
-- **Decision:** Fit recommendation text remains persisted, serialized, and visible beside the human
-  review editor, but is omitted after a fit decision completes. Actionable recommendation text for
-  no-fit and needs-more-data outcomes remains visible.
-- **Decision:** The current tab retains a completed run id so the completed-review outcome survives
-  reload. Selecting another account or signing out clears it, and starting another run replaces it;
-  rejected and failed runs retain their existing non-restoring behavior.
-- **Reasoning:** Presentation changes must not weaken the nonempty run-stage contract or cause a
-  successful review response to be misclassified as an unavailable service.
-- **Evidence:** Review-service, serializer, schema, component, mocked-browser, and full-stack review
-  regressions cover new and legacy completed runs.
+This document is the authoritative current-state register for decisions that materially affect
+business recommendations, user-visible outcomes, data interpretation, or safety. Technical design,
+UI behavior, and experiment mechanics live in their dedicated documentation.
+
+Repository tests establish implemented behavior. Credentialed LangSmith experiments are a separate
+evidence class and are identified explicitly below; neither evidence class alone establishes
+production readiness.
+
+## Product scope and business outcome
+
+- The product helps sales representatives at an asset-based truckload carrier evaluate shipper
+  accounts before outreach. It combines account context, shipper freight activity, and the carrier's
+  network data into an internal brief and, when justified, a customer-facing draft.
+- The intended outcomes are less manual research, more outreach to shippers that can improve network
+  utilization, and more specific conversations about viable lanes.
+- The MVP models the carrier case, not freight brokerage. CRM and carrier-network data and
+  GenLogs-shaped freight intelligence are synthetic. Real licensed freight data, production CRM and
+  delivery integrations, and a controlled sales pilot are phase-two decisions.
+- The stakeholder decision is whether to fund that limited pilot, not whether to authorize an
+  autonomous or enterprise-wide rollout.
+
+Evidence: [use case](../development/use_case.md),
+[implementation description](../development/agent_description.md), and
+[MVP deferrals](mvp-scoping.md).
+
+## Lane fit and opportunity model
+
+A shipper lane matches carrier capacity only in the same origin-to-destination direction.
+Reverse-direction capacity is not a match. For each shipper lane:
+
+- `matched_loads = min(shipper_weekly_loads, carrier_empty_capacity)`
+- `backhaul_fill = matched_loads / carrier_empty_capacity`, or zero when capacity is zero
+- `density = min(carrier_same_lane_weekly_loads / 40, 1)`
+- `equipment_match = carrier fleet share for the shipper's required equipment`
+- `fit_score = 0.50*backhaul_fill + 0.30*density + 0.20*equipment_match`
+
+The score is bounded and rounded half-up to four decimal places. Only lanes with at least one
+matched load are eligible. Eligible lanes rank by score, matched loads, origin, then destination;
+the brief retains the top three.
+
+The opportunity model is:
+
+- `modeled_annual_revenue = matched_loads * estimated_rate_per_load * 52`
+- `modeled_deadhead_miles_avoided = matched_loads * origin_destination_miles * 52`
+
+These are prioritization estimates, not booked revenue, margin, guaranteed savings, or evidence
+that every modeled mile would otherwise have been empty. The revenue model excludes cost and margin;
+the deadhead figure is an upper-bound full-lane displacement estimate.
+
+Evidence: [runtime implementation](../../backend/app/features/prospect_intelligence/domain/lane_fit.py)
+and the independently implemented evaluation reference.
+
+## Data sufficiency, provenance, and verdicts
+
+- `fit`: freight and carrier-network coverage are complete and at least one lane has matched capacity.
+- `no_fit`: critical coverage is complete but no lane has matched capacity.
+- `needs_more_data`: critical freight or carrier-network data is absent, degraded, contradictory,
+  duplicated, or malformed, or no shipper lanes are available.
+
+Private CRM, freight, and network inputs are deterministic fixtures in the MVP. FAF is a versioned
+snapshot. SEC, Tavily, and FMCSA sources may be live when enabled. Every source discloses its mode,
+retrieval time, and provenance. A failed live source returns degraded or unavailable coverage and
+never silently substitutes fixture facts.
+
+Every factual claim and quantitative value in the internal brief must trace to normalized source
+evidence or the deterministic lane analysis. Factual evidence requires a stable opaque citation;
+conflicting reuse of a citation identity fails closed. Optional research may add context, but it
+cannot manufacture a fit decision when the critical freight or network inputs are insufficient.
+
+Evidence: [source-adapter ADR](../architecture/decisions/0002-source-adapter-boundaries.md) and
+[authoritative lane analysis](../../backend/app/features/prospect_intelligence/services/lane_analysis.py).
+
+## Outcome and outreach policy
+
+- A `fit` result recommends opening a conversation about the top-ranked lane and may create an
+  outreach draft.
+- A `no_fit` result recommends deprioritizing the account.
+- A `needs_more_data` result recommends verifying the shipper's lanes before outreach.
+- `no_fit` and `needs_more_data` stop after the internal brief. They do not create outreach or ask
+  the representative to approve a send.
+
+Customer-facing outreach must identify the selected account, contact, initiating representative,
+and top lane. It may not disclose internal rates, revenue, margin, capacity, deadhead, loads,
+volumes, pricing, provider or source names, another customer, or unsupported claims. The current MVP
+also rejects digits, markup, control characters, invented carrier brands, and another assigned
+account's name. A valid message is a low-friction invitation, not a claim that the carrier knows the
+prospect's private freight economics.
+
+Generated copy receives an evidence-aware quality review before human review. At most three quality
+reviews are allowed; unresolved blocking findings end the run without requesting a send decision.
+
+Evidence: [outreach policy](../../backend/app/features/prospect_intelligence/domain/outreach.py) and
+the shared brief and quality-review contracts.
+
+## Human control and side effects
+
+Only a `fit` run reaches the durable `send_outreach` human-review checkpoint. The representative may
+approve the draft, submit an edit that passes the same customer-safety policy, or reject it.
+Rejection sends nothing. If graph resume is unavailable, the API returns a retryable failure and
+does not bypass the checkpoint.
+
+Review decisions are idempotent. Retrying the same run-specific action returns the recorded outcome
+without creating another receipt, preference update, or quality event; conflicting reuse fails
+closed.
+
+The MVP records a **simulated send receipt** after approval or a valid edit. It does not send email,
+contact a prospect, or write to a CRM. Real delivery requires delegated credentials, idempotent
+external side effects, reconciliation, and operator recovery.
+
+Evidence: [human-review flow](../evaluation/human-in-the-loop-flow.md).
+
+## Access and preference learning
+
+- A verified user may access only accounts explicitly assigned to the same tenant, subject, and
+  representative scope. Missing, unassigned, and cross-scope accounts share the same not-found
+  behavior.
+- Runs retain an immutable actor snapshot so asynchronous work and later review remain bound to the
+  initiating identity.
+- Only an approved edit may update preference memory. The current tenant/representative profile is
+  limited to customer-neutral tone, approximate length, and invitation format. Draft text, account
+  names, contacts, routes, and customer facts are not retained as preferences.
+- Demo users, accounts, and contacts are fictional. The local token issuer demonstrates the boundary
+  but is not the proposed production identity system.
+
+Production requires enterprise identity, authorization provisioning, retention, deletion/export,
+consent, and audit policies before customer data is introduced.
+
+## Evaluation authority and evidence limits
+
+Deterministic evaluators are authoritative for computable behavior: numeric grounding, lane ranking
+and score correctness, fit verdicts, artifact contracts, workflow order, and prompt-injection
+resistance. Semantic judges remain decision support until validated against human preference on an
+untouched holdout; they are not an active release gate or runtime authority.
+
+The historical `freight-prospect-v1` population contains 16 core and eight edge synthetic examples.
+Reviewed failures may enter the separate regression population only after a human supplies and
+accepts a sanitized target example. Raw LangSmith traces and customer data are never copied
+automatically.
+
+Credentialed CAM-40 evidence selected the GPT-5.6 Sol orchestrator, GPT-5.6 Luna specialists,
+prompt `v1`, and interpreter-enabled baseline for the historical v1 graph:
+
+- Lower-cost routing was rejected after producing 21 target errors.
+- The prompt revision was rejected because deterministic quality did not improve while target cost
+  and latency increased.
+- Disabling the interpreter was rejected because the retained sample showed no quality, cost, or
+  latency benefit.
+
+Baseline, lower-cost, and prompt-revision variants each completed 72 roots. Interpreter-off stopped
+at 51 visible roots after LangSmith exhausted the trace quota. This supports the MVP configuration
+choice but is not a completed four-variant release gate. It is historical v1 evidence and does not
+validate the later `outreach-v2` prompt and customer-copy contract.
+
+The separate semantic-alignment exercise completed its synthetic, single-reviewer alignment phase,
+but three questions remained revision candidates and the untouched holdout was explicitly waived
+and remains unrun. It cannot establish inter-rater agreement, customer preference, production
+quality, or a semantic promotion threshold.
+
+Together, repository evidence and the bounded live experiments support a controlled pilot decision,
+not autonomous sending or production rollout. A pilot decision requires representative
+customer-approved data, independent reviewers, completed holdout validation, privacy and licensing
+review, and measurement of rep time, replies, meetings, won opportunities, and network outcomes.
+
+Evidence: [CAM-40 decision](../evaluation/experimentation-process.md),
+[alignment process](../evaluation/evaluator-alignment-process.md), and the
+[sanitized hosted report](../../backend/evaluation/reports/cam_40_hosted.md).
