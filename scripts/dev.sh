@@ -21,7 +21,7 @@ if [ -z "${TAKEHOME_JWT_SIGNING_SECRET:-}" ]; then
   export TAKEHOME_JWT_SIGNING_SECRET="local-demo-signing-key-at-least-32-bytes"
 fi
 run_in "$root/backend" uv run alembic upgrade head
-run_in "$root/backend" uv run python -m scripts.seed_demo_user
+run_in "$root/backend" uv run python -m scripts.seed_demo_data
 
 backend_pid=
 frontend_pid=

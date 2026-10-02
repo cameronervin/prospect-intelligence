@@ -1,19 +1,21 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/sh
 
-.PHONY: help setup dev seed-demo-user verify test-e2e audit docker-config docker-up docker-down feature smoke-online-quality online-quality-plan online-quality-setup online-quality-simulate online-quality-teardown secret-scan cleanup
+.PHONY: help setup dev seed-demo-data verify test-e2e audit docker-config docker-up docker-down docker-dev-up docker-prod-restore feature smoke-online-quality online-quality-plan online-quality-setup online-quality-simulate online-quality-teardown secret-scan cleanup
 
 help:
 	@echo "LangChain take-home development targets"
 	@echo "  setup          Install backend and frontend dependencies"
 	@echo "  dev            Start PostgreSQL, backend, and frontend for development"
-	@echo "  seed-demo-user Seed the fictional local login into PostgreSQL"
+	@echo "  seed-demo-data Seed the fictional login, membership, contacts, and assignments"
 	@echo "  verify         Run repository checks and tests"
 	@echo "  test-e2e       Run Playwright browser tests"
 	@echo "  audit          Audit production dependencies"
 	@echo "  docker-config  Validate the Compose configuration"
 	@echo "  docker-up      Build and start the container stack"
 	@echo "  docker-down    Stop the container stack"
+	@echo "  docker-dev-up  Build and start the same-project reload stack"
+	@echo "  docker-prod-restore  Restore the immutable production stack"
 	@echo "  feature        Create a feature with NAME=<snake_case> [DRY_RUN=1]"
 	@echo "  smoke-online-quality  Publish one credential-gated synthetic LangSmith event"
 	@echo "  online-quality-plan      Preview CAM-43 LangSmith resources without credentials"
@@ -29,8 +31,8 @@ setup:
 dev:
 	@sh scripts/dev.sh
 
-seed-demo-user:
-	@cd backend && uv run python -m scripts.seed_demo_user
+seed-demo-data:
+	@cd backend && uv run python -m scripts.seed_demo_data
 
 verify:
 	@sh scripts/verify.sh
@@ -49,6 +51,12 @@ docker-up:
 
 docker-down:
 	@sh scripts/docker.sh down
+
+docker-dev-up:
+	@sh scripts/docker.sh dev-up
+
+docker-prod-restore:
+	@sh scripts/docker.sh prod-restore
 
 feature:
 	@test -n "$(NAME)" || (echo "error: NAME=<snake_case> is required" >&2; exit 2)

@@ -1,0 +1,50 @@
+name: langchain-takehome
+
+services:
+  backend:
+    command:
+      - uvicorn
+      - app.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/app
+    environment:
+      TAKEHOME_ENVIRONMENT: development
+      TAKEHOME_DEMO_AUTH_ENABLED: "true"
+      TAKEHOME_LOG_JSON: "false"
+    volumes:
+      - type: bind
+        source: ../../backend/app
+        target: /app/app
+        read_only: true
+
+  frontend:
+    build:
+      target: development
+    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
+    environment:
+      NODE_ENV: development
+    volumes:
+      - type: bind
+        source: ../../frontend/src
+        target: /app/src
+        read_only: true
+      - type: bind
+        source: ../../frontend/next.config.ts
+        target: /app/next.config.ts
+        read_only: true
+      - type: bind
+        source: ../../frontend/postcss.config.mjs
+        target: /app/postcss.config.mjs
+        read_only: true
+      - type: bind
+        source: ../../frontend/tsconfig.json
+        target: /app/tsconfig.json
+        read_only: true
+    tmpfs:
+      - /app/.next:size=512m,mode=0770,uid=10001,gid=10001

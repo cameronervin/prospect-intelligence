@@ -5,11 +5,23 @@ services:
     ports: !override []
 
   migrate:
-    command: ["sh", "-c", "alembic upgrade head && python -m scripts.seed_demo_user"]
+    command:
+      ["sh", "-c", "alembic upgrade head && python -m scripts.seed_demo_data"]
 
   backend:
     build:
       target: e2e
+    command:
+      - uvicorn
+      - tests.e2e_app:create_e2e_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    labels:
+      com.langchain-takehome.e2e-safe: "true"
+      com.langchain-takehome.e2e-source-id: ${TAKEHOME_E2E_SOURCE_ID:-unset}
     env_file: !override []
     environment:
       TAKEHOME_ENVIRONMENT: test
@@ -26,6 +38,9 @@ services:
     ports: !override []
 
   frontend:
+    labels:
+      com.langchain-takehome.e2e-safe: "true"
+      com.langchain-takehome.e2e-source-id: ${TAKEHOME_E2E_SOURCE_ID:-unset}
     ports: !override
       - target: 3000
         host_ip: 127.0.0.1

@@ -5,9 +5,12 @@
 !backend/app/**
 !backend/evaluation/datasets/golden/**
 !backend/migrations/**
+!backend/scripts/**
 !backend/alembic.ini
 !backend/tests/**
 backend/app/**/__pycache__/
 backend/app/**/*.pyc
+backend/scripts/**/__pycache__/
+backend/scripts/**/*.pyc
 backend/tests/**/__pycache__/
 backend/tests/**/*.pyc
