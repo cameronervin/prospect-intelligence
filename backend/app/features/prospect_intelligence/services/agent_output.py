@@ -5,11 +5,15 @@ from dataclasses import dataclass
 from typing import cast
 
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from app.features.prospect_intelligence.contracts.lane_analysis import LaneAnalysisArtifact
 from app.features.prospect_intelligence.contracts.models import (
     AnalysisOutput,
     Evidence,
     FitVerdict,
     OutreachDraft,
+    ProspectBrief,
+    RecommendedNextStep,
+    ScoredLane,
     SourceCoverage,
     SourceCoverageStatus,
 )
@@ -56,6 +60,67 @@ def parse_outreach(content: str) -> OutreachDraft:
     return OutreachDraft(
         subject=subject_line.removeprefix("Subject: ").strip(),
         body=body.strip(),
+    )
+
+
+def build_analysis_output(
+    raw_files: Mapping[object, object],
+) -> AnalysisOutput:
+    """Project validated graph files into the persisted product result."""
+
+    files = {str(path): value for path, value in raw_files.items()}
+    projection = project_source_artifacts(files)
+    lane_projection = project_source_artifacts(
+        files,
+        paths=(PROSPECT_FILES.freight_research, PROSPECT_FILES.network_context),
+    )
+    analysis = LaneAnalysisArtifact.from_json(text_file(files, PROSPECT_FILES.lane_fit_json))
+    if analysis.verdict is FitVerdict.NEEDS_MORE_DATA:
+        return AnalysisOutput(
+            verdict=FitVerdict.NEEDS_MORE_DATA,
+            brief=ProspectBrief(
+                summary="The available source coverage does not support a lane recommendation.",
+                markdown="No usable lane-level freight and network evidence is available.",
+                recommended_next_step=RecommendedNextStep.NEEDS_MORE_DATA,
+                recommendation="Verify shipper lanes before outreach.",
+                lanes=(),
+            ),
+            outreach=None,
+            source_coverage=projection.coverage,
+            evidence=projection.evidence,
+        )
+    ranked = analysis.top_lanes
+    verdict = analysis.verdict
+    markdown = text_file(files, PROSPECT_FILES.sales_brief)
+    outreach = (
+        parse_outreach(text_file(files, PROSPECT_FILES.outreach_draft))
+        if verdict is FitVerdict.FIT
+        else None
+    )
+    return AnalysisOutput(
+        verdict=verdict,
+        brief=ProspectBrief(
+            summary=(
+                "Reviewed evidence shows a direct lane overlap worth a sales conversation."
+                if ranked
+                else "Reviewed evidence shows no direct lane overlap with usable capacity."
+            ),
+            markdown=markdown,
+            recommended_next_step=(
+                RecommendedNextStep.NEW_LANE_PITCH if ranked else RecommendedNextStep.NOT_A_FIT
+            ),
+            recommendation=(
+                "Review the evidence-backed outreach before simulated send."
+                if ranked
+                else "Do not prioritize outreach for this account."
+            ),
+            lanes=tuple(
+                ScoredLane(score=lane, evidence=lane_projection.evidence) for lane in ranked
+            ),
+        ),
+        outreach=outreach,
+        source_coverage=projection.coverage,
+        evidence=projection.evidence,
     )
 
 

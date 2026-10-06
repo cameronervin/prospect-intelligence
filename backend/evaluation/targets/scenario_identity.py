@@ -1,4 +1,4 @@
-"""Synthetic outreach-v2 identity projected over immutable historical inputs."""
+"""Historical v2 synthetic identity projection reused by the active evaluation runtime."""
 
 import re
 from collections.abc import Mapping
@@ -45,7 +45,7 @@ _TENS_WORDS = (
 
 @dataclass(frozen=True, slots=True)
 class SyntheticV2Identity:
-    """Public-only identity projected into the outreach-v2 evaluation runtime."""
+    """Public-only v2 identity shape retained without claiming an active prompt revision."""
 
     account_name: str
     contact_name: str = "Jordan Lee"

@@ -19,7 +19,7 @@ def build_prospect_agent_runtime(
     specialist_model: BaseChatModel,
     checkpointer: BaseCheckpointSaver[Any],
     store: BaseStore,
-    prompt_revision: PromptRevision = "outreach-v2",
+    prompt_revision: PromptRevision = "outreach-v4",
     interpreter_enabled: bool = True,
 ) -> CompiledProspectAgentRuntime:
     """Compile the feature runtime once after persistence has started."""

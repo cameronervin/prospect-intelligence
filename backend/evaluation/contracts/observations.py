@@ -98,9 +98,22 @@ def _source_schema_valid(value: Mapping[str, object]) -> bool:
         coverage, (str, bytes, bytearray)
     ):
         return False
-    evidence = value.get("evidence")
-    if not isinstance(evidence, list) or not evidence:
+    coverage_items: list[object] = (
+        [cast("Mapping[str, object]", coverage)]
+        if isinstance(coverage, Mapping)
+        else list(cast("Sequence[object]", coverage))
+    )
+    if not coverage_items or any(not isinstance(item, Mapping) for item in coverage_items):
         return False
+    evidence = value.get("evidence")
+    if not isinstance(evidence, list):
+        return False
+    if not evidence:
+        return all(
+            cast("Mapping[str, object]", item).get("status") == "unavailable"
+            and isinstance(cast("Mapping[str, object]", item).get("source"), str)
+            for item in coverage_items
+        )
     for raw_item in cast("list[object]", evidence):
         if not isinstance(raw_item, Mapping):
             return False

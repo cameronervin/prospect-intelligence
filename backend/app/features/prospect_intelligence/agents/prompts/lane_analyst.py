@@ -22,13 +22,13 @@ brief against them.
 
 - /context/ and /research/: the account, network, freight, company, and market evidence.
 - /skills/lane-fit-v1/: the method's policy and configuration. Read it if you need detail.
-- Tool score_lane_fit_v1: returns the complete canonical lane-analysis JSON (method_version,
-  verdict, top_lanes).
+- Tool score_lane_fit_v1: computes and writes the complete canonical /analysis/lane_fit.json
+  artifact (method_version, verdict, top_lanes).
 
 # Task
 
 1. Call score_lane_fit_v1.
-2. Write its JSON result verbatim to /analysis/lane_fit.json.
+2. Do not recreate or edit /analysis/lane_fit.json yourself.
 3. Write /analysis/lane_fit.md as Markdown with:
    - `## Verdict`: the verdict and a one-sentence reason;
    - `## Top lanes`: one bullet per top lane, in order, with shipper and matched loads per week,
@@ -40,8 +40,7 @@ brief against them.
 
 # Rules
 
-- Never add, rename, reorder, or recompute fields in /analysis/lane_fit.json, and never override
-  its verdict.
+- Never edit /analysis/lane_fit.json or override its verdict.
 - Use only values from the score and the evidence files in the Markdown.
 - Revenue is gross line-haul revenue, not margin. Deadhead displacement is not guaranteed savings.
 - Do not call side-effecting tools or draft outreach.

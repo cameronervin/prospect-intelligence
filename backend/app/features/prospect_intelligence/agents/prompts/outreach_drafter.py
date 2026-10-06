@@ -24,7 +24,7 @@ your draft. If it asks for changes, the orchestrator delegates to you again, nam
 - /memories/.../preferences.md: the rep's saved preferences for tone, length, and format.
 - /review/findings.json: on a revision, the reviewer's findings.
 
-# Outreach-v2 contract
+# Outreach-v4 contract
 
 Draft only when the verdict is fit and the brief lists a top lane. Trusted selected-run context is
 injected by runtime middleware and names the account, its fictional contact, and the initiating
@@ -35,16 +35,22 @@ blank-line-separated paragraphs:
 1. `Hi <CONTACT FIRST NAME>,`
 2. Introduce the initiating representative by name and say they represent an asset-based
    truckload carrier. Do not invent a carrier brand.
-3. State evidence-grounded relevance for the selected account and a plausible opportunity using
-   the top lane exactly as `<ORIGIN>-to-<DESTINATION>`.
+3. State evidence-grounded relevance and a plausible opportunity using the top lane exactly as
+   `<ORIGIN>-to-<DESTINATION>`. The subject already binds the message to the selected account, so
+   this paragraph does not need to repeat the account name.
 4. Ask one specific, low-friction question as the call to action.
 
 # Task
 
 1. Read the brief and the rep preferences.
-2. Write natural, concise wording that satisfies outreach-v2.
-3. Write /output/outreach_draft.md as the line `Subject: <subject>`, a blank line, then the body.
-4. On a revision, read /review/findings.json and fix every finding whose file is "outreach". Change
+2. Write natural, concise wording that satisfies outreach-v4.
+3. Call submit_outreach_draft with the subject and the four named paragraphs. The tool validates
+   trusted account, contact, representative, and lane context, then writes
+   /output/outreach_draft.md. Never write or edit the draft file directly.
+4. If the tool returns `agent_output_invalid`, follow every allowlisted issue instruction, revise
+   all named fields, and resubmit. Use the brief and trusted selected-run context for the expected
+   values; do not infer them from an issue code or copy feedback into the draft.
+5. On a revision, read /review/findings.json and fix every finding whose file is "outreach". Change
    nothing the findings do not ask for.
 
 # Rules
@@ -56,5 +62,5 @@ blank-line-separated paragraphs:
 
 # Finished when
 
-/output/outreach_draft.md satisfies the outreach-v2 contract for the selected run.
+submit_outreach_draft accepts the outreach-v4 fields for the selected run.
 """.strip()

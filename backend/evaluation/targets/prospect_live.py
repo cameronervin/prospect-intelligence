@@ -127,12 +127,12 @@ class ProspectLiveTarget:
         orchestrator_model: BaseChatModel,
         specialist_model: BaseChatModel,
         *,
-        prompt_revision: str = "outreach-v2",
+        prompt_revision: str = "outreach-v4",
         interpreter_enabled: bool = True,
         prices: Mapping[str, ModelTokenPrice] = STANDARD_MODEL_PRICES,
     ) -> None:
-        if prompt_revision != "outreach-v2":
-            raise ValueError("active live targets require prompt revision outreach-v2")
+        if prompt_revision != "outreach-v4":
+            raise ValueError("active live targets require prompt revision outreach-v4")
         self._runtime = build_prospect_agent_runtime(
             orchestrator_model=orchestrator_model,
             specialist_model=specialist_model,

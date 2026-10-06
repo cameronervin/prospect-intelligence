@@ -11,14 +11,18 @@ from .policy import (
     ToolVisibilityMiddleware,
 )
 from .progress import ProgressMiddleware
+from .provider import ProviderAvailabilityMiddleware
+from .submissions import SubmissionRecoveryMiddleware
 
 
 def middleware_for_agent(spec: AgentSpec) -> tuple[ProspectMiddleware, ...]:
     stack: list[ProspectMiddleware] = [
+        ProviderAvailabilityMiddleware(spec.name),
         ContextProjectionMiddleware(spec),
         ToolVisibilityMiddleware(spec),
         ModelToolBudgetMiddleware(spec),
         SafeToolErrorMiddleware(spec),
+        SubmissionRecoveryMiddleware(spec),
         ArtifactValidationMiddleware(spec),
     ]
     if spec.subagent_names:

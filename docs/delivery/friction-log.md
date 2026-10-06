@@ -13,6 +13,7 @@ Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
 | 2 | LangSmith | `evaluate(upload_results=False)` still contacts LangSmith and tries to upload traces. |
 | 3 | Deep Agents | Subagent tools did not get the parent's runtime context. Disabling the default subagent needs a private import. |
 | 4 | LangSmith | The alert API has no list endpoint, so alerts cannot be managed from code without duplicates. |
+| 5 | LangGraph | Tool schema failures were converted to payload-bearing error messages before outer middleware could sanitize and count them. |
 
 ## 1. LangSmith: Align Evals only works in the UI
 
@@ -107,3 +108,23 @@ Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
 - **Evidence:** [alert client](../../backend/app/features/agent_quality/integrations/langsmith/operations_client.py),
   [alert payloads](../../backend/app/features/agent_quality/services/operations/payloads.py),
   [LangSmith: create an alert rule](https://docs.langchain.com/langsmith/smith-api/alert_rules/create-an-alert-rule).
+
+## 5. LangGraph: schema errors cross the tool middleware boundary
+
+- **Goal:** Give a specialist two safe corrections for invalid typed artifact submissions, count
+  every call, and never return submitted values or raw validation exceptions.
+- **Problem:** With the locked LangGraph/LangChain versions, `ToolNode` converts Pydantic schema
+  failures into an error `ToolMessage` containing submitted arguments and field details before the
+  outer `wrap_tool_call` middleware receives the result. A normal exception handler therefore
+  records the call as successful and can return model-authored values in correction feedback.
+- **Impact:** The fixed three-call limit and sanitized-feedback boundary were bypassed specifically
+  for malformed structured tool arguments.
+- **Workaround:** Submission middleware validates the tool's public `tool_call_schema` before
+  execution, records the durable ordinal, and returns a fixed issue code. It also sanitizes an
+  error-status `ToolMessage` defensively for framework-version differences.
+- **Follow-up:** Recheck this adapter when upgrading LangChain or LangGraph and remove the defensive
+  result handling only after an installed-version regression test proves the framework exposes a
+  safe structured schema-error hook.
+- **Evidence:** [submission middleware](../../backend/app/features/prospect_intelligence/agents/middleware/submissions.py),
+  [ToolNode regression test](../../backend/tests/unit/prospect_intelligence/test_typed_artifact_tools.py),
+  [LangChain tool-error middleware](https://docs.langchain.com/oss/python/langchain/middleware/built-in).

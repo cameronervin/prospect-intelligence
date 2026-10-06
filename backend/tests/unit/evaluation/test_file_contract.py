@@ -44,3 +44,16 @@ def test_non_fit_file_contract_requires_exactly_the_non_review_artifacts() -> No
     unexpected = evaluate_file_contract(outputs(non_fit), {})
     assert isinstance(unexpected.score, (int, float)) and unexpected.score < 1.0
     assert _metadata(unexpected)["unexpected"] == [PROSPECT_FILES.outreach_draft]
+
+
+def test_unavailable_source_with_no_evidence_is_a_valid_degraded_artifact() -> None:
+    unavailable = artifacts()
+    unavailable[PROSPECT_FILES.market_research] = json.dumps(
+        {
+            "sources": {},
+            "coverage": [{"source": "FAF5 market data", "status": "unavailable"}],
+            "evidence": [],
+        }
+    )
+
+    assert evaluate_file_contract(outputs(unavailable), {}).score == 1.0

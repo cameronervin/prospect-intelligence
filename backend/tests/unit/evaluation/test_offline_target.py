@@ -165,9 +165,9 @@ async def test_target_runs_one_scenario_through_compiled_graph(
     ]
     tool_calls = cast("Sequence[str]", snapshot["tool_calls"])
     assert tool_calls.count("task") == 5
-    assert tool_calls.count("write_file") == 10
+    assert tool_calls.count("write_file") == 2
     assert "send_outreach" in tool_calls
-    assert snapshot["tool_call_count"] == 19
+    assert snapshot["tool_call_count"] == 16
     semantic = cast("Mapping[str, object]", snapshot["semantic_observations"])
     assert set(semantic) == {
         "claim_supported",

@@ -23,17 +23,17 @@ from ..contracts.models import (
 )
 from ..contracts.workflow import checkpoint_thread_id, review_tool_call_id
 from ..domain.errors import InvalidRunTransitionError
-from ..domain.outreach import OutreachContext, validate_customer_outreach
+from ..domain.outreach import validate_customer_outreach
 from ..domain.progress import analysis_outcome, complete_review, finish_analysis, initial_steps
 from ..domain.quality_events import build_quality_event
 from .identity import require_run_scope, require_run_status
-from .outreach_scope import build_outreach_validation_context
+from .outreach_scope import OutreachScopeAccess
 from .progress import RunProgressRecorder
 from .review_outcomes import prepare_review_outcome
 from .review_receipts import has_verified_simulated_receipt
 
 
-class ProspectRunService:
+class ProspectRunService(OutreachScopeAccess):
     def __init__(
         self,
         *,
@@ -59,9 +59,6 @@ class ProspectRunService:
 
     def list_accounts(self, auth: AuthContext) -> tuple[Account, ...]:
         return self._accounts.list_for_actor(auth.tenant_id, auth.subject, auth.rep_id)
-
-    def outreach_validation_context(self, run: ProspectRun) -> OutreachContext:
-        return build_outreach_validation_context(self._accounts, run)
 
     def create_run(
         self,
@@ -94,8 +91,8 @@ class ProspectRunService:
                 "account_id": account.id,
                 "tenant_id": tenant_id,
                 "rep_id": rep_id,
-                "agent_version": "prospect-intelligence-v2",
-                "prompt_version": "outreach-v2",
+                "agent_version": "prospect-intelligence-v4",
+                "prompt_version": "outreach-v4",
             },
             thread_id=checkpoint_thread_id(tenant_id, rep_id, run_id),
             steps=initial_steps(),

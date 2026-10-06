@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 from langgraph.graph import END, START, StateGraph
 from pydantic import SecretStr
-from sqlalchemy import event, func, select
+from sqlalchemy import event, func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.bootstrap.exception_handlers import register_exception_handlers
@@ -33,6 +33,11 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectRuntimeContext,
 )
 from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
+from app.features.prospect_intelligence.contracts.jobs import (
+    AttemptScope,
+    FailureCategory,
+    RetryDecision,
+)
 from app.features.prospect_intelligence.contracts.models import (
     QualityEventType,
     RepPreference,
@@ -51,6 +56,7 @@ from app.features.prospect_intelligence.models.records import (
     AccountAssignmentRecord,
     AccountRecord,
     ApprovalRecord,
+    ExecutionAttemptRecord,
     ProspectRunRecord,
     QualityEventOutboxRecord,
     RepPreferenceRecord,
@@ -59,12 +65,16 @@ from app.features.prospect_intelligence.models.records import (
 )
 from app.features.prospect_intelligence.repositories.postgres import (
     PostgresAccountRepository,
+    PostgresExecutionAttemptRepository,
     PostgresJobRepository,
     PostgresPreferenceRepository,
     PostgresProspectStore,
     PostgresRunRepository,
     PostgresSendReceiptRepository,
     PostgresWorkflowRepository,
+)
+from app.features.prospect_intelligence.services.execution_attempts import (
+    DurableArtifactAttemptRecorder,
 )
 from app.features.prospect_intelligence.services.runs import ProspectRunService
 from app.features.prospect_intelligence.services.worker import (
@@ -505,8 +515,45 @@ def test_claims_are_exclusive_renewable_and_stale_claims_are_fenced(postgres_url
     assert recovered.run_id == claimed.run_id
     assert recovered.claim_token != claimed.claim_token
     assert recovered.attempts == 2
+    with Session(store.engine) as session:
+        reclaimed = session.scalars(
+            select(ExecutionAttemptRecord).where(
+                ExecutionAttemptRecord.run_id == claimed.run_id,
+                ExecutionAttemptRecord.ordinal == 1,
+            )
+        ).one()
+        assert reclaimed.status == "failed"
+        assert reclaimed.failure_category is None
+        assert reclaimed.error_code == "worker_lease_expired"
+        assert reclaimed.retry_decision == "resume_worker"
     assert jobs.complete(claimed.id, claimed.claim_token, NOW + timedelta(minutes=5)) is False
     assert jobs.complete(recovered.id, recovered.claim_token, NOW + timedelta(minutes=5)) is True
+    store.close()
+
+
+@pytest.mark.postgresql
+def test_worker_claim_and_success_are_recorded_in_attempt_ledger(postgres_url: str) -> None:
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
+    run = build_service(store).create_run(auth_context(rep_id="rep-a"), "acme-foods")
+    jobs = PostgresJobRepository(store)
+
+    claim = jobs.claim_next("worker-1", NOW, timedelta(minutes=5))
+    assert claim is not None
+    with Session(store.engine) as session:
+        started = session.scalars(
+            select(ExecutionAttemptRecord).where(ExecutionAttemptRecord.run_id == run.id)
+        ).one()
+        assert started.status == "started"
+        assert started.finished_at is None
+
+    assert jobs.complete(claim.id, claim.claim_token, NOW + timedelta(seconds=1)) is True
+    with Session(store.engine) as session:
+        completed = session.scalars(
+            select(ExecutionAttemptRecord).where(ExecutionAttemptRecord.run_id == run.id)
+        ).one()
+        assert completed.status == "succeeded"
+        assert completed.retry_decision == "none"
+        assert completed.finished_at == NOW + timedelta(seconds=1)
     store.close()
 
 
@@ -696,17 +743,34 @@ def test_retry_exhaustion_marks_job_and_run_failed_without_private_error(
     run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
 
-    for attempt in range(1, 4):
-        claim = jobs.claim_next(f"worker-{attempt}", NOW, timedelta(minutes=5))
+    attempt_times = (NOW, NOW + timedelta(seconds=1), NOW + timedelta(seconds=3))
+    for attempt, attempt_at in enumerate(attempt_times, start=1):
+        claim = jobs.claim_next(f"worker-{attempt}", attempt_at, timedelta(minutes=5))
         assert claim is not None and claim.attempts == attempt
         assert jobs.fail(
             claim.id,
             claim.claim_token,
-            NOW,
-            error_code="execution_failed",
+            attempt_at,
+            error_code="model_unavailable",
             retryable=True,
             max_attempts=3,
+            failure_category=FailureCategory.MODEL_UNAVAILABLE,
         )
+        if attempt < 3:
+            backoff = timedelta(seconds=attempt)
+            with Session(store.engine) as session:
+                job = session.scalars(
+                    select(WorkerJobRecord).where(WorkerJobRecord.run_id == run.id)
+                ).one()
+                assert job.available_at == attempt_at + backoff
+            assert (
+                jobs.claim_next(
+                    "worker-early",
+                    attempt_at + backoff - timedelta(microseconds=1),
+                    timedelta(minutes=5),
+                )
+                is None
+            )
 
     failed = service.get_run(run.id)
     assert failed.status is RunStatus.FAILED
@@ -716,13 +780,105 @@ def test_retry_exhaustion_marks_job_and_run_failed_without_private_error(
         job = session.scalars(select(WorkerJobRecord).where(WorkerJobRecord.run_id == run.id)).one()
         assert job.status == "failed"
         assert job.attempts == 3
+        attempts = session.scalars(
+            select(ExecutionAttemptRecord)
+            .where(ExecutionAttemptRecord.run_id == run.id)
+            .order_by(ExecutionAttemptRecord.ordinal)
+        ).all()
+        assert [attempt.status for attempt in attempts] == ["failed", "failed", "failed"]
+        assert [attempt.retry_decision for attempt in attempts] == [
+            "resume_worker",
+            "resume_worker",
+            "terminal",
+        ]
+        assert all(attempt.failure_category == "model_unavailable" for attempt in attempts)
         failure_event = session.scalars(
             select(QualityEventOutboxRecord).where(
                 QualityEventOutboxRecord.run_id == run.id,
                 QualityEventOutboxRecord.event_type == QualityEventType.RUN_FAILED.value,
             )
         ).one()
-        assert failure_event.payload["error_code"] == "execution_failed"
+        assert failure_event.payload["error_code"] == "model_unavailable"
+    store.close()
+
+
+@pytest.mark.postgresql
+@pytest.mark.asyncio
+async def test_artifact_attempt_ordinals_are_concurrent_and_persist_only_sanitized_fields(
+    postgres_url: str,
+) -> None:
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
+    run = build_service(store).create_run(auth_context(rep_id="rep-a"), "acme-foods")
+    repository = PostgresExecutionAttemptRepository(store)
+    recorder = DurableArtifactAttemptRecorder(repository, lambda: NOW)
+
+    first, second = await asyncio.gather(
+        recorder.start(run.id, "quality_review"),
+        recorder.start(run.id, "quality_review"),
+    )
+    assert {first, second} == {1, 2}
+    await recorder.fail(
+        run.id,
+        "quality_review",
+        first,
+        failure_category=FailureCategory.AGENT_OUTPUT_INVALID,
+        error_code="missing_findings",
+        retry_decision=RetryDecision.CORRECT_STAGE,
+    )
+    await recorder.succeed(run.id, "quality_review", second)
+
+    with Session(store.engine) as session:
+        attempts = session.scalars(
+            select(ExecutionAttemptRecord)
+            .where(ExecutionAttemptRecord.run_id == run.id)
+            .order_by(ExecutionAttemptRecord.ordinal)
+        ).all()
+        assert {column.name for column in ExecutionAttemptRecord.__table__.columns} == {
+            "id",
+            "run_id",
+            "scope",
+            "stage",
+            "ordinal",
+            "status",
+            "failure_category",
+            "error_code",
+            "retry_decision",
+            "started_at",
+            "finished_at",
+        }
+        assert [attempt.scope for attempt in attempts] == [
+            AttemptScope.ARTIFACT_SUBMISSION.value,
+            AttemptScope.ARTIFACT_SUBMISSION.value,
+        ]
+        assert [attempt.status for attempt in attempts] == ["failed", "succeeded"]
+        assert attempts[0].error_code == "missing_findings"
+        assert attempts[1].error_code is None
+
+    with pytest.raises(ValueError, match="sanitized"):
+        await recorder.fail(
+            run.id,
+            "quality_review",
+            3,
+            failure_category=FailureCategory.AGENT_OUTPUT_INVALID,
+            error_code="submitted customer payload",
+            retry_decision=RetryDecision.CORRECT_STAGE,
+        )
+    store.close()
+
+
+@pytest.mark.postgresql
+def test_attempt_ledger_downgrade_removes_only_the_new_table(postgres_url: str) -> None:
+    store = PostgresProspectStore.from_settings(Settings(database_url=SecretStr(postgres_url)))
+    config = Config("alembic.ini")
+
+    command.downgrade(config, "20261002_0005_fmcsa_usdot")
+
+    tables = set(inspect(store.engine).get_table_names())
+    assert "prospect_execution_attempts" not in tables
+    assert "prospect_worker_jobs" in tables
+    assert "prospect_runs" in tables
+
+    command.upgrade(config, "head")
     store.close()
 
 
@@ -733,20 +889,28 @@ def test_expired_third_attempt_is_reaped_after_worker_crash(postgres_url: str) -
     run = service.create_run(auth_context(rep_id="rep-a"), "acme-foods")
     jobs = PostgresJobRepository(store)
 
-    for attempt in range(1, 4):
-        claim = jobs.claim_next(f"worker-{attempt}", NOW, timedelta(minutes=5))
+    attempt_times = (NOW, NOW + timedelta(seconds=1), NOW + timedelta(seconds=3))
+    for attempt, attempt_at in enumerate(attempt_times, start=1):
+        claim = jobs.claim_next(f"worker-{attempt}", attempt_at, timedelta(minutes=5))
         assert claim is not None and claim.attempts == attempt
         if attempt < 3:
             assert jobs.fail(
                 claim.id,
                 claim.claim_token,
-                NOW,
+                attempt_at,
                 error_code="execution_failed",
                 retryable=True,
                 max_attempts=3,
             )
 
-    assert jobs.claim_next("reaper", NOW + timedelta(minutes=5), timedelta(minutes=5)) is None
+    assert (
+        jobs.claim_next(
+            "reaper",
+            attempt_times[-1] + timedelta(minutes=5),
+            timedelta(minutes=5),
+        )
+        is None
+    )
     assert service.get_run(run.id).status is RunStatus.FAILED
     with Session(store.engine) as session:
         job = session.scalars(select(WorkerJobRecord).where(WorkerJobRecord.run_id == run.id)).one()
@@ -763,14 +927,15 @@ def test_expired_third_attempt_preserves_durable_analysis_success(postgres_url: 
     jobs = PostgresJobRepository(store)
 
     third_claim = None
-    for attempt in range(1, 4):
-        claim = jobs.claim_next(f"worker-{attempt}", NOW, timedelta(minutes=5))
+    attempt_times = (NOW, NOW + timedelta(seconds=1), NOW + timedelta(seconds=3))
+    for attempt, attempt_at in enumerate(attempt_times, start=1):
+        claim = jobs.claim_next(f"worker-{attempt}", attempt_at, timedelta(minutes=5))
         assert claim is not None and claim.attempts == attempt
         if attempt < 3:
             assert jobs.fail(
                 claim.id,
                 claim.claim_token,
-                NOW,
+                attempt_at,
                 error_code="execution_failed",
                 retryable=True,
                 max_attempts=3,
@@ -782,7 +947,14 @@ def test_expired_third_attempt_preserves_durable_analysis_success(postgres_url: 
     pipeline.run(run.id, third_claim.claim_token)
     assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
 
-    assert jobs.claim_next("reaper", NOW + timedelta(minutes=5), timedelta(minutes=5)) is None
+    assert (
+        jobs.claim_next(
+            "reaper",
+            attempt_times[-1] + timedelta(minutes=5),
+            timedelta(minutes=5),
+        )
+        is None
+    )
     assert service.get_run(run.id).status is RunStatus.AWAITING_REVIEW
     with Session(store.engine) as session:
         job = session.scalars(select(WorkerJobRecord).where(WorkerJobRecord.run_id == run.id)).one()

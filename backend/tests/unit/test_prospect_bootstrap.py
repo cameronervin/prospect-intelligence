@@ -205,9 +205,9 @@ async def test_production_container_shares_configured_evaluation_sample_rate(
     assert container.quality is not None
     projector = cast(Any, container.prospect.quality_projector)
     service = cast(Any, container.quality.provisioner)
-    assert projector._prompt_version == "outreach-v2"
-    assert projector._graph_revision == "prospect-intelligence-v2"
-    assert projector._agent_version == "prospect-intelligence-v2"
+    assert projector._prompt_version == "outreach-v4"
+    assert projector._graph_revision == "prospect-intelligence-v4"
+    assert projector._agent_version == "prospect-intelligence-v4"
     assert projector._evaluation_sample_rate == 0.37
     assert service._config.evaluation_sample_rate == 0.37
 

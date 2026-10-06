@@ -34,13 +34,13 @@ Cross-feature imports use the target feature's `public.py` or `contracts/`. Stat
 
 ## Agent boundary
 
-The prospect feature keeps each agent concept explicit without single-module package nesting:
+The prospect feature keeps each agent concept explicit in focused modules and packages:
 
 ```text
 agents/
   chains.py       prompts/       specs.py
   graphs.py       compiler.py     state.py
-  tools.py        runtime.py      context.py
+  tools/          runtime.py      context.py
   guardrails/     middleware/     skills/
 ```
 
@@ -99,7 +99,7 @@ and closes its provider clients before prospect and database resources.
 Specialist progress flows in five hops:
 
 1. The orchestrator's `ProgressMiddleware` observes each `task` delegation. The source-tool boundary
-   in `agents/tools.py` observes each source call.
+   in `agents/tools/` observes each source call.
 2. Both emit sanitized `ProgressSignal`s to a request-scoped sink on `ProspectRuntimeContext`.
 3. The worker's `RunProgressSink` (in `services/progress.py`) serializes those signals into
    lease-guarded writes.

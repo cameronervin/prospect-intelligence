@@ -173,14 +173,14 @@ async def test_live_target_uses_synthetic_handlers_and_hashes_rep_metadata(
     target = ProspectLiveTarget(
         orchestrator_model=model,
         specialist_model=model,
-        prompt_revision="outreach-v2",
+        prompt_revision="outreach-v4",
         interpreter_enabled=False,
     )
     example = langsmith_examples()[0]
     assert example.inputs is not None
     outputs = await target.ainvoke(example.inputs)
 
-    assert build_options[0]["prompt_revision"] == "outreach-v2"
+    assert build_options[0]["prompt_revision"] == "outreach-v4"
     assert build_options[0]["interpreter_enabled"] is False
     expected_hash = hashlib.sha256(b"cam-40:core_01").hexdigest()
     assert contexts[0].rep_id == expected_hash
@@ -212,7 +212,7 @@ async def test_live_target_rejects_incomplete_inputs() -> None:
 def test_live_target_rejects_archived_prompt_revisions() -> None:
     model = FakeListChatModel(responses=["unused"])
 
-    with pytest.raises(ValueError, match="outreach-v2"):
+    with pytest.raises(ValueError, match="outreach-v4"):
         ProspectLiveTarget(
             orchestrator_model=model,
             specialist_model=model,

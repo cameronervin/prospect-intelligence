@@ -53,13 +53,13 @@ def build_service() -> ProspectRunService:
     )
 
 
-def test_new_run_metadata_identifies_the_v2_graph_and_prompt_bundle() -> None:
+def test_new_run_metadata_identifies_the_v4_graph_and_prompt_bundle() -> None:
     service = build_service()
 
     run = service.create_run(auth_context(rep_id="rep-demo"), "acme-foods")
 
-    assert run.quality_metadata["agent_version"] == "prospect-intelligence-v2"
-    assert run.quality_metadata["prompt_version"] == "outreach-v2"
+    assert run.quality_metadata["agent_version"] == "prospect-intelligence-v4"
+    assert run.quality_metadata["prompt_version"] == "outreach-v4"
 
 
 def analysis(

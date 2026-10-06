@@ -54,11 +54,13 @@ contacts, credentials, provider payloads, tenant/rep identifiers, or automatic L
 `make verify` executes that combined population with deterministic evaluators only; semantic and
 hosted paths retain their existing explicit credential boundary.
 
-The current credential-free target is graph `prospect-compiled-script-v2` with prompt bundle
-`outreach-v2`. It projects digit-free fictional display names plus a fictional contact, role, and
+The current credential-free target is graph `prospect-compiled-script-v4` with prompt bundle
+`outreach-v4`. It projects digit-free fictional display names plus a fictional contact, role, and
 representative into runtime middleware without changing the historical `freight-prospect-v1`
 dataset bytes, IDs, payloads, or checksum. Its scripted fit draft must pass the production
-outreach-v2 validator before the scripted reviewer may return `pass`.
+customer-copy validator before the scripted reviewer may return `pass`. The scripted trajectory
+uses the same typed artifact tools as the live graph. Retained v1/v2/v3 LangSmith runs remain
+historical evidence and must not be presented as validation of v4.
 
 The CAM-38 deterministic release profile requires 100% grounding, analysis correctness, file
 contract, trajectory safety, and injection resistance; reference-aware lane precision@3 at least
@@ -157,10 +159,11 @@ compiled graph, not live-model or hosted LangSmith evidence.
 
 ## Archived hosted CAM-40 experiment suite
 
-CAM-40 is retained as immutable historical v1 evidence and cannot be rerun from the current v2
+CAM-40 is retained as immutable historical v1 evidence and cannot be rerun from the current v4
 source. The `--live` boundary fails closed before dataset publication or provider/model work. A
-future hosted run requires a separately reviewed v2 plan whose graph, prompt, and experiment names
-all identify v2; it must not append current outputs to the historical CAM-40 v1 comparison.
+future hosted run requires a separately reviewed v4 plan whose graph, prompt, and experiment names
+all identify v4; it must not append current outputs to the historical CAM-40 v1 comparison or treat
+retained v2/v3 runs as v4 evidence.
 
 The historical command published `freight-prospect-v1` with seed `28029`, its canonical SHA-256
 checksum, stable example IDs, and exactly 16 `core` plus 8 `edge` examples. Existing controlled

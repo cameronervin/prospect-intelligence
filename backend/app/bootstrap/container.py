@@ -9,7 +9,10 @@ import structlog
 from app.features.authentication.public import AuthenticationService
 from app.features.prospect_intelligence.agents.compiler import build_prospect_agent_runtime
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectAgentRuntime
-from app.features.prospect_intelligence.contracts.jobs import JobRepository
+from app.features.prospect_intelligence.contracts.jobs import (
+    ArtifactAttemptRecorder,
+    JobRepository,
+)
 from app.features.prospect_intelligence.contracts.quality_evaluation import (
     OnlineQualityProjector,
 )
@@ -99,6 +102,7 @@ class ProspectComponent:
     source_http_transport: SyncLifecycle
     quality_projector: OnlineQualityProjector | None = None
     runtime_guardrail: RuntimeGuardrail | None = None
+    artifact_attempts: ArtifactAttemptRecorder | None = None
     runtime: ProspectAgentRuntime | None = None
     review_handler: ProspectAgentReviewHandler | None = None
     worker_supervisor: ProspectWorkerSupervisor | None = None
@@ -149,6 +153,7 @@ class ProspectComponent:
             sources=self.sources,
             quality_projector=self.quality_projector,
             runtime_guardrail=self.runtime_guardrail,
+            artifact_attempts=self.artifact_attempts,
         )
         if self.review_handler is None:
             self.review_handler = ProspectAgentReviewHandler(

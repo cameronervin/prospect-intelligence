@@ -3,7 +3,9 @@
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
+from uuid import UUID
 
 import pytest
 from langchain.tools import ToolRuntime
@@ -42,10 +44,19 @@ from app.features.prospect_intelligence.agents.tools import build_tool_registry
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
 from app.features.prospect_intelligence.contracts.citations import evidence_citation_id
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from app.features.prospect_intelligence.contracts.jobs import (
+    FailureCategory,
+    RetryDecision,
+)
 from tests.fakes import auth_context
-from tests.unit.prospect_intelligence.agent_test_support import file_data, runtime_context
+from tests.unit.prospect_intelligence.agent_test_support import (
+    completed_files,
+    file_data,
+    runtime_context,
+)
 
 _CONTRACT_LINE = re.compile(r"^- `(/[^`]+)`", re.MULTILINE)
+_TYPED_WRITER = re.compile(r"^- `(/[^`]+)`[^\n]+call `([^`]+)`", re.MULTILINE)
 _PROVENANCE = {
     "source": "crm",
     "mode": "fixture",
@@ -107,43 +118,137 @@ class ContractReadingModel(BaseChatModel):
         system = "\n".join(m.text for m in messages if isinstance(m, SystemMessage))
         self.system_prompts.append(system)
         self.reminders = [
-            m.text for m in messages if isinstance(m, HumanMessage) and "write_file" in m.text
+            m.text for m in messages if isinstance(m, HumanMessage) and "still missing" in m.text
         ]
         prior_answers = sum(isinstance(m, AIMessage) for m in messages)
-        wrote = any(isinstance(m, ToolMessage) and m.name == "write_file" for m in messages)
+        wrote = any(
+            isinstance(m, ToolMessage) and m.name == "materialize_account_context" for m in messages
+        )
         called_source = any(
             isinstance(m, ToolMessage) and m.tool_call_id == "read-account" for m in messages
         )
-        paths = _CONTRACT_LINE.findall(system)
+        typed_writers = list(dict.fromkeys(tool for _, tool in _TYPED_WRITER.findall(system)))
         skip = self.never_write or (self.answer_without_writing_first and prior_answers == 0)
         if self.call_source_first and not called_source:
             message = AIMessage(
                 content="",
                 tool_calls=[
                     {
-                        "name": "get_crm_account",
+                        "name": "materialize_account_context",
                         "args": {},
                         "id": "read-account",
                         "type": "tool_call",
                     }
                 ],
             )
-        elif wrote or skip or not paths:
+        elif wrote or skip or not typed_writers:
             message = AIMessage(content="Account and network context resolved.")
         else:
             message = AIMessage(
                 content="",
                 tool_calls=[
                     {
-                        "name": "write_file",
-                        "args": {"file_path": path, "content": _sourced_payload()},
+                        "name": writer,
+                        "args": {},
                         "id": f"write-{index}",
                         "type": "tool_call",
                     }
-                    for index, path in enumerate(paths)
+                    for index, writer in enumerate(typed_writers)
                 ],
             )
         return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+class OutreachCorrectionModel(BaseChatModel):
+    """Uses the model-visible error envelope to correct a second typed submission."""
+
+    feedback: list[dict[str, object]] = Field(default_factory=lambda: [])
+
+    @property
+    def _llm_type(self) -> str:
+        return "prospect-outreach-correction-test"
+
+    def bind_tools(
+        self,
+        tools: Sequence[dict[str, Any] | type | Callable[..., Any] | BaseTool],
+        *,
+        tool_choice: str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        del tools, tool_choice, kwargs
+        return cast(Runnable[LanguageModelInput, AIMessage], self)
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        del stop, run_manager, kwargs
+        submissions = [
+            message
+            for message in messages
+            if isinstance(message, ToolMessage) and message.name == "submit_outreach_draft"
+        ]
+        if submissions and submissions[-1].status == "success":
+            return ChatResult(
+                generations=[ChatGeneration(message=AIMessage(content="Draft completed."))]
+            )
+        relevance = "The DEN-to-SEA lane may align with our team."
+        identifier = "invalid-outreach"
+        if submissions:
+            payload = cast("dict[str, object]", json.loads(submissions[-1].text))
+            self.feedback.append(payload)
+            relevance = "The ATL-to-DAL lane may align with our team."
+            identifier = "corrected-outreach"
+        message = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "submit_outreach_draft",
+                    "args": {
+                        "subject": "A freight conversation for Acme Foods",
+                        "greeting": "Hi Jordan,",
+                        "introduction": (
+                            "I'm Alex Morgan, and I represent an asset-based truckload carrier."
+                        ),
+                        "relevance": relevance,
+                        "call_to_action": ("Would you be open to a brief conversation next week?"),
+                    },
+                    "id": identifier,
+                    "type": "tool_call",
+                }
+            ],
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+@dataclass
+class RecordingArtifactAttempts:
+    events: list[tuple[object, ...]] = field(default_factory=lambda: list[tuple[object, ...]]())
+
+    async def start(self, run_id: UUID, stage: str) -> int:
+        ordinal = sum(event[0] == "start" for event in self.events) + 1
+        self.events.append(("start", run_id, stage, ordinal))
+        return ordinal
+
+    async def succeed(self, run_id: UUID, stage: str, ordinal: int) -> None:
+        self.events.append(("succeed", run_id, stage, ordinal))
+
+    async def fail(
+        self,
+        run_id: UUID,
+        stage: str,
+        ordinal: int,
+        *,
+        failure_category: FailureCategory,
+        error_code: str,
+        retry_decision: RetryDecision,
+    ) -> None:
+        self.events.append(
+            ("fail", run_id, stage, ordinal, failure_category, error_code, retry_decision)
+        )
 
 
 def _account_spec() -> AgentSpec:
@@ -191,25 +296,81 @@ async def _run_account_context(
     return cast("Mapping[str, object]", result.update)
 
 
+async def _run_outreach_correction(
+    model: OutreachCorrectionModel,
+) -> tuple[Mapping[str, object], RecordingArtifactAttempts]:
+    orchestrator = build_orchestrator_agent(
+        orchestrator_model=model,
+        specialist_model=model,
+        tools=build_tool_registry(),
+        store=InMemoryStore(),
+    )
+    task = cast(Any, orchestrator).nodes["tools"].bound._tools_by_name["task"]
+    recorder = RecordingArtifactAttempts()
+    context = replace(runtime_context(), artifact_attempts=recorder)
+    files = dict(completed_files())
+    files.pop(PROSPECT_FILES.outreach_draft)
+    files.pop(PROSPECT_FILES.review_findings)
+    runtime: Any = ToolRuntime(
+        state=cast(
+            Any,
+            {
+                "messages": [HumanMessage(content="Draft outreach for the approved brief.")],
+                "files": files,
+            },
+        ),
+        context=context,
+        config={},
+        stream_writer=lambda _: None,
+        tool_call_id="task-outreach",
+        store=None,
+    )
+    with bind_runtime_context(context):
+        result = await task.coroutine(
+            description="Draft outreach for the approved brief.",
+            subagent_type="outreach-drafter",
+            runtime=runtime,
+        )
+    assert isinstance(result, Command)
+    return cast("Mapping[str, object]", result.update), recorder
+
+
 @pytest.mark.parametrize(
     "spec",
     (*specialist_specs(), orchestrator_spec()),
     ids=lambda spec: spec.name,
 )
-def test_every_agent_prompt_declares_write_file_targets(spec: AgentSpec) -> None:
+def test_every_agent_prompt_declares_the_writer_for_each_artifact(spec: AgentSpec) -> None:
     prompt = render_system_prompt(spec)
 
-    assert "write_file" in prompt
     assert _CONTRACT_LINE.findall(prompt) == list(spec.required_artifacts)
+    for ownership in spec.artifact_tools:
+        assert f"call `{ownership.tool_name}`" in prompt
+    if spec.writable_paths:
+        assert "write_file" in prompt
+
+
+@pytest.mark.parametrize(
+    "spec",
+    tuple(spec for spec in specialist_specs() if spec.artifact_tools),
+    ids=lambda spec: spec.name,
+)
+def test_typed_artifact_prompts_explain_the_sanitized_correction_protocol(
+    spec: AgentSpec,
+) -> None:
+    prompt = render_system_prompt(spec)
+
+    assert "agent_output_invalid" in prompt
+    assert "Fix every listed issue" in prompt
+    assert "trusted run context and files" in prompt
 
 
 def test_account_context_prompt_maps_each_source_to_its_artifact_and_schema() -> None:
     prompt = render_system_prompt(_account_spec())
 
-    assert re.search(r"get_crm_account[^\n]*/context/account\.json", prompt)
-    assert re.search(r"get_network_lanes[^\n]*/context/our_network\.json", prompt)
-    for field in ("coverage", "evidence", "claim", "provenance", *_PROVENANCE):
-        assert f"`{field}`" in prompt
+    assert re.search(r"/context/account\.json[^\n]+materialize_account_context", prompt)
+    assert re.search(r"/context/our_network\.json[^\n]+materialize_account_context", prompt)
+    assert "coverage, evidence, and provenance" in prompt
 
 
 _SECTIONS = (
@@ -281,7 +442,7 @@ def test_lane_analyst_prompt_writes_the_deterministic_score_verbatim() -> None:
 
     assert "score_lane_fit_v1" in prompt
     assert "/skills/lane-fit-v1/" in prompt
-    assert "verbatim to /analysis/lane_fit.json" in prompt
+    assert "writes the complete canonical /analysis/lane_fit.json" in prompt
 
 
 @pytest.mark.asyncio
@@ -294,6 +455,39 @@ async def test_account_context_writes_its_artifacts_from_the_prompt_alone() -> N
     validate_agent_artifacts(_account_spec(), files)
     assert model.calls == 2
     assert model.reminders == []
+
+
+@pytest.mark.asyncio
+async def test_outreach_specialist_reads_feedback_and_corrects_the_next_submission() -> None:
+    model = OutreachCorrectionModel()
+
+    result, recorder = await _run_outreach_correction(model)
+
+    files = cast("Mapping[str, Any]", result["files"])
+    content = files[PROSPECT_FILES.outreach_draft]["content"]
+    assert "ATL-to-DAL" in content
+    assert "DEN-to-SEA" not in content
+    assert model.feedback == [
+        {
+            "attempts_remaining": 2,
+            "error": "agent_output_invalid",
+            "issues": [
+                {
+                    "code": "outreach_relevance_lane_missing",
+                    "field": "relevance",
+                    "instruction": "Include the top lane exactly as <ORIGIN>-to-<DESTINATION>.",
+                }
+            ],
+        }
+    ]
+    assert "ATL" not in json.dumps(model.feedback)
+    assert "DEN" not in json.dumps(model.feedback)
+    assert [event[0] for event in recorder.events] == ["start", "fail", "start", "succeed"]
+    assert recorder.events[1][4:] == (
+        FailureCategory.AGENT_OUTPUT_INVALID,
+        "outreach_relevance_lane_missing",
+        RetryDecision.CORRECT_STAGE,
+    )
 
 
 def test_artifact_guardrail_rejects_missing_citation_id() -> None:
@@ -322,13 +516,19 @@ async def test_declarative_specialist_receives_scoped_runtime_context() -> None:
 
     def get_account(payload: dict[str, object]) -> object:
         calls.append(payload)
-        return {"account": "Acme"}
+        source = base.tool_handlers["get_crm_account"](payload)
+        assert isinstance(source, dict)
+        typed = cast("dict[str, object]", source)
+        return {**typed, "value": {"account": "Acme"}}
 
     base = runtime_context()
     context = ProspectRuntimeContext(
         run_id=base.run_id,
         auth=auth_context(tenant_id=base.tenant_id, rep_id=base.rep_id),
-        tool_handlers={"get_crm_account": get_account},
+        tool_handlers={
+            **base.tool_handlers,
+            "get_crm_account": get_account,
+        },
     )
 
     result = await _run_account_context(

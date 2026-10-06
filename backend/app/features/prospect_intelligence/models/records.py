@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -171,3 +172,40 @@ class WorkerJobRecord(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
     last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class ExecutionAttemptRecord(Base):
+    """Sanitized worker and artifact-submission attempt history."""
+
+    __tablename__ = "prospect_execution_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "scope",
+            "stage",
+            "ordinal",
+            name="uq_prospect_execution_attempt_identity",
+        ),
+        CheckConstraint("scope IN ('worker', 'artifact_submission')"),
+        CheckConstraint("status IN ('started', 'succeeded', 'failed')"),
+        CheckConstraint(
+            "failure_category IS NULL OR failure_category IN "
+            "('agent_output_invalid', 'agent_output_exhausted', 'model_unavailable', "
+            "'policy_rejected', 'internal_error')"
+        ),
+        CheckConstraint("retry_decision IN ('none', 'correct_stage', 'resume_worker', 'terminal')"),
+        CheckConstraint("ordinal > 0"),
+        Index("ix_prospect_execution_attempts_run", "run_id", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("prospect_runs.id"))
+    scope: Mapped[str] = mapped_column(String(32))
+    stage: Mapped[str] = mapped_column(String(100))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32))
+    failure_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    retry_decision: Mapped[str] = mapped_column(String(32))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

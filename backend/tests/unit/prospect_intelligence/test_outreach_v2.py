@@ -6,6 +6,8 @@ from app.features.prospect_intelligence.contracts.models import OutreachDraft
 from app.features.prospect_intelligence.domain.errors import UnsafeOutreachError
 from app.features.prospect_intelligence.domain.outreach import (
     OutreachContext,
+    OutreachIssueCode,
+    customer_outreach_issues,
     validate_customer_outreach,
 )
 
@@ -44,6 +46,51 @@ def realistic_draft() -> OutreachDraft:
 
 def test_realistic_account_specific_outreach_is_accepted() -> None:
     validate_customer_outreach(realistic_draft(), CONTEXT)
+
+
+def test_relevance_does_not_need_to_repeat_account_already_bound_in_subject() -> None:
+    draft = realistic_draft()
+
+    validate_customer_outreach(
+        OutreachDraft(
+            subject=draft.subject,
+            body=draft.body.replace("Acme Foods' distribution footprint and ", "The "),
+        ),
+        CONTEXT,
+    )
+
+
+def test_outreach_reports_all_independent_issues_in_stable_order() -> None:
+    draft = realistic_draft()
+    paragraphs = draft.body.split("\n\n")
+    paragraphs[0] = "Hi Taylor,"
+    paragraphs[2] = "A DEN-to-SEA opportunity may align with our team."
+    paragraphs[3] = "Let us connect."
+
+    issues = customer_outreach_issues(
+        OutreachDraft(subject="A freight conversation", body="\n\n".join(paragraphs)),
+        CONTEXT,
+    )
+
+    assert issues == (
+        OutreachIssueCode.GREETING_CONTACT_INVALID,
+        OutreachIssueCode.SUBJECT_ACCOUNT_MISSING,
+        OutreachIssueCode.RELEVANCE_LANE_MISSING,
+        OutreachIssueCode.CTA_QUESTION_INVALID,
+    )
+
+
+def test_outreach_domain_rejects_every_internal_term_used_by_final_guardrail() -> None:
+    draft = realistic_draft()
+    paragraphs = draft.body.split("\n\n")
+    paragraphs[2] = "The ATL-to-DAL lane reflects a vendor field."
+
+    issues = customer_outreach_issues(
+        OutreachDraft(subject=draft.subject, body="\n\n".join(paragraphs)),
+        CONTEXT,
+    )
+
+    assert OutreachIssueCode.PROHIBITED_CONTENT in issues
 
 
 @pytest.mark.parametrize(

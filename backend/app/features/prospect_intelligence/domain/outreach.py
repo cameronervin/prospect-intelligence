@@ -1,8 +1,9 @@
-"""Deterministic customer-visible outreach-v2 policy."""
+"""Deterministic customer-visible outreach policy."""
 
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 from ..contracts.models import OutreachDraft, ProspectRun
 from .errors import UnsafeOutreachError
@@ -11,7 +12,7 @@ _FORBIDDEN_LANGUAGE = re.compile(
     r"\b(?:genlogs|sec|edgar|tavily|faf\w*|bts|fhwa|fmcsa|qcmobile|crm|citation|"
     r"provenance|provider|source|"
     r"score|rates?|revenue|margin|capacity|deadhead|loads?|volume|pricing|cost|"
-    r"tractors?|trucks?|internal|telemetry)\b",
+    r"tractors?|trucks?|internal|telemetry|cost\s+basis|vendor\s+field|other\s+customer)\b",
     re.IGNORECASE,
 )
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
@@ -29,6 +30,43 @@ class OutreachContext:
     origin: str
     destination: str
     other_account_names: tuple[str, ...] = ()
+
+
+class OutreachIssueCode(StrEnum):
+    """Stable, value-free reasons that customer outreach is unsafe."""
+
+    LENGTH_INVALID = "outreach_length_invalid"
+    PROHIBITED_CONTENT = "outreach_prohibited_content"
+    OTHER_ACCOUNT_REFERENCE = "outreach_other_account_reference"
+    PARAGRAPH_STRUCTURE_INVALID = "outreach_paragraph_structure_invalid"
+    GREETING_CONTACT_INVALID = "outreach_greeting_contact_invalid"
+    SUBJECT_ACCOUNT_MISSING = "outreach_subject_account_missing"
+    INTRODUCTION_IDENTITY_INVALID = "outreach_introduction_identity_invalid"
+    RELEVANCE_LANE_MISSING = "outreach_relevance_lane_missing"
+    CTA_QUESTION_INVALID = "outreach_cta_question_invalid"
+
+
+_ISSUE_MESSAGES = {
+    OutreachIssueCode.LENGTH_INVALID: "customer outreach has an invalid length",
+    OutreachIssueCode.PROHIBITED_CONTENT: "customer outreach contains prohibited content",
+    OutreachIssueCode.OTHER_ACCOUNT_REFERENCE: (
+        "customer outreach identifies another assigned account"
+    ),
+    OutreachIssueCode.PARAGRAPH_STRUCTURE_INVALID: (
+        "customer outreach must contain four paragraphs"
+    ),
+    OutreachIssueCode.GREETING_CONTACT_INVALID: (
+        "customer outreach must address the selected contact"
+    ),
+    OutreachIssueCode.SUBJECT_ACCOUNT_MISSING: (
+        "customer outreach subject must identify the selected account"
+    ),
+    OutreachIssueCode.INTRODUCTION_IDENTITY_INVALID: (
+        "customer outreach must identify the initiating representative"
+    ),
+    OutreachIssueCode.RELEVANCE_LANE_MISSING: "customer outreach must use the selected lane",
+    OutreachIssueCode.CTA_QUESTION_INVALID: ("customer outreach must end with a specific question"),
+}
 
 
 def outreach_context(
@@ -56,17 +94,18 @@ def outreach_context(
     )
 
 
-def validate_customer_outreach(
+def customer_outreach_issues(
     outreach: OutreachDraft,
     context: OutreachContext,
-) -> None:
-    """Validate flexible wording against the outreach-v2 structure and safety boundary."""
+) -> tuple[OutreachIssueCode, ...]:
+    """Return every independently actionable issue without exposing trusted values."""
 
     subject = outreach.subject.strip()
     body = outreach.body.strip()
     combined = f"{subject}\n{body}"
+    issues: list[OutreachIssueCode] = []
     if not subject or not body or len(subject) > 160 or len(body) > 2_000:
-        raise UnsafeOutreachError("customer outreach has an invalid length")
+        issues.append(OutreachIssueCode.LENGTH_INVALID)
     if (
         "\n" in subject
         or _CONTROL_CHARACTERS.search(combined)
@@ -76,46 +115,59 @@ def validate_customer_outreach(
         or _MARKDOWN_MARKUP.search(combined)
         or _FORBIDDEN_LANGUAGE.search(combined)
     ):
-        raise UnsafeOutreachError("customer outreach contains prohibited content")
+        issues.append(OutreachIssueCode.PROHIBITED_CONTENT)
 
     normalized_copy = _normalized_text(combined)
     if any(
         _contains_name(normalized_copy, _normalized_text(account_name))
         for account_name in context.other_account_names
     ):
-        raise UnsafeOutreachError("customer outreach identifies another assigned account")
+        issues.append(OutreachIssueCode.OTHER_ACCOUNT_REFERENCE)
 
     paragraphs = body.split("\n\n")
-    if len(paragraphs) != 4 or any(
+    valid_structure = len(paragraphs) == 4 and not any(
         "\n" in paragraph or not paragraph.strip() for paragraph in paragraphs
-    ):
-        raise UnsafeOutreachError("customer outreach must contain four paragraphs")
+    )
+    if not valid_structure:
+        issues.append(OutreachIssueCode.PARAGRAPH_STRUCTURE_INVALID)
+    else:
+        contact_first_name = context.contact_name.strip().split(maxsplit=1)[0]
+        if paragraphs[0].strip() != f"Hi {contact_first_name},":
+            issues.append(OutreachIssueCode.GREETING_CONTACT_INVALID)
 
-    contact_first_name = context.contact_name.strip().split(maxsplit=1)[0]
-    if paragraphs[0].strip() != f"Hi {contact_first_name},":
-        raise UnsafeOutreachError("customer outreach must address the selected contact")
     if context.account_name.casefold() not in subject.casefold():
-        raise UnsafeOutreachError("customer outreach subject must identify the selected account")
+        issues.append(OutreachIssueCode.SUBJECT_ACCOUNT_MISSING)
 
-    introduction = paragraphs[1].casefold()
-    if (
-        context.rep_display_name.casefold() not in introduction
-        or "asset-based" not in introduction
-        or "carrier" not in introduction
-    ):
-        raise UnsafeOutreachError("customer outreach must identify the initiating representative")
+    if valid_structure:
+        introduction = paragraphs[1].casefold()
+        if (
+            context.rep_display_name.casefold() not in introduction
+            or "asset-based" not in introduction
+            or "carrier" not in introduction
+        ):
+            issues.append(OutreachIssueCode.INTRODUCTION_IDENTITY_INVALID)
 
-    relevance = paragraphs[2]
-    lane_token = f"{context.origin}-to-{context.destination}"
-    if (
-        context.account_name.casefold() not in relevance.casefold()
-        or lane_token.casefold() not in relevance.casefold()
-    ):
-        raise UnsafeOutreachError("customer outreach must use the selected account and lane")
+        relevance = paragraphs[2]
+        lane_token = f"{context.origin}-to-{context.destination}"
+        if lane_token.casefold() not in relevance.casefold():
+            issues.append(OutreachIssueCode.RELEVANCE_LANE_MISSING)
 
-    call_to_action = paragraphs[3].strip()
-    if not call_to_action.endswith("?") or len(call_to_action.split()) < 5:
-        raise UnsafeOutreachError("customer outreach must end with a specific question")
+        call_to_action = paragraphs[3].strip()
+        if not call_to_action.endswith("?") or len(call_to_action.split()) < 5:
+            issues.append(OutreachIssueCode.CTA_QUESTION_INVALID)
+
+    return tuple(issues)
+
+
+def validate_customer_outreach(
+    outreach: OutreachDraft,
+    context: OutreachContext,
+) -> None:
+    """Validate flexible wording against the shared structure and safety boundary."""
+
+    issues = customer_outreach_issues(outreach, context)
+    if issues:
+        raise UnsafeOutreachError(_ISSUE_MESSAGES[issues[0]])
 
 
 def _normalized_text(value: str) -> str:

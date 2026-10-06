@@ -19,6 +19,7 @@ from app.features.prospect_intelligence.agents.compiler import build_prospect_ag
 from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectAgentInput,
     ProspectRuntimeContext,
+    ToolHandler,
 )
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
 from evaluation.contracts.snapshot import decode_artifacts, normalize_snapshot
@@ -73,6 +74,39 @@ def trajectory_events(raw: Mapping[str, object]) -> list[str]:
         elif name == "send_outreach":
             events.append("review.requested")
     return events
+
+
+def _source_result(content: str) -> dict[str, object]:
+    """Rehydrate a canonical fixture artifact as a normalized source result."""
+
+    raw = cast(object, json.loads(content))
+    if not isinstance(raw, dict):
+        raise ValueError("scenario source artifact must be an object")
+    document = cast("dict[str, object]", raw)
+    coverage = document.pop("coverage", None)
+    evidence = document.pop("evidence", None)
+    if not isinstance(coverage, dict) or not isinstance(evidence, list):
+        raise ValueError("scenario source artifact is missing source metadata")
+    return {"value": document, "coverage": coverage, "evidence": evidence}
+
+
+def _tool_handlers(artifacts: Mapping[str, str]) -> dict[str, ToolHandler]:
+    account = _source_result(artifacts[PROSPECT_FILES.account_context])
+    network = _source_result(artifacts[PROSPECT_FILES.network_context])
+    freight = _source_result(artifacts[PROSPECT_FILES.freight_research])
+    company = _source_result(artifacts[PROSPECT_FILES.company_research])
+    market = _source_result(artifacts[PROSPECT_FILES.market_research])
+    analysis = json.loads(artifacts[PROSPECT_FILES.lane_fit_json])
+    return {
+        "get_crm_account": lambda _: account,
+        "get_network_lanes": lambda _: network,
+        "search_genlogs": lambda _: freight,
+        "search_sec": lambda _: company,
+        "search_tavily": lambda _: company,
+        "get_fmcsa": lambda _: company,
+        "get_faf_market_volume": lambda _: market,
+        "score_lane_fit_v1": lambda _: analysis,
+    }
 
 
 class ProspectOfflineTarget:
@@ -134,6 +168,7 @@ class ProspectOfflineTarget:
             contact_name=identity.contact_name,
             contact_role=identity.contact_role,
             rep_display_name=identity.rep_display_name,
+            tool_handlers=_tool_handlers(artifacts),
         )
         started = perf_counter()
         with tracing_context(enabled=False):

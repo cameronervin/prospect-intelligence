@@ -399,6 +399,7 @@ async def test_agent_job_handler_commits_validated_graph_output_to_review() -> N
     assert runtime.context.account_name == "Acme Foods"
     assert runtime.context.contact_name == "Jordan Lee"
     assert runtime.context.rep_display_name == "Sales representative"
+    assert runtime.context.other_account_names == ("Northstar Retail",)
     assert runtime.input is not None
     assert "Acme Foods" not in runtime.input.task_brief
     assert "Jordan Lee" not in runtime.input.task_brief

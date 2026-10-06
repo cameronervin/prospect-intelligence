@@ -1,12 +1,14 @@
 """Static enforcement for modular-monolith dependency boundaries."""
 
 import ast
+from importlib import import_module
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 FEATURE_ROOT = APP_ROOT / "features"
 FEATURE_PREFIX = "app.features."
 MAX_APPLICATION_MODULE_LINES = 250
+PROSPECT_AGENT_ROOT = FEATURE_ROOT / "prospect_intelligence" / "agents"
 
 
 def imports(path: Path, app_root: Path = APP_ROOT) -> set[str]:
@@ -30,6 +32,25 @@ def imports(path: Path, app_root: Path = APP_ROOT) -> set[str]:
 
 def python_files(root: Path) -> list[Path]:
     return [path for path in root.rglob("*.py") if "__pycache__" not in path.parts]
+
+
+def test_prospect_agent_tools_use_a_narrow_package_surface() -> None:
+    tools_package = PROSPECT_AGENT_ROOT / "tools"
+
+    assert tools_package.is_dir()
+    assert (tools_package / "__init__.py").is_file()
+    assert not {
+        path.name
+        for path in (
+            PROSPECT_AGENT_ROOT / "tools.py",
+            PROSPECT_AGENT_ROOT / "artifact_tools.py",
+            PROSPECT_AGENT_ROOT / "tool_support.py",
+            PROSPECT_AGENT_ROOT / "errors.py",
+        )
+        if path.exists()
+    }
+    tools = import_module("app.features.prospect_intelligence.agents.tools")
+    assert tools.__all__ == ["ToolRegistry", "build_tool_registry"]
 
 
 def test_platform_and_shared_kernel_do_not_depend_on_features() -> None:

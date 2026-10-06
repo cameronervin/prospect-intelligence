@@ -25,8 +25,8 @@ from evaluation.targets.prospect_graph import ProspectOfflineTarget
 from .report import render_report
 from .results import aggregates, gate_results, normalize_rows
 
-GRAPH_REVISION = "prospect-compiled-script-v2"
-PROMPT_REVISION = "outreach-v2"
+GRAPH_REVISION = "prospect-compiled-script-v4"
+PROMPT_REVISION = "outreach-v4"
 REPETITIONS = 3
 DEFAULT_REPORT_PATH = Path("evaluation/reports/cam_38_offline.md")
 

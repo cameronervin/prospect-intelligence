@@ -3,16 +3,64 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from uuid import UUID, uuid4
 
 import structlog
 
-from ..contracts.jobs import ClaimedJob, JobRepository
+from ..contracts.jobs import (
+    ClaimedJob,
+    FailureCategory,
+    JobRepository,
+    RetryDecision,
+)
 from ..contracts.runtime_guardrails import GuardrailRejected, GuardrailUnavailable
+from ..domain.errors import (
+    AgentOutputExhaustedError,
+    AgentOutputInvalidError,
+    ModelUnavailableError,
+    validate_error_code,
+)
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class FailureDisposition:
+    error_code: str
+    category: FailureCategory
+    retryable: bool
+
+
+def classify_worker_failure(error: Exception) -> FailureDisposition:
+    """Map exceptions to the only retry taxonomy persisted by the worker."""
+
+    if isinstance(error, AgentOutputExhaustedError):
+        return FailureDisposition(
+            error.code,
+            FailureCategory.AGENT_OUTPUT_EXHAUSTED,
+            False,
+        )
+    if isinstance(error, AgentOutputInvalidError):
+        # Submission middleware owns stage-local correction. Escaping it is terminal.
+        return FailureDisposition(error.code, FailureCategory.AGENT_OUTPUT_INVALID, False)
+    if isinstance(error, GuardrailRejected):
+        try:
+            error_code = validate_error_code(error.code)
+        except ValueError:
+            error_code = "policy_rejected"
+        return FailureDisposition(error_code, FailureCategory.POLICY_REJECTED, False)
+    if isinstance(error, ModelUnavailableError):
+        return FailureDisposition(error.code, FailureCategory.MODEL_UNAVAILABLE, True)
+    if isinstance(error, GuardrailUnavailable):
+        return FailureDisposition(
+            "guardrail_unavailable",
+            FailureCategory.MODEL_UNAVAILABLE,
+            True,
+        )
+    return FailureDisposition("internal_error", FailureCategory.INTERNAL_ERROR, False)
 
 
 class ProspectJobWorker:
@@ -57,16 +105,9 @@ class ProspectJobWorker:
         try:
             await self._handler(claim.run_id, claim.claim_token)
         except Exception as error:
-            if isinstance(error, GuardrailRejected):
-                error_code = error.code
-                retryable = False
-            elif isinstance(error, GuardrailUnavailable):
-                error_code = "guardrail_unavailable"
-                retryable = True
-            else:
-                error_code = "execution_failed"
-                retryable = True
-            retrying = retryable and claim.attempts < self._max_attempts
+            disposition = classify_worker_failure(error)
+            retrying = disposition.retryable and claim.attempts < self._max_attempts
+            retry_decision = RetryDecision.RESUME_WORKER if retrying else RetryDecision.TERMINAL
             # Exception text can carry model output or source data; log only its class.
             log = logger.awarning if retrying else logger.aerror
             await log(
@@ -74,7 +115,7 @@ class ProspectJobWorker:
                 worker_id=self._worker_id,
                 run_id=str(claim.run_id),
                 attempt=claim.attempts,
-                error_code=error_code,
+                error_code=disposition.error_code,
                 error_type=type(error).__name__,
                 retrying=retrying,
                 duration_ms=round((perf_counter() - started) * 1000, 3),
@@ -84,9 +125,11 @@ class ProspectJobWorker:
                 claim.id,
                 claim.claim_token,
                 self._clock(),
-                error_code=error_code,
-                retryable=retryable,
+                error_code=disposition.error_code,
+                retryable=disposition.retryable,
                 max_attempts=self._max_attempts,
+                failure_category=disposition.category,
+                retry_decision=retry_decision,
             )
         else:
             completed = await asyncio.to_thread(

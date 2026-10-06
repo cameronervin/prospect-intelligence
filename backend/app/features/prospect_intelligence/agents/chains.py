@@ -158,7 +158,7 @@ def build_orchestrator_agent(
     specialist_model: BaseChatModel,
     tools: ToolRegistry,
     store: BaseStore,
-    prompt_revision: PromptRevision = "outreach-v2",
+    prompt_revision: PromptRevision = "outreach-v4",
     interpreter_enabled: bool = True,
 ) -> Runnable[dict[str, object], dict[str, object]]:
     """Build the single Deep Agent harness for the prospect workflow."""

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.features.authentication.public import AuthContext
 
+from .jobs import ArtifactAttemptRecorder
 from .models import OutreachDraft, ReviewAction
 from .runtime_guardrails import RuntimeGuardrail
 from .workflow import checkpoint_thread_id, preference_namespace
@@ -47,8 +48,10 @@ class ProspectRuntimeContext:
     contact_name: str = ""
     contact_role: str = ""
     rep_display_name: str = ""
+    other_account_names: tuple[str, ...] = field(default=(), repr=False)
     runtime_guardrail: RuntimeGuardrail | None = None
     injection_canary: Callable[[], str | None] | None = None
+    artifact_attempts: ArtifactAttemptRecorder | None = None
 
     @property
     def tenant_id(self) -> str:

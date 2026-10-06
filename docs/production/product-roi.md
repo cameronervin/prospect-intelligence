@@ -51,16 +51,32 @@ volume, or a customer-specific forecast.
 The inference estimate starts with the CAM-40 baseline cost of $0.294620 per run. Adjusting for its
 5 target errors in 72 runs gives about $0.317 per completed analysis, or $7,600 for 24,000 analyses.
 
-Add an estimated $125,000 for first-year hardening, security work, deployment, and integration. This
-makes total first-year product spend about $215,000. Existing CRM, GenLogs, and carrier data costs
+Add an estimated $80,000 for first-year hardening, security work, deployment, and integration. This
+makes total first-year product spend about $170,000. Existing CRM, GenLogs, and carrier data costs
 are excluded by assumption.
+
+The $80,000 is an effort estimate, not a quote. It assumes the team builds with agentic coding tools,
+and it prices engineering at about $200,000 per loaded FTE-year (about $4,000 per week), the same rate
+behind the 0.25 FTE line above. Agentic tools compress coding, not the dependencies: client IT setup
+for SSO, data access and field mapping, and the external security review still set a pilot start
+about two to three months out. A conventional estimate was about 27.5 engineer-weeks, or $125,000.
+
+| One-time workstream | Effort | Estimate |
+| --- | ---: | ---: |
+| Enterprise SSO and row-level security | 3 engineer-weeks | $12,000 |
+| LangSmith Deployment, message queue, and once-only sends | 3 engineer-weeks | $12,000 |
+| Guardrails: sandboxed code, gateway PII rules, Jev calibration | 3 engineer-weeks | $12,000 |
+| Real CRM, GenLogs, and carrier-network connections | 6 engineer-weeks | $24,000 |
+| Pilot evaluation set and monitoring setup | 1 engineer-week | $4,000 |
+| External security review | Fixed fee | $16,000 |
+| **Total** | **16 engineer-weeks + review** | **$80,000** |
 
 | Measure | Recurring | First year |
 | --- | ---: | ---: |
-| Gross sales / product spend | 26x | 11x |
-| Contribution / product spend | 3.1x | 1.3x |
-| Product spend per won lane | $2,600 | $6,200 |
-| Incremental wins required to break even | 11 | 27 |
+| Gross sales / product spend | 26x | 14x |
+| Contribution / product spend | 3.1x | 1.7x |
+| Product spend per won lane | $2,600 | $4,900 |
+| Incremental wins required to break even | 11 | 21 |
 
 Research-time savings are excluded to avoid counting the same benefit twice. They would be
 additional upside.

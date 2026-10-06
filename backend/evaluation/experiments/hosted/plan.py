@@ -8,7 +8,7 @@ from evaluation.datasets.freight_prospect_v1 import DATASET_VERSION
 HISTORICAL_HOSTED_GRAPH_REVISION = "prospect-intelligence-v1"
 # Compatibility alias used by historical alignment evidence readers.
 HOSTED_GRAPH_REVISION = HISTORICAL_HOSTED_GRAPH_REVISION
-ACTIVE_HOSTED_GRAPH_REVISION = "prospect-intelligence-v2"
+ACTIVE_HOSTED_GRAPH_REVISION = "prospect-intelligence-v4"
 
 
 @dataclass(frozen=True, slots=True)

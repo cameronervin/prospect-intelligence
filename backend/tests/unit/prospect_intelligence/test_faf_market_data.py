@@ -12,7 +12,6 @@ from uuid import UUID
 import pytest
 from deepagents.backends.protocol import FileData
 
-from app.features.prospect_intelligence.agents import tools as agent_tools
 from app.features.prospect_intelligence.agents.guardrails.deterministic import (
     validate_agent_artifacts,
 )
@@ -25,6 +24,9 @@ from app.features.prospect_intelligence.contracts import (
     SourceMode,
 )
 from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
+from app.features.prospect_intelligence.contracts.source_serialization import (
+    canonical_source_document,
+)
 from app.features.prospect_intelligence.integrations.market_data import faf5 as faf_module
 from app.features.prospect_intelligence.integrations.market_data import snapshot as snapshot_module
 from app.features.prospect_intelligence.integrations.market_data.faf5 import (
@@ -77,7 +79,7 @@ def test_faf_market_source_conforms_and_returns_normalized_lane_with_exact_evide
 
 def test_successful_faf_tool_result_passes_artifact_validation_and_projection() -> None:
     result = Faf5MarketDataSource().get_lane(_context(), "041", "061")
-    payload = agent_tools._json_safe(result)  # pyright: ignore[reportPrivateUsage]
+    payload = canonical_source_document(result)
     path = PROSPECT_FILES.market_research
     files: dict[str, FileData] = {path: {"content": json.dumps(payload), "encoding": "utf-8"}}
     external_research = next(

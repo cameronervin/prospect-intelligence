@@ -72,14 +72,14 @@ class FakeResults:
         return rows()
 
 
-def _active_v2_plan() -> ExperimentPlan:
+def _active_v4_plan() -> ExperimentPlan:
     historical = ExperimentPlan.default()
     return replace(
         historical,
         graph_revision=ACTIVE_HOSTED_GRAPH_REVISION,
         archived=False,
         variants=tuple(
-            replace(variant, prompt_revision="outreach-v2") for variant in historical.variants
+            replace(variant, prompt_revision="outreach-v4") for variant in historical.variants
         ),
     )
 
@@ -119,7 +119,7 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
     def record_verification(**kwargs: object) -> None:
         verifications.append(dict(kwargs))
 
-    plan = replace(_active_v2_plan(), evaluator_version="test-evaluators-v9")
+    plan = replace(_active_v4_plan(), evaluator_version="test-evaluators-v9")
     summary = await run_hosted_evaluations(
         plan=plan,
         dataset_name="freight-prospect-v1",
@@ -151,12 +151,12 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
         assert call["data"] == "freight-prospect-v1"
         metadata = call["metadata"]
         assert len(metadata["rep_scope_sha256"]) == 64  # type: ignore[index]
-        assert metadata["graph_revision"] == "prospect-intelligence-v2"  # type: ignore[index]
+        assert metadata["graph_revision"] == "prospect-intelligence-v4"  # type: ignore[index]
         assert metadata["evaluator_version"] == "test-evaluators-v9"  # type: ignore[index]
         assert metadata["evidence_class"] == "release_experiment"  # type: ignore[index]
         assert metadata["experiment_purpose"] == "model_selection"  # type: ignore[index]
         assert metadata["alignment_run"] is False  # type: ignore[index]
-        assert metadata["prompt_revision"] == "outreach-v2"  # type: ignore[index]
+        assert metadata["prompt_revision"] == "outreach-v4"  # type: ignore[index]
         assert metadata["code_revision"] == "f75630c31df2-dirty-abc123def456"  # type: ignore[index]
         assert call["max_concurrency"] == 2
     assert len(verifications) == 4
@@ -166,7 +166,7 @@ async def test_hosted_runner_executes_all_variants_with_ordered_evaluators() -> 
 async def test_hosted_runner_rejects_local_rows_missing_from_langsmith() -> None:
     client = FakeClient()
     judge = FakeJudge()
-    active = _active_v2_plan()
+    active = _active_v4_plan()
     plan = replace(active, variants=(active.variants[0],))
 
     class CompleteLocalResults(FakeResults):

@@ -8,7 +8,12 @@ import pytest
 from structlog.testing import capture_logs
 
 from app.features.prospect_intelligence.contracts.agent_runtime import ProspectRuntimeContext
-from app.features.prospect_intelligence.contracts.jobs import ClaimedJob, JobRepository
+from app.features.prospect_intelligence.contracts.jobs import (
+    ClaimedJob,
+    FailureCategory,
+    JobRepository,
+    RetryDecision,
+)
 from app.features.prospect_intelligence.contracts.runtime_guardrails import (
     GuardrailRejected,
     GuardrailUnavailable,
@@ -16,6 +21,10 @@ from app.features.prospect_intelligence.contracts.runtime_guardrails import (
 from app.features.prospect_intelligence.contracts.workflow import (
     checkpoint_thread_id,
     preference_namespace,
+)
+from app.features.prospect_intelligence.domain.errors import (
+    AgentOutputExhaustedError,
+    ModelUnavailableError,
 )
 from app.features.prospect_intelligence.services.worker import ProspectJobWorker
 from app.platform.agent_runtime import psycopg_connection_string
@@ -67,7 +76,7 @@ class FakeJobs:
             lease_expires_at=NOW + timedelta(minutes=5),
         )
         self.completed: list[tuple[int, UUID]] = []
-        self.failed: list[tuple[int, UUID, str, bool]] = []
+        self.failed: list[tuple[int, UUID, str, bool, FailureCategory, RetryDecision | None]] = []
         self.heartbeats: list[tuple[int, UUID]] = []
 
     def claim_next(
@@ -98,9 +107,20 @@ class FakeJobs:
         error_code: str,
         retryable: bool,
         max_attempts: int,
+        failure_category: FailureCategory = FailureCategory.INTERNAL_ERROR,
+        retry_decision: RetryDecision | None = None,
     ) -> bool:
         del now, max_attempts
-        self.failed.append((job_id, claim_token, error_code, retryable))
+        self.failed.append(
+            (
+                job_id,
+                claim_token,
+                error_code,
+                retryable,
+                failure_category,
+                retry_decision,
+            )
+        )
         return True
 
 
@@ -154,7 +174,16 @@ async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() 
         assert await worker.run_once() is True
 
     assert jobs.completed == []
-    assert jobs.failed == [(7, CLAIM_TOKEN, "execution_failed", True)]
+    assert jobs.failed == [
+        (
+            7,
+            CLAIM_TOKEN,
+            "internal_error",
+            False,
+            FailureCategory.INTERNAL_ERROR,
+            RetryDecision.TERMINAL,
+        )
+    ]
     assert [record["event"] for record in logs] == [
         "prospect_job_started",
         "prospect_run_execution_failed",
@@ -162,7 +191,7 @@ async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() 
     assert logs[1] == {
         "attempt": 3,
         "duration_ms": logs[1]["duration_ms"],
-        "error_code": "execution_failed",
+        "error_code": "internal_error",
         "error_type": "RuntimeError",
         "event": "prospect_run_execution_failed",
         "log_level": "error",
@@ -175,16 +204,51 @@ async def test_worker_sanitizes_failure_and_leaves_retry_policy_to_repository() 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("error", "code", "retryable"),
+    ("error", "code", "retryable", "category", "decision"),
     [
-        (GuardrailRejected("output_guardrail_rejected"), "output_guardrail_rejected", False),
-        (GuardrailUnavailable("private provider detail"), "guardrail_unavailable", True),
+        (
+            GuardrailRejected("output_guardrail_rejected"),
+            "output_guardrail_rejected",
+            False,
+            FailureCategory.POLICY_REJECTED,
+            RetryDecision.TERMINAL,
+        ),
+        (
+            GuardrailRejected("private provider detail"),
+            "policy_rejected",
+            False,
+            FailureCategory.POLICY_REJECTED,
+            RetryDecision.TERMINAL,
+        ),
+        (
+            GuardrailUnavailable("private provider detail"),
+            "guardrail_unavailable",
+            True,
+            FailureCategory.MODEL_UNAVAILABLE,
+            RetryDecision.RESUME_WORKER,
+        ),
+        (
+            ModelUnavailableError(),
+            "model_unavailable",
+            True,
+            FailureCategory.MODEL_UNAVAILABLE,
+            RetryDecision.RESUME_WORKER,
+        ),
+        (
+            AgentOutputExhaustedError(),
+            "agent_output_exhausted",
+            False,
+            FailureCategory.AGENT_OUTPUT_EXHAUSTED,
+            RetryDecision.TERMINAL,
+        ),
     ],
 )
 async def test_worker_applies_runtime_guardrail_retry_policy(
     error: Exception,
     code: str,
     retryable: bool,
+    category: FailureCategory,
+    decision: RetryDecision,
 ) -> None:
     jobs = FakeJobs()
 
@@ -201,4 +265,4 @@ async def test_worker_applies_runtime_guardrail_retry_policy(
 
     assert await worker.run_once() is True
 
-    assert jobs.failed == [(7, CLAIM_TOKEN, code, retryable)]
+    assert jobs.failed == [(7, CLAIM_TOKEN, code, retryable, category, decision)]

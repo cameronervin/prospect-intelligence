@@ -13,8 +13,8 @@ clients belong to `platform`; job/review handlers and workers belong to the feat
 - `context.py` provides scoped access to invocation context for isolated declarative subagents.
 - `middleware/` performs context projection, dynamic prompting, budgets, redaction, delegation
   prerequisites, tool policy, and specialist artifact validation.
-- `tools.py` defines explicit decorated tools and resolves the exact tool set exposed to each agent.
-- `guardrails.py` contains pure validation for artifacts, provenance, numeric grounding, outreach,
+- `tools/` groups source, typed-artifact, and workflow tools behind a narrow registry surface.
+- `guardrails/` contains pure validation for artifacts, provenance, numeric grounding, outreach,
   and path ownership.
 - `chains.py` creates one shared composite backend, five declarative specialist definitions, and
   the single root Deep Agent harness.
@@ -58,10 +58,14 @@ redraft only for outreach findings from a later review, caps reviews at three, a
 contracts validate. Draft content itself is judged by the reviewer, not by gate regexes.
 
 Each model request first receives an allowlisted context projection and dynamic prompt. Budget and
-delegation middleware constrain model/tool calls. Tool errors are sanitized, platform policy hides
-trace payloads and metadata, and artifact middleware validates specialist output before it returns
-to the root. The lane analyst alone receives QuickJS, limited to read/glob and read-only
-lane-analysis tools, plus the packaged `lane-fit-v1` skill through `/skills/`.
+delegation middleware constrain model/tool calls. Typed submissions receive at most two canonical
+error-status corrections containing only allowlisted fields, codes, fixed instructions, and the
+remaining-attempt count; the third invalid call fails closed. The attempt ledger stores the first
+deterministic issue code, never submitted content. Other tool errors remain sanitized, platform
+policy hides trace payloads and metadata, and artifact middleware validates specialist output
+before it returns to the root. The lane analyst alone receives QuickJS, limited to read/glob over
+its allowed files; deterministic scoring remains a normal typed tool outside the interpreter. It
+also receives the packaged `lane-fit-v1` skill through `/skills/`.
 
 One `CompositeBackend` routes run files to `StateBackend`, rep preferences to a
 tenant/rep-namespaced `StoreBackend`, and skills to a traversal-confined project

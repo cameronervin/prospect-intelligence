@@ -11,6 +11,8 @@ from .policy import (
     ToolVisibilityMiddleware,
 )
 from .progress import ProgressMiddleware
+from .provider import ProviderAvailabilityMiddleware
+from .submissions import SubmissionRecoveryMiddleware
 
 __all__ = [
     "ArtifactValidationMiddleware",
@@ -18,7 +20,9 @@ __all__ = [
     "DelegationPolicyMiddleware",
     "ModelToolBudgetMiddleware",
     "ProgressMiddleware",
+    "ProviderAvailabilityMiddleware",
     "SafeToolErrorMiddleware",
+    "SubmissionRecoveryMiddleware",
     "ToolVisibilityMiddleware",
     "middleware_for_agent",
     "validate_delegation",

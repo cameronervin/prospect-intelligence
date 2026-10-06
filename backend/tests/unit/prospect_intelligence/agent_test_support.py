@@ -67,7 +67,12 @@ def review_findings(
     )
 
 
-def completed_files(account_name: str = "Acme Foods") -> dict[str, FileData]:
+def completed_files(
+    account_name: str = "Acme Foods",
+    *,
+    lane_origin: str = "ATL",
+    lane_destination: str = "DAL",
+) -> dict[str, FileData]:
     return {
         "/task/brief.md": file_data(f"Research {account_name} freight fit."),
         "/INDEX.md": file_data("# Prospect artifact manifest\n"),
@@ -79,8 +84,8 @@ def completed_files(account_name: str = "Acme Foods") -> dict[str, FileData]:
                 {
                     "lanes": [
                         {
-                            "origin": "ATL",
-                            "destination": "DAL",
+                            "origin": lane_origin,
+                            "destination": lane_destination,
                             "weekly_loads": 8,
                         }
                     ]
@@ -93,8 +98,8 @@ def completed_files(account_name: str = "Acme Foods") -> dict[str, FileData]:
                 {
                     "lanes": [
                         {
-                            "origin": "ATL",
-                            "destination": "DAL",
+                            "origin": lane_origin,
+                            "destination": lane_destination,
                             "weekly_loads": 8,
                         }
                     ]
@@ -108,21 +113,26 @@ def completed_files(account_name: str = "Acme Foods") -> dict[str, FileData]:
         ),
         "/analysis/lane_fit.json": file_data(
             '{"method_version":"lane_fit_v1","verdict":"fit","top_lanes":['
-            '{"origin":"ATL","destination":"DAL","shipper_loads_per_week":8,'
+            f'{{"origin":"{lane_origin}","destination":"{lane_destination}",'
+            '"shipper_loads_per_week":8,'
             '"matched_loads_per_week":8,"backhaul_fill":"1","density":"0.5",'
             '"equipment_match":"0.75","fit_score":"0.8",'
             '"modeled_annual_revenue":"582400","deadhead_miles_avoided":249600,'
             '"method_version":"lane_fit_v1"}]}'
         ),
-        "/analysis/lane_fit.md": file_data("ATL to DAL: 8 matched loads; fit score 0.8."),
+        "/analysis/lane_fit.md": file_data(
+            f"{lane_origin} to {lane_destination}: 8 matched loads; fit score 0.8."
+        ),
         "/output/brief.md": file_data(
-            f"{account_name} has 8 matched weekly loads on ATL to DAL with fit score 0.8."
+            f"{account_name} has 8 matched weekly loads on {lane_origin} to "
+            f"{lane_destination} with fit score 0.8."
         ),
         "/output/outreach_draft.md": file_data(
             f"Subject: A freight conversation for {account_name}\n\n"
             "Hi Jordan,\n\n"
             "I'm Alex Morgan, and I represent an asset-based truckload carrier.\n\n"
-            f"{account_name}' distribution footprint and ATL-to-DAL freight activity may align "
+            f"{account_name}' distribution footprint and {lane_origin}-to-{lane_destination} "
+            "freight activity may align "
             "with lanes our team supports.\n\n"
             "Would you be open to a brief conversation next week to compare network needs?"
         ),
@@ -181,6 +191,8 @@ class TrajectoryModel(BaseChatModel):
     first_call_delay_seconds: float = 0.0
     delay_applied: bool = False
     account_name: str = "Acme Foods"
+    lane_origin: str = "ATL"
+    lane_destination: str = "DAL"
 
     @property
     def _llm_type(self) -> str:
@@ -232,7 +244,11 @@ class TrajectoryModel(BaseChatModel):
         )
 
     def _orchestrator(self, turn: int, messages: list[BaseMessage]) -> list[dict[str, object]]:
-        files = completed_files(self.account_name)
+        files = completed_files(
+            self.account_name,
+            lane_origin=self.lane_origin,
+            lane_destination=self.lane_destination,
+        )
         if turn == 0:
             return [
                 self._tool("read_file", "read-task", file_path="/task/brief.md"),
@@ -291,20 +307,45 @@ class TrajectoryModel(BaseChatModel):
     def _reviewer(self) -> list[dict[str, object]]:
         verdict = self.review_verdicts[self.reviews_written]
         self.reviews_written += 1
-        findings = review_findings(
-            verdict=verdict,
-            round_number=self.reviews_written,
-            findings=_REVISE_FINDINGS if verdict == "revise" else [],
-            resolved_prior=["F1", "F2"] if verdict == "pass" and self.reviews_written > 1 else [],
+        findings = json.loads(
+            review_findings(
+                verdict=verdict,
+                round_number=self.reviews_written,
+                findings=_REVISE_FINDINGS if verdict == "revise" else [],
+                resolved_prior=["F1", "F2"]
+                if verdict == "pass" and self.reviews_written > 1
+                else [],
+            )
         )
         return [
             self._tool(
-                "write_file",
-                f"write-review-{self.reviews_written}",
-                file_path="/review/findings.json",
-                content=findings,
+                "submit_quality_review",
+                f"submit-review-{self.reviews_written}",
+                **findings,
             )
         ]
+
+    def _typed_artifact_call(self, role: str, files: Mapping[str, FileData]) -> dict[str, object]:
+        if role == "account-context":
+            return self._tool("materialize_account_context", "materialize-account")
+        if role == "external-research":
+            return self._tool("materialize_external_research", "materialize-research")
+        if role == "lane-analyst":
+            return self._tool("score_lane_fit_v1", "materialize-lane-score")
+        if role == "outreach-drafter":
+            content = files["/output/outreach_draft.md"]["content"]
+            subject_line, body = content.split("\n\n", maxsplit=1)
+            paragraphs = body.split("\n\n")
+            return self._tool(
+                "submit_outreach_draft",
+                "submit-outreach",
+                subject=subject_line.removeprefix("Subject: "),
+                greeting=paragraphs[0],
+                introduction=paragraphs[1],
+                relevance=paragraphs[2],
+                call_to_action=paragraphs[3],
+            )
+        raise AssertionError(f"unsupported scripted role: {role}")
 
     def _generate(
         self,
@@ -335,7 +376,11 @@ class TrajectoryModel(BaseChatModel):
             self.injected_failures += 1
             raise RuntimeError("synthetic late root failure")
         self.call_counts[role] = self.call_counts.get(role, 0) + 1
-        files = completed_files(self.account_name)
+        files = completed_files(
+            self.account_name,
+            lane_origin=self.lane_origin,
+            lane_destination=self.lane_destination,
+        )
         tool_calls: list[dict[str, object]] = []
         if role == "orchestrator":
             tool_calls = self._orchestrator(turn, messages)
@@ -347,7 +392,7 @@ class TrajectoryModel(BaseChatModel):
                 self._tool("send_outreach", "forbidden-send"),
             ]
         elif self.probe_account_context and role == "account-context" and turn == 0:
-            tool_calls = [self._tool("get_crm_account", "probe-account-context")]
+            tool_calls = [self._tool("materialize_account_context", "probe-account-context")]
         elif self.probe_account_context and role == "account-context" and turn == 1:
             memory_path = re.search(r"\[(/memories/[^\]]+)\]", system)
             if memory_path is None:
@@ -355,27 +400,37 @@ class TrajectoryModel(BaseChatModel):
             tool_calls = [
                 self._tool("read_file", "probe-account-memory", file_path=memory_path.group(1))
             ]
+        elif self.probe_account_context and role == "account-context" and turn == 2:
+            tool_calls = []
         elif turn == (
-            2
-            if self.probe_account_context and role == "account-context"
-            else 1
-            if self.attempt_forbidden_specialist_tools and role == "account-context"
-            else 0
+            1 if self.attempt_forbidden_specialist_tools and role == "account-context" else 0
         ):
+            tool_calls = [self._typed_artifact_call(role, files)]
+        elif role == "lane-analyst" and turn == 1:
             tool_calls = [
                 self._tool(
                     "write_file",
-                    f"write-{role}-{index}",
-                    file_path=path,
-                    content=files[path]["content"],
+                    "write-lane-narrative",
+                    file_path="/analysis/lane_fit.md",
+                    content=files["/analysis/lane_fit.md"]["content"],
                 )
-                for index, path in enumerate(_OWNED_PATHS[role])
             ]
         message = AIMessage(content="completed" if not tool_calls else "", tool_calls=tool_calls)
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
 def runtime_context(*, rep_preferences: tuple[str, ...] = ()) -> ProspectRuntimeContext:
+    files = completed_files()
+
+    def source(path: str) -> dict[str, object]:
+        payload = cast("dict[str, object]", json.loads(files[path]["content"]))
+        value = {key: item for key, item in payload.items() if key not in {"coverage", "evidence"}}
+        return {
+            "value": value,
+            "coverage": payload["coverage"],
+            "evidence": payload["evidence"],
+        }
+
     return ProspectRuntimeContext(
         run_id=UUID("00000000-0000-0000-0000-000000000123"),
         auth=auth_context(tenant_id="tenant-demo", rep_id="rep-demo"),
@@ -384,4 +439,14 @@ def runtime_context(*, rep_preferences: tuple[str, ...] = ()) -> ProspectRuntime
         contact_name="Jordan Lee",
         contact_role="Director of Transportation",
         rep_display_name="Alex Morgan",
+        tool_handlers={
+            "get_crm_account": lambda _: source("/context/account.json"),
+            "get_network_lanes": lambda _: source("/context/our_network.json"),
+            "search_genlogs": lambda _: source("/research/freight_intel/lanes.json"),
+            "search_sec": lambda _: source("/research/company/company.json"),
+            "search_tavily": lambda _: source("/research/company/company.json"),
+            "get_fmcsa": lambda _: source("/research/company/company.json"),
+            "get_faf_market_volume": lambda _: source("/research/market/volumes.json"),
+            "score_lane_fit_v1": lambda _: json.loads(files["/analysis/lane_fit.json"]["content"]),
+        },
     )

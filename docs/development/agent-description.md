@@ -75,9 +75,9 @@ with synthetic facts.
 
 ## 4. Virtual filesystem contract
 
-Each specialist writes only its canonical artifacts below. Source artifacts use structured JSON;
-analysis adds a short markdown summary, and final outputs are Markdown. Every evidence item carries
-complete provenance. The orchestrator and evaluators rely on this contract.
+Typed domain tools own every machine-consumed artifact below. Generic `write_file` is limited to the
+lane-analysis narrative and sales brief. Every source evidence item retains complete provenance;
+the orchestrator and evaluators rely on this contract.
 
 ```
 /task/brief.md                 # task, account, objective, filesystem map. Orchestrator reads first.
@@ -115,16 +115,18 @@ complete provenance. The orchestrator and evaluators rely on this contract.
 
 ### Subagents
 
-1. **account-context**: mock CRM + internal network → `/context/`
+1. **account-context**: calls `materialize_account_context` for mock CRM + internal network →
+   `/context/`
 2. **external-research**: GenLogs-shaped freight activity, FMCSA, web search, SEC EDGAR, and FAF5
-   through separate injected source tools → `/research/`
-3. **lane-analyst**: uses the code interpreter with PTC. Reads `/context` and `/research`,
-   loads `/skills/lane-fit-v1/SKILL.md`, fans out lane lookups, and computes scores → `/analysis/`
+   through `materialize_external_research` → `/research/`
+3. **lane-analyst**: calls deterministic `score_lane_fit_v1` for canonical JSON and writes only the
+   human-readable lane narrative → `/analysis/`
 4. **outreach-drafter**: reads `/output/brief.md`, tenant/rep-scoped preferences, and review
-   findings on a revision; writes `/output/outreach_draft.md` using an approved v1 template.
+   findings on a revision; submits typed subject and paragraph fields through
+   `submit_outreach_draft`.
 5. **quality-reviewer**: read-only judgment over the brief and outreach against all evidence, the
-   lane analysis, rep preferences, and the brief template. No checking tools; writes only
-   `/review/findings.json` (round, pass/revise verdict, blocking/advisory findings).
+   lane analysis, rep preferences, and the brief template; submits typed findings through
+   `submit_quality_review`.
 
 The Deep Agents default general-purpose subagent is disabled. One orchestrator is built with
 `create_deep_agent()`; its five declarative, isolated specialists are compiled internally with
@@ -135,18 +137,21 @@ The Deep Agents default general-purpose subagent is disabled. One orchestrator i
 The orchestrator and specialists share one composite virtual backend while each receives an explicit
 tool list, filesystem policy, and concrete middleware stack. Middleware projects the allowlisted task,
 manifest, artifacts, and rep preferences before model calls; applies model/tool budgets; redacts
-tool errors; treats source results as untrusted data; gates delegation and
+tool errors; treats source results as untrusted data; gives each typed artifact submission two
+canonical, allowlisted multi-issue corrections before terminal exhaustion; gates delegation and
 `send_outreach` on review order and freshness; and validates each specialist's owned artifact
 contracts. Draft content is judged by the quality reviewer rather than regex checks at the gate;
-the v1 outreach template allowlist is still enforced in the domain when the result is committed and
-on rep edits. LangGraph state contains checkpointed workflow data only, while the verified
+the outreach-v4 allowlist is still enforced in the domain when the result is committed and on rep
+edits. The subject binds the selected account and the relevance paragraph binds the selected lane;
+the account need not be repeated in that paragraph. LangGraph state contains checkpointed workflow
+data only, while the verified
 `AuthContext`, source handlers, and other request-scoped dependencies use LangGraph
 `context_schema`/`Runtime.context`. Optional `runtime-jev-v1` input/output nodes are wired around the
 Deep Agent and default off; they checkpoint only sanitized decision metadata.
 Platform trace privacy hides all run inputs, outputs, and metadata by default.
 
 The code layout keeps those concepts visible as `chains.py`, `prompts/`, `specs.py`, `graphs.py`,
-`compiler.py`, `state.py`, `tools.py`, `guardrails.py`, `runtime.py`, and `context.py`.
+`compiler.py`, `state.py`, `tools/`, `guardrails/`, `runtime.py`, and `context.py`.
 `middleware/` and SDK-formatted `skills/` remain directories. `ProspectRuntimeContext` stays in the
 feature contracts, while `agents/context.py` bridges it into isolated declarative subagents because
 Deep Agents 0.7.19 does not forward the parent's typed context. Invocation dependencies are never
@@ -175,7 +180,7 @@ verifies the analyst's numbers.
 
 ### Code interpreter rules
 
-- PTC allowlist: `read_file`, `glob`, and read-only lane-analysis tools only.
+- PTC allowlist: `read_file` and `glob` only.
 - Artifact writes use the lane analyst's path-scoped filesystem tools outside PTC.
 - Never allowlist `send_outreach` or `update_crm`. PTC calls bypass `interrupt_on`.
 - Defaults: `mode="thread"`, 5s timeout, 64MB memory; tune if lane fan-out needs more.

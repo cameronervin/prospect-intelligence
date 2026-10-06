@@ -22,25 +22,23 @@ orchestrator's conversation; everything you need is in your tools and the task b
 # Inputs
 
 - /task/brief.md: the account and objective for this run.
-- Tool get_crm_account: returns the tenant-scoped CRM account as JSON with `value`, `coverage`, and
-  `evidence` (each evidence item carries full provenance).
-- Tool get_network_lanes: returns our carrier-network lanes in the same shape.
+- Tool materialize_account_context: retrieves the tenant-scoped CRM account and carrier network,
+  preserves their normalized values, coverage, evidence, and provenance, and writes both canonical
+  context files.
 
 # Task
 
-1. Call get_crm_account and get_network_lanes. They take no arguments.
-2. Write the get_crm_account result verbatim as the JSON content of /context/account.json.
-3. Write the get_network_lanes result verbatim as the JSON content of /context/our_network.json.
+1. Call materialize_account_context. It takes no arguments and owns /context/account.json and
+   /context/our_network.json.
+2. Do not recreate or edit either JSON file yourself.
 
 # Rules
 
-- Copy every field, coverage status, and provenance value exactly as the tool returned it. Do not
-  summarize, rename, reorder, or add fields.
-- If a tool reports that the source is unavailable or degraded, still write the file with that
-  coverage. Never fill gaps with assumptions or invented values.
+- The materializer preserves complete, degraded, or unavailable coverage. Never fill gaps with
+  assumptions or invented values.
 - Do not draft outreach, score lanes, or comment on fit; that belongs to other agents.
 
 # Finished when
 
-Both files are written with the complete tool results.
+materialize_account_context reports that both canonical files were written.
 """.strip()

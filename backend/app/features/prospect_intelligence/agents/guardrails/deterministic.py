@@ -29,14 +29,6 @@ _PROVENANCE_FIELDS = frozenset(
         "source_version",
     }
 )
-_INTERNAL_OUTREACH_TERMS = (
-    "empty capacity",
-    "margin",
-    "cost basis",
-    "internal rate",
-    "vendor field",
-    "other customer",
-)
 
 
 def file_data(content: str) -> FileData:
@@ -183,9 +175,6 @@ def validate_outreach(
 ) -> None:
     first, separator, body = content.partition("\n")
     if not separator or not first.startswith("Subject: "):
-        raise ValueError("outreach draft violates the customer-safe allowlist")
-    lowered = content.casefold()
-    if any(term in lowered for term in _INTERNAL_OUTREACH_TERMS):
         raise ValueError("outreach draft violates the customer-safe allowlist")
     draft = OutreachDraft(subject=first.removeprefix("Subject: ").strip(), body=body.strip())
     try:

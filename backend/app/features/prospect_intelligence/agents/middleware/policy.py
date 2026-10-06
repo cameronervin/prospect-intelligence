@@ -146,7 +146,9 @@ class ToolVisibilityMiddleware(ProspectMiddleware):
 
     def __init__(self, spec: AgentSpec) -> None:
         super().__init__(spec.name)
-        native = {"ls", "read_file", "write_file", "edit_file", "glob", "grep"}
+        native = {"ls", "read_file", "glob", "grep"}
+        if spec.writable_paths:
+            native.update(("write_file", "edit_file"))
         if spec.subagent_names:
             native.add("task")
         if spec.ptc_tool_names:
@@ -193,7 +195,16 @@ class SafeToolErrorMiddleware(ProspectMiddleware):
 
     def __init__(self, spec: AgentSpec) -> None:
         super().__init__(spec.name)
-        self._source_tools = frozenset(spec.tool_names).difference({"send_outreach"})
+        source_tools = {
+            "get_crm_account",
+            "get_network_lanes",
+            "search_genlogs",
+            "search_sec",
+            "search_tavily",
+            "get_fmcsa",
+            "get_faf_market_volume",
+        }
+        self._source_tools = frozenset(spec.tool_names).intersection(source_tools)
 
     async def awrap_tool_call(
         self,

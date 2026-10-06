@@ -1,6 +1,5 @@
 """Deterministic chat model that traverses the production graph topology."""
 
-import json
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
@@ -19,8 +18,6 @@ from app.features.prospect_intelligence.domain.outreach import (
     OutreachContext,
     validate_customer_outreach,
 )
-
-_PASSING_REVIEW = json.dumps({"round": 1, "verdict": "pass", "findings": [], "resolved_prior": []})
 
 
 class ScenarioScriptedModel(BaseChatModel):
@@ -156,38 +153,46 @@ class ScenarioScriptedModel(BaseChatModel):
             )
             tool_calls = [
                 self._tool(
-                    "write_file",
-                    "write-review",
-                    file_path=PROSPECT_FILES.review_findings,
-                    content=_PASSING_REVIEW,
+                    "submit_quality_review",
+                    "submit-review",
+                    round=1,
+                    verdict="pass",
+                    findings=[],
+                    resolved_prior=[],
                 )
             ]
         elif turn == 0:
-            owned_paths = {
-                "account-context": (
-                    PROSPECT_FILES.account_context,
-                    PROSPECT_FILES.network_context,
-                ),
-                "external-research": (
-                    PROSPECT_FILES.freight_research,
-                    PROSPECT_FILES.company_research,
-                    PROSPECT_FILES.market_research,
-                ),
-                "lane-analyst": (
-                    PROSPECT_FILES.lane_fit_json,
-                    PROSPECT_FILES.lane_fit_markdown,
-                ),
-                "outreach-drafter": (PROSPECT_FILES.outreach_draft,),
-            }[role]
-            tool_calls = [
-                self._tool(
-                    "write_file",
-                    f"write-{role}-{index}",
-                    file_path=path,
-                    content=self.artifacts[path],
-                )
-                for index, path in enumerate(owned_paths)
-            ]
+            if role == "account-context":
+                tool_calls = [self._tool("materialize_account_context", "submit-account")]
+            elif role == "external-research":
+                tool_calls = [self._tool("materialize_external_research", "submit-research")]
+            elif role == "lane-analyst":
+                tool_calls = [
+                    self._tool("score_lane_fit_v1", "submit-lane-score"),
+                    self._tool(
+                        "write_file",
+                        "write-lane-narrative",
+                        file_path=PROSPECT_FILES.lane_fit_markdown,
+                        content=self.artifacts[PROSPECT_FILES.lane_fit_markdown],
+                    ),
+                ]
+            elif role == "outreach-drafter":
+                content = self.artifacts[PROSPECT_FILES.outreach_draft]
+                subject_line, separator, body = content.partition("\n\n")
+                paragraphs = body.split("\n\n")
+                if not separator or len(paragraphs) != 4:
+                    raise ValueError("scripted outreach must contain four paragraphs")
+                tool_calls = [
+                    self._tool(
+                        "submit_outreach_draft",
+                        "submit-outreach",
+                        subject=subject_line.removeprefix("Subject: ").strip(),
+                        greeting=paragraphs[0],
+                        introduction=paragraphs[1],
+                        relevance=paragraphs[2],
+                        call_to_action=paragraphs[3],
+                    )
+                ]
         self.tool_call_names.extend(str(call["name"]) for call in tool_calls)
         message = AIMessage(content="completed" if not tool_calls else "", tool_calls=tool_calls)
         return ChatResult(generations=[ChatGeneration(message=message)])

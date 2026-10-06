@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 
 from app.bootstrap.wiring import build_container
+from app.features.prospect_intelligence.fixtures.synthetic.catalog import SyntheticSourceCatalog
+from app.features.prospect_intelligence.public import rank_lane_fits
 from app.main import create_app
 from app.platform.config.settings import Environment, Settings
 from app.platform.llm import ModelSet
@@ -21,11 +23,20 @@ class ScriptedModelRuntime:
 
     @classmethod
     def for_frontend_demo(cls) -> "ScriptedModelRuntime":
+        scenario = SyntheticSourceCatalog.reviewed().scenario_for_account("sysco-corporation")
+        if scenario is None:
+            raise RuntimeError("the frontend demo account has no reviewed source scenario")
+        lanes = rank_lane_fits(scenario.shipper_lanes, scenario.network_lanes)
+        if not lanes:
+            raise RuntimeError("the frontend demo account has no reviewed fit lane")
+        top_lane = lanes[0]
         return cls(
             TrajectoryModel(
                 memory_path=_FRONTEND_DEMO_MEMORY,
                 first_call_delay_seconds=1.75,
                 account_name="Sysco Corporation",
+                lane_origin=top_lane.origin,
+                lane_destination=top_lane.destination,
             )
         )
 

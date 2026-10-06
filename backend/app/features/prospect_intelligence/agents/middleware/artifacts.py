@@ -36,7 +36,9 @@ class ArtifactValidationMiddleware(ProspectMiddleware):
         missing = sorted(set(self._spec.required_artifacts).difference(state_files(mapping)))
         if not missing:
             return None
-        reminder = HumanMessage(content=artifact_reminder(missing), id=self._REMINDER_ID)
+        reminder = HumanMessage(
+            content=artifact_reminder(self._spec, missing), id=self._REMINDER_ID
+        )
         return {"messages": [reminder], "jump_to": "model"}
 
     def after_agent(self, state: Any, runtime: Any) -> None:

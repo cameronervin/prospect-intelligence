@@ -34,7 +34,9 @@ the rep.
    previous findings' round plus one, or 1 when there is none.
 2. Read every input above. In later rounds, check each previous finding. List the ids that are
    fixed in `resolved_prior`, and carry forward any that are not.
-3. Evaluate the drafts against the rubric below and write /review/findings.json.
+3. Evaluate the drafts against the rubric below and call submit_quality_review with the typed
+   round, verdict, findings, and resolved_prior fields. The tool validates and writes
+   /review/findings.json; never write or edit it directly.
 4. Reply with one line: the round, the verdict, and the number of blocking findings.
 
 # Rubric
@@ -82,5 +84,5 @@ the rep.
 
 # Finished when
 
-/review/findings.json is written for this round with a verdict consistent with its findings.
+submit_quality_review accepts the round with a verdict consistent with its findings.
 """.strip()

@@ -73,20 +73,18 @@ def test_specs_define_exact_root_and_specialist_capabilities() -> None:
     )
     assert all(spec.model_class is ModelClass.SPECIALIST for spec in specialists)
     reviewer = next(spec for spec in specialists if spec.name == "quality-reviewer")
-    assert reviewer.tool_names == ()
-    assert reviewer.writable_paths == ("/review/findings.json",)
+    assert reviewer.tool_names == ("submit_quality_review",)
+    assert reviewer.writable_paths == ()
     assert not any(path.startswith("/output/") for path in reviewer.writable_paths)
     assert all("task" not in spec.tool_names for spec in specialists)
     analyst = next(spec for spec in specialists if spec.name == "lane-analyst")
     assert analyst.skill_sources == ("/skills/",)
-    assert analyst.ptc_tool_names == ("read_file", "glob", "score_lane_fit_v1")
+    assert analyst.ptc_tool_names == ("read_file", "glob")
     assert "write_file" not in analyst.ptc_tool_names
     assert "send_outreach" not in analyst.ptc_tool_names
     external = next(spec for spec in specialists if spec.name == "external-research")
-    assert "evidence `citation_id` exactly" in external.system_prompt
-    assert "`provenance.source` exactly" in external.system_prompt
-    assert "publisher, title, or domain" in external.system_prompt
-    assert "Do not copy the tools' `value` objects" in external.system_prompt
+    assert "preserves every opaque citation id" in external.system_prompt
+    assert "Do not recreate, edit, or summarize" in external.system_prompt
 
     root = orchestrator_spec()
     assert root.model_class is ModelClass.ORCHESTRATOR
@@ -122,17 +120,49 @@ def test_filesystem_permission_matrix_matches_every_agent_spec(spec: AgentSpec) 
 def test_model_facing_tools_have_explicit_input_schemas_and_descriptions() -> None:
     registry = build_tool_registry()
     expected: dict[str, dict[str, object]] = {
-        "get_crm_account": {},
-        "get_network_lanes": {},
-        "search_genlogs": {},
-        "search_sec": {},
-        "search_tavily": {},
-        "get_fmcsa": {},
-        "get_faf_market_volume": {
-            "origin_zone": {"type": "string"},
-            "destination_zone": {"type": "string"},
-        },
+        "materialize_account_context": {},
+        "materialize_external_research": {},
         "score_lane_fit_v1": {},
+        "submit_quality_review": {
+            "round": {"type": "integer"},
+            "verdict": {"type": "string"},
+            "findings": {"items": {"$ref": "#/$defs/ReviewFindingInput"}, "type": "array"},
+            "resolved_prior": {"items": {"type": "string"}, "type": "array"},
+        },
+        "submit_outreach_draft": {
+            "subject": {
+                "description": (
+                    "Customer-safe subject that includes the selected account name; no digits "
+                    "or markup."
+                ),
+                "type": "string",
+            },
+            "greeting": {
+                "description": "Exactly: Hi <selected contact first name>,",
+                "type": "string",
+            },
+            "introduction": {
+                "description": (
+                    "Name the selected representative and say they represent an asset-based "
+                    "truckload carrier without inventing a carrier brand."
+                ),
+                "type": "string",
+            },
+            "relevance": {
+                "description": (
+                    "Evidence-grounded relevance that includes the top lane exactly as "
+                    "<ORIGIN>-to-<DESTINATION>."
+                ),
+                "type": "string",
+            },
+            "call_to_action": {
+                "description": (
+                    "A specific, low-friction question of at least five words that ends with a "
+                    "question mark."
+                ),
+                "type": "string",
+            },
+        },
         "send_outreach": {},
     }
 
@@ -245,11 +275,11 @@ def test_factory_builds_one_deep_agent_with_five_declarative_subagents(
     assert [
         [tool.name for tool in cast("list[Any]", item["tools"])] for item in root_subagents
     ] == [
-        ["get_crm_account", "get_network_lanes"],
-        ["search_genlogs", "search_sec", "search_tavily", "get_fmcsa", "get_faf_market_volume"],
+        ["materialize_account_context"],
+        ["materialize_external_research"],
         ["score_lane_fit_v1"],
-        [],
-        [],
+        ["submit_outreach_draft"],
+        ["submit_quality_review"],
     ]
     assert [item.get("skills") for item in root_subagents] == [None, None, ["/skills/"], None, None]
     analyst_backend = cast(Any, root["backend"])
@@ -363,6 +393,7 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
         contact_name=later_run.account.contact_name,
         contact_role=later_run.account.contact_role,
         rep_display_name="Alex Morgan",
+        tool_handlers=runtime_context().tool_handlers,
     )
     model = TrajectoryModel()
     store = InMemoryStore()
@@ -392,7 +423,7 @@ async def test_declarative_subagents_follow_the_root_owned_trajectory() -> None:
         "orchestrator": 8,
         "account-context": 2,
         "external-research": 2,
-        "lane-analyst": 2,
+        "lane-analyst": 3,
         "outreach-drafter": 2,
         "quality-reviewer": 2,
     }
@@ -672,17 +703,27 @@ async def test_shared_memory_backend_keeps_concurrent_runtime_namespaces_isolate
 
     def first_handler(payload: dict[str, object]) -> object:
         first_handler_calls.append(payload)
-        return {"context": "FIRST_HANDLER_CANARY"}
+        source = runtime_context().tool_handlers["get_crm_account"](payload)
+        assert isinstance(source, dict)
+        typed = cast("dict[str, object]", source)
+        return {**typed, "value": {"context": "FIRST_HANDLER_CANARY"}}
 
     def second_handler(payload: dict[str, object]) -> object:
         second_handler_calls.append(payload)
-        return {"context": "SECOND_HANDLER_CANARY"}
+        source = runtime_context().tool_handlers["get_crm_account"](payload)
+        assert isinstance(source, dict)
+        typed = cast("dict[str, object]", source)
+        return {**typed, "value": {"context": "SECOND_HANDLER_CANARY"}}
 
-    first = replace(runtime_context(), tool_handlers={"get_crm_account": first_handler})
+    base = runtime_context()
+    first = replace(
+        base,
+        tool_handlers={**base.tool_handlers, "get_crm_account": first_handler},
+    )
     second = replace(
         first,
         auth=auth_context(tenant_id="tenant-other", rep_id="rep-other"),
-        tool_handlers={"get_crm_account": second_handler},
+        tool_handlers={**base.tool_handlers, "get_crm_account": second_handler},
     )
     store = InMemoryStore()
     for context, canary in ((first, "FIRST_CANARY"), (second, "SECOND_CANARY")):

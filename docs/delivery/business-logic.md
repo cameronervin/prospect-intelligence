@@ -81,8 +81,11 @@ Evidence: [source-adapter ADR](../architecture/decisions/0002-source-adapter-bou
 - `no_fit` and `needs_more_data` stop after the internal brief. They do not create outreach or ask
   the representative to approve a send.
 
-Customer-facing outreach must identify the selected account, contact, initiating representative,
-and top lane. It may not disclose internal rates, revenue, margin, capacity, deadhead, loads,
+Customer-facing outreach must bind the selected account in the subject, address the selected
+contact, identify the initiating representative and asset-based carrier role, and name the selected
+top lane in the relevance paragraph. Repeating the account name in that paragraph is optional
+because the subject already establishes the account and the whole draft rejects any other assigned
+account. Outreach may not disclose internal rates, revenue, margin, capacity, deadhead, loads,
 volumes, pricing, provider or source names, another customer, or unsupported claims. The current MVP
 also rejects digits, markup, control characters, invented carrier brands, and another assigned
 account's name. A valid message is a low-friction invitation, not a claim that the carrier knows the
@@ -173,6 +176,31 @@ response decision.
 Evidence: backend and frontend logging privacy, request-correlation, worker, provider-retry,
 lifecycle, authentication, and proxy tests.
 
+## Typed artifact ownership and bounded recovery
+
+- Machine-consumed account, research, lane-analysis JSON, review, and outreach artifacts are owned
+  by typed domain tools. The model supplies typed review/outreach fields but never authors their
+  serialized JSON or Markdown envelope. Generic file writing remains limited to the lane narrative
+  and internal sales brief.
+- A typed submission has three total attempts. The first two invalid calls receive a canonical
+  error envelope containing every detectable issue in deterministic order, remaining attempts, and
+  only allowlisted field, code, and fixed-instruction text. Submitted values, trusted values, raw
+  exceptions, and schema-validator output are never returned or persisted. The ledger stores only
+  the first deterministic issue code. The third invalid call records `agent_output_exhausted` and
+  fails closed. Final workflow and product-service validation remain independent trust boundaries.
+- Provider SDK retries happen before a `model_unavailable` worker failure. That category alone may
+  resume from the last committed graph checkpoint, with one- and two-second scheduling delays.
+  Policy rejection, exhausted output, and internal errors are terminal. External-source exhaustion
+  is represented as degraded or unavailable coverage instead of a failed run.
+- `prospect_execution_attempts` records sanitized worker and artifact-submission ordinals,
+  timestamps, categories, codes, and retry decisions. It stores no prompts, submitted values,
+  source payloads, model output, or exception text. Lease reclamation remains operationally
+  independent and does not masquerade as a retryable internal error.
+
+These boundaries retain live model reasoning while making serialization, retry authority, and
+customer-visible output validation deterministic application responsibilities. Active runs emit
+`prospect-intelligence-v4` and `outreach-v4`; prior revisions remain historical evidence.
+
 ## Evaluation authority and evidence limits
 
 Deterministic evaluators are authoritative for computable behavior: numeric grounding, lane ranking
@@ -223,8 +251,12 @@ median top-lane opportunity.
 
 Under those assumptions, about 35 wins produce $2.36 million in gross sales and $283,000 in
 contribution against about $90,000 in recurring product spend. Eleven incremental annual wins cover
-recurring spend; 27 cover the estimated $215,000 first-year spend. These values are planning
+recurring spend; 21 cover the estimated $170,000 first-year spend. These values are planning
 assumptions, not guaranteed revenue or production evidence.
+
+The $80,000 one-time build estimate is 16 engineer-weeks with agentic coding tools at about $200,000
+per loaded FTE-year, plus a $16,000 external security review. The 12% contribution margin is treated as conservative for
+backhaul lanes, where the return trip's driver and fuel cost is already incurred.
 
 A pilot must use matched non-agent accounts and count only incremental conversion and realized loads.
 Broader deployment requires at least 2x annualized contribution to recurring product cost, expected

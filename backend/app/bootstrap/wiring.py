@@ -39,6 +39,7 @@ from app.features.prospect_intelligence.integrations.freight_intelligence.synthe
 from app.features.prospect_intelligence.integrations.market_data.faf5 import Faf5MarketDataSource
 from app.features.prospect_intelligence.repositories.postgres import (
     PostgresAccountRepository,
+    PostgresExecutionAttemptRepository,
     PostgresJobRepository,
     PostgresPreferenceRepository,
     PostgresProspectStore,
@@ -46,6 +47,9 @@ from app.features.prospect_intelligence.repositories.postgres import (
     PostgresRunRepository,
     PostgresSendReceiptRepository,
     PostgresWorkflowRepository,
+)
+from app.features.prospect_intelligence.services.execution_attempts import (
+    DurableArtifactAttemptRecorder,
 )
 from app.features.prospect_intelligence.services.quality_events import QualityEventDispatcher
 from app.features.prospect_intelligence.services.runs import ProspectRunService
@@ -146,10 +150,10 @@ def build_container(
     quality_projector = (
         OnlineQualityProjector(
             evaluator_version=EVALUATOR_VERSION,
-            graph_revision="prospect-intelligence-v2",
+            graph_revision="prospect-intelligence-v4",
             rubric_version=RUBRIC_VERSION,
-            agent_version="prospect-intelligence-v2",
-            prompt_version="outreach-v2",
+            agent_version="prospect-intelligence-v4",
+            prompt_version="outreach-v4",
             evaluation_sample_rate=quality_config.evaluation_sample_rate,
         )
         if quality_config is not None
@@ -173,6 +177,10 @@ def build_container(
         source_http_transport=source_http_transport,
         quality_projector=quality_projector,
         runtime_guardrail=runtime_guardrail,
+        artifact_attempts=DurableArtifactAttemptRecorder(
+            PostgresExecutionAttemptRepository(persistence),
+            lambda: datetime.now(UTC),
+        ),
     )
     quality = _build_quality_component(settings, persistence, quality_config)
     return Container(

@@ -12,16 +12,10 @@ from app.features.prospect_intelligence.contracts.agent_runtime import (
     ProspectRuntimeContext,
     ToolHandler,
 )
-from app.features.prospect_intelligence.contracts.filesystem import PROSPECT_FILES
-from app.features.prospect_intelligence.contracts.lane_analysis import LaneAnalysisArtifact
+from app.features.prospect_intelligence.contracts.jobs import ArtifactAttemptRecorder
 from app.features.prospect_intelligence.contracts.models import (
-    AnalysisOutput,
-    FitVerdict,
-    ProspectBrief,
     ProspectRun,
-    RecommendedNextStep,
     RunStatus,
-    ScoredLane,
 )
 from app.features.prospect_intelligence.contracts.quality_evaluation import OnlineQualityProjector
 from app.features.prospect_intelligence.contracts.runtime_guardrails import RuntimeGuardrail
@@ -31,13 +25,11 @@ from app.features.prospect_intelligence.contracts.sources import (
     SourceCallContext,
 )
 from app.features.prospect_intelligence.services.agent_output import (
+    build_analysis_output,
     checkpoint_files,
     completed_without_review,
     injection_canary,
-    parse_outreach,
-    project_source_artifacts,
     require_expected_review,
-    text_file,
     validate_progress_coverage,
 )
 from app.features.prospect_intelligence.services.identity import persisted_auth
@@ -49,13 +41,12 @@ from app.features.prospect_intelligence.services.runs import ProspectRunService
 
 @dataclass(slots=True)
 class ProspectAgentJobHandler:
-    """Invoke one compiled graph and commit its validated product result."""
-
     runtime: ProspectAgentRuntime
     service: ProspectRunService
     sources: ProspectSources
     quality_projector: OnlineQualityProjector | None = None
     runtime_guardrail: RuntimeGuardrail | None = None
+    artifact_attempts: ArtifactAttemptRecorder | None = None
 
     async def __call__(self, run_id: UUID, claim_token: UUID) -> None:
         current = await asyncio.to_thread(self.service.get_run, run_id)
@@ -83,7 +74,9 @@ class ProspectAgentJobHandler:
             contact_name=run.account.contact_name,
             contact_role=run.account.contact_role,
             rep_display_name=run.created_by_display_name,
+            other_account_names=self.service.other_account_names(run),
             runtime_guardrail=self.runtime_guardrail,
+            artifact_attempts=self.artifact_attempts,
             injection_canary=lambda: injection_canary(source_context),
             tool_handlers=self._tool_handlers(run, source_context),
             progress=RunProgressSink(self.service.progress, run.id, claim_token),
@@ -108,7 +101,7 @@ class ProspectAgentJobHandler:
                     account_id=run.account.id,
                     task_brief=(
                         "Research the account's freight activity, compute lane_fit_v1, produce an "
-                        "evidence-backed internal brief, and only for a fit draft outreach-v2 for "
+                        "evidence-backed internal brief, and only for a fit draft outreach-v4 for "
                         "the selected run context."
                     ),
                 ),
@@ -118,7 +111,7 @@ class ProspectAgentJobHandler:
             files = result.files
             raw_state = result.raw
         typed_files = cast("Mapping[object, object]", files)
-        output = await asyncio.to_thread(self._build_output, run, typed_files)
+        output = await asyncio.to_thread(build_analysis_output, typed_files)
         require_expected_review(output, pending_interrupt)
         progressed_run = await asyncio.to_thread(self.service.get_run, run.id)
         validate_progress_coverage(progressed_run.steps, output.source_coverage)
@@ -187,63 +180,3 @@ class ProspectAgentJobHandler:
             "get_faf_market_volume": market,
             "score_lane_fit_v1": score,
         }
-
-    def _build_output(
-        self,
-        run: ProspectRun,
-        raw_files: Mapping[object, object],
-    ) -> AnalysisOutput:
-        files = {str(path): value for path, value in raw_files.items()}
-        projection = project_source_artifacts(files)
-        lane_projection = project_source_artifacts(
-            files,
-            paths=(PROSPECT_FILES.freight_research, PROSPECT_FILES.network_context),
-        )
-        analysis = LaneAnalysisArtifact.from_json(text_file(files, PROSPECT_FILES.lane_fit_json))
-        if analysis.verdict is FitVerdict.NEEDS_MORE_DATA:
-            return AnalysisOutput(
-                verdict=FitVerdict.NEEDS_MORE_DATA,
-                brief=ProspectBrief(
-                    summary="The available source coverage does not support a lane recommendation.",
-                    markdown="No usable lane-level freight and network evidence is available.",
-                    recommended_next_step=RecommendedNextStep.NEEDS_MORE_DATA,
-                    recommendation="Verify shipper lanes before outreach.",
-                    lanes=(),
-                ),
-                outreach=None,
-                source_coverage=projection.coverage,
-                evidence=projection.evidence,
-            )
-        ranked = analysis.top_lanes
-        verdict = analysis.verdict
-        markdown = text_file(files, PROSPECT_FILES.sales_brief)
-        outreach = (
-            parse_outreach(text_file(files, PROSPECT_FILES.outreach_draft))
-            if verdict is FitVerdict.FIT
-            else None
-        )
-        return AnalysisOutput(
-            verdict=verdict,
-            brief=ProspectBrief(
-                summary=(
-                    "Reviewed evidence shows a direct lane overlap worth a sales conversation."
-                    if ranked
-                    else "Reviewed evidence shows no direct lane overlap with usable capacity."
-                ),
-                markdown=markdown,
-                recommended_next_step=(
-                    RecommendedNextStep.NEW_LANE_PITCH if ranked else RecommendedNextStep.NOT_A_FIT
-                ),
-                recommendation=(
-                    "Review the evidence-backed outreach before simulated send."
-                    if ranked
-                    else "Do not prioritize outreach for this account."
-                ),
-                lanes=tuple(
-                    ScoredLane(score=lane, evidence=lane_projection.evidence) for lane in ranked
-                ),
-            ),
-            outreach=outreach,
-            source_coverage=projection.coverage,
-            evidence=projection.evidence,
-        )

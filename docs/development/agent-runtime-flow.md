@@ -27,7 +27,8 @@ through the orchestrator's `task` tool.
 ## Run time
 
 `ProspectAgentJobHandler` reconstructs the persisted actor snapshot and builds a
-`ProspectRuntimeContext` with `AuthContext`, source handlers, preferences, and progress reporting.
+`ProspectRuntimeContext` with `AuthContext`, source handlers, preferences, progress reporting, and a
+sanitized artifact-attempt recorder.
 LangGraph receives it through `context_schema`/`Runtime.context`; authentication claims never enter
 checkpoint state, prompts, files, or model messages.
 
@@ -62,9 +63,28 @@ selected specialist with:
 - A new conversation containing only the delegated task.
 - That specialist's model, prompt, tools, middleware, and permissions.
 
-The specialist writes artifacts to the shared filesystem. Deep Agents merges those files back into
-the orchestrator state, so later specialists can read them. Specialist conversation history is not
+Machine-consumed artifacts are written only by typed domain tools. Account and research tools
+serialize normalized source results, the lane scorer writes canonical analysis JSON, and the review
+and outreach tools validate typed fields before rendering their files. Generic `write_file` remains
+available only for `/analysis/lane_fit.md` and `/output/brief.md`. Deep Agents merges the files back
+into orchestrator state, so later specialists can read them; specialist conversation history is not
 returned.
+
+Each typed submission gets three total attempts. The first two invalid calls return an error-status
+`ToolMessage` whose canonical JSON contains every detectable allowlisted issue in deterministic
+order and the remaining-attempt count. Fields, codes, and instructions come from a closed catalog;
+submitted or trusted values, raw exceptions, and Pydantic diagnostics never enter feedback. The
+specialist fixes every listed issue from trusted run context and files, then resubmits the same
+tool. The third invalid call records `agent_output_exhausted` and fails closed.
+The internal `prospect_execution_attempts` ledger stores worker and artifact-submission ordinals,
+timestamps, categories, codes, and retry decisions, but never prompts, submitted values, source
+payloads, model output, or exception text. An invalid submission stores its first deterministic
+issue code; unknown issue codes and corrupt trusted artifacts are terminal internal errors.
+
+After provider retries are exhausted, `model_unavailable` schedules at most two worker resumes from
+the last committed LangGraph checkpoint, after one and two seconds. Policy rejection, exhausted
+agent output, and internal errors are terminal. Expired worker leases remain an independent,
+sanitized reclamation path.
 
 ## Files and context
 
