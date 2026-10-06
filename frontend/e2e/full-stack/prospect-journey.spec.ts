@@ -45,7 +45,17 @@ test("runs the durable rep-review journey through the real application stack", a
   await expect(review).toBeVisible({ timeout: 120_000 });
   await expect(page.getByRole("table", { name: "Top lanes" })).toBeVisible();
   const runEvidence = page.getByRole("region", { name: "Run evidence" });
-  await expect(runEvidence).toContainText("GenLogs fixture");
+  await expect(runEvidence).toContainText("GenLogs");
+  await expect(runEvidence).toContainText("Observed shipper lanes and facilities");
+  await expect(runEvidence).toContainText("Carrier capacity and density");
+  await expect(runEvidence).toContainText("Reviewed CRM account record");
+  await expect(runEvidence).not.toContainText("GenLogs fixture");
+  await expect(runEvidence).not.toContainText("Synthetic observed shipper lanes and facilities");
+  await expect(runEvidence).not.toContainText("Synthetic carrier capacity and density");
+  await expect(runEvidence).not.toContainText("Reviewed CRM demo account record");
+  await expect(page.getByRole("region", { name: "Why this account" })).not.toContainText(
+    "Review the evidence-backed outreach before simulated send.",
+  );
   await expect(runEvidence.getByText(/^ev_[a-f0-9]{24} ·/).first()).toBeVisible();
   await expect(page.getByText(/Synthetic fixture/)).toHaveCount(0);
   await expectNoHorizontalOverflow(page);

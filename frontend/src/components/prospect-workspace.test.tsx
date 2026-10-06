@@ -495,10 +495,10 @@ describe("ProspectWorkspace account selection and progress", () => {
     expect(sources.getByText("Degraded")).toBeInTheDocument();
     expect(sources.getByText("FMCSA QCMobile")).toBeInTheDocument();
     expect(sources.getByText("Unavailable")).toBeInTheDocument();
-    expect(sources.queryByText("CRM fixture")).not.toBeInTheDocument();
+    expect(sources.queryByText("CRM")).not.toBeInTheDocument();
 
     fireEvent.click(sources.getByRole("button", { name: "Show all 4 sources" }));
-    expect(sources.getByText("CRM fixture")).toBeInTheDocument();
+    expect(sources.getByText("CRM")).toBeInTheDocument();
     expect(sources.queryByText("Synthetic fixture")).not.toBeInTheDocument();
     expect(sources.getByText("Snapshot")).toBeInTheDocument();
     expect(sources.getAllByText("Live")).toHaveLength(2);
@@ -558,7 +558,7 @@ describe("ProspectWorkspace brief and evidence", () => {
     expect(lanes.getByText("Backhaul fill")).toBeInTheDocument();
     expect(lanes.getByText("0.95")).toBeInTheDocument();
     expect(lanes.getByText("12 observed loads per week")).toBeInTheDocument();
-    expect(lanes.getByText(/GenLogs fixture · Retrieved Sep 29, 2026/)).toBeInTheDocument();
+    expect(lanes.getByText(/GenLogs · Retrieved Sep 29, 2026/)).toBeInTheDocument();
     expect(lanes.queryByText(/Synthetic fixture/)).not.toBeInTheDocument();
     expect(lanes.getByText(/\$\.lanes\[0\]\.weekly_loads/)).toBeInTheDocument();
     expect(lanes.getByText(/synthetic-v1/)).toBeInTheDocument();

@@ -69,7 +69,7 @@ describe("SourceCoverage", () => {
     expect(screen.queryByRole("region", { name: "Run evidence" })).not.toBeInTheDocument();
   });
 
-  it("renders all seven completed source families without changing their identities", () => {
+  it("renders neutral labels for fixture-backed source families", () => {
     const completed: Coverage[] = [
       { source: "CRM fixture", status: "complete", mode: "fixture" },
       { source: "GenLogs fixture", status: "complete", mode: "fixture" },
@@ -84,6 +84,77 @@ describe("SourceCoverage", () => {
 
     expect(screen.getByText("All 7 complete")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show all 7 sources" }));
-    for (const item of completed) expect(screen.getByText(item.source)).toBeInTheDocument();
+    for (const source of [
+      "CRM",
+      "GenLogs",
+      "Carrier network",
+      "SEC EDGAR",
+      "Tavily Search",
+      "FMCSA QCMobile",
+      "BTS/FHWA FAF5.7.1",
+    ]) {
+      expect(screen.getByText(source)).toBeInTheDocument();
+    }
+    expect(screen.queryByText(/fixture/i)).not.toBeInTheDocument();
+  });
+
+  it("neutralizes named evidence copy while retaining technical citation metadata", () => {
+    const fixtureEvidence: Evidence[] = [
+      {
+        citation_id: "ev_cccccccccccccccccccccccc",
+        claim: "Reviewed CRM demo account record",
+        source: "CRM fixture",
+        mode: "fixture",
+        endpoint_or_artifact: "fixtures/synthetic/crm.json",
+        retrieved_at: "2026-09-29T12:00:00Z",
+        source_version: "synthetic-v1",
+        evidence_location: "$.crm",
+      },
+      {
+        citation_id: "ev_dddddddddddddddddddddddd",
+        claim: "Synthetic observed shipper lanes and facilities",
+        source: "GenLogs fixture",
+        mode: "fixture",
+        endpoint_or_artifact: "fixtures/synthetic/genlogs.json",
+        retrieved_at: "2026-09-29T12:00:00Z",
+        source_version: "synthetic-v1",
+        evidence_location: "$.genlogs",
+      },
+      {
+        citation_id: "ev_eeeeeeeeeeeeeeeeeeeeeeee",
+        claim: "Synthetic carrier capacity and density",
+        source: "Carrier network fixture",
+        mode: "fixture",
+        endpoint_or_artifact: "fixtures/synthetic/network.json",
+        retrieved_at: "2026-09-29T12:00:00Z",
+        source_version: "synthetic-v1",
+        evidence_location: "$.network",
+      },
+    ];
+
+    render(<SourceCoverage coverage={[]} evidence={fixtureEvidence} />);
+
+    const runEvidence = screen.getByRole("region", { name: "Research evidence" });
+    expect(within(runEvidence).getByRole("group", { name: "CRM" })).toHaveTextContent(
+      "Reviewed CRM account record",
+    );
+    expect(within(runEvidence).getByRole("group", { name: "GenLogs" })).toHaveTextContent(
+      "Observed shipper lanes and facilities",
+    );
+    expect(within(runEvidence).getByRole("group", { name: "Carrier network" })).toHaveTextContent(
+      "Carrier capacity and density",
+    );
+    for (const hiddenCopy of [
+      "CRM fixture",
+      "GenLogs fixture",
+      "Carrier network fixture",
+      "Reviewed CRM demo account record",
+      "Synthetic observed shipper lanes and facilities",
+      "Synthetic carrier capacity and density",
+    ]) {
+      expect(within(runEvidence).queryByText(hiddenCopy)).not.toBeInTheDocument();
+    }
+    expect(within(runEvidence).getAllByText(/synthetic-v1/)).toHaveLength(3);
+    expect(within(runEvidence).getAllByText(/fixtures\/synthetic/)).toHaveLength(3);
   });
 });

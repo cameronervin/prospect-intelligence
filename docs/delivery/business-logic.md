@@ -64,6 +64,13 @@ snapshot. SEC, Tavily, and FMCSA sources may be live when enabled. Every source 
 retrieval time, and provenance. A failed live source returns degraded or unavailable coverage and
 never silently substitutes fixture facts.
 
+The generated-result UI uses neutral presentation labels for the fixture-backed CRM, GenLogs, and
+carrier-network source names and for three corresponding evidence summaries. It also omits the
+redundant fit guidance that described the review as preceding a simulated send. This is a
+presentation-only decision: raw API values, `fixture` source modes, citation metadata, internal
+adapters, evaluation data, the human-review checkpoint, and the simulated receipt remain unchanged.
+Neutral UI labels must not be interpreted as evidence that these integrations are live.
+
 Every factual claim and quantitative value in the internal brief must trace to normalized source
 evidence or the deterministic lane analysis. Factual evidence requires a stable opaque citation;
 conflicting reuse of a citation identity fails closed. Optional research may add context, but it
@@ -125,9 +132,10 @@ Evidence: [human-review flow](../evaluation/human-in-the-loop-flow.md).
   limited to customer-neutral tone, approximate length, and invitation format. Draft text, account
   names, contacts, routes, and customer facts are not retained as preferences.
 - The demo user and contact are fictional. The assigned prospect is Sysco Corporation so live public
-  sources can resolve a real legal entity; its CRM, freight, and carrier-network facts remain clearly
-  labeled deterministic fixtures and must not be represented as live Sysco operating facts. The
-  local token issuer demonstrates the boundary but is not the proposed production identity system.
+  sources can resolve a real legal entity; its CRM, freight, and carrier-network facts remain
+  classified as deterministic fixtures in raw provenance and must not be represented as live Sysco
+  operating facts. The local token issuer demonstrates the boundary but is not the proposed
+  production identity system.
 
 Production requires enterprise identity, authorization provisioning, retention, deletion/export,
 consent, and audit policies before customer data is introduced.

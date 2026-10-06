@@ -121,7 +121,7 @@ describe("RunView activity motion", () => {
             evidence: [
               {
                 citation_id: "ev_111111111111111111111111",
-                claim: "12 observed loads per week",
+                claim: "Synthetic observed shipper lanes and facilities",
                 source: "GenLogs fixture",
                 mode: "fixture",
                 endpoint_or_artifact: "fixtures/genlogs/atlas-foods.json",
@@ -169,6 +169,13 @@ describe("RunView activity motion", () => {
     expect(screen.getByRole("region", { name: "Run evidence" })).toHaveTextContent(
       "Atlas has recurring freight on this lane.",
     );
+    const laneEvidence = screen.getByRole("list", { name: "Evidence" });
+    expect(laneEvidence).toHaveTextContent("Observed shipper lanes and facilities");
+    expect(laneEvidence).toHaveTextContent("GenLogs · Retrieved Sep 29, 2026");
+    expect(laneEvidence).toHaveTextContent("synthetic-v1");
+    expect(laneEvidence).toHaveTextContent("fixtures/genlogs/atlas-foods.json");
+    expect(laneEvidence).not.toHaveTextContent("Synthetic observed shipper lanes and facilities");
+    expect(laneEvidence).not.toHaveTextContent("GenLogs fixture");
   });
 });
 
@@ -230,14 +237,17 @@ describe("RunView completed-review presentation", () => {
     },
   );
 
-  it("keeps recommendation guidance in the pending review rationale", () => {
+  it("omits the simulated-send recommendation from the pending review rationale", () => {
     renderRun({
       ...baseRun,
       status: "awaiting_review",
       stage: "Ready for your review",
       progress_percent: 100,
       verdict: "fit",
-      brief: fitBrief,
+      brief: {
+        ...fitBrief,
+        recommended_next_step: "Review the evidence-backed outreach before simulated send.",
+      },
       outreach: { subject: "Freight conversation", body: "Could we discuss freight?" },
       pending_review: {
         name: "send_outreach",
@@ -246,8 +256,8 @@ describe("RunView completed-review presentation", () => {
       },
     });
 
-    expect(screen.getByRole("region", { name: "Why this account" })).toHaveTextContent(
-      "Pitch the lane.",
+    expect(screen.getByRole("region", { name: "Why this account" })).not.toHaveTextContent(
+      "Review the evidence-backed outreach before simulated send.",
     );
   });
 });

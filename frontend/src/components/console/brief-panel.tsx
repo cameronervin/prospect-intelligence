@@ -14,6 +14,7 @@ import {
   formatScore,
   recommendedActionLabel,
   verdictLabel,
+  visibleRecommendation,
 } from "./format";
 import { StatusPill } from "./status-pill";
 
@@ -71,6 +72,7 @@ export function WhySummary({
 }: Readonly<{ brief: Brief; verdict: Verdict; evidenceId: string }>) {
   const headingId = useId();
   const lead = brief.lanes[0];
+  const recommendation = visibleRecommendation(brief.recommended_next_step);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3.5">
       <h3 id={headingId} className={cn(typeStyles.section, "text-orange-800")}>
@@ -78,7 +80,7 @@ export function WhySummary({
       </h3>
       <VerdictLine brief={brief} verdict={verdict} />
       <p className="text-sm leading-6 text-slate-700">{brief.summary}</p>
-      <p className="text-sm leading-6">{brief.recommended_next_step}</p>
+      {recommendation ? <p className="text-sm leading-6">{recommendation}</p> : null}
       {brief.lanes.length > 0 ? <Figures brief={brief} /> : null}
       {lead ? (
         <p className="flex items-baseline justify-between gap-3 border-t border-orange-200 pt-2 text-sm font-semibold">
@@ -100,6 +102,7 @@ export function BriefPanel({
   showRecommendedNextStep = true,
 }: Readonly<{ brief: Brief; verdict: Verdict; showRecommendedNextStep?: boolean }>) {
   const headingId = useId();
+  const recommendation = visibleRecommendation(brief.recommended_next_step);
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h3 id={headingId} className="sr-only">
@@ -107,8 +110,8 @@ export function BriefPanel({
       </h3>
       <VerdictLine brief={brief} verdict={verdict} />
       <p className={cn(typeStyles.body, "max-w-prose text-slate-700")}>{brief.summary}</p>
-      {showRecommendedNextStep ? (
-        <p className={`${typeStyles.body} max-w-prose`}>{brief.recommended_next_step}</p>
+      {showRecommendedNextStep && recommendation ? (
+        <p className={`${typeStyles.body} max-w-prose`}>{recommendation}</p>
       ) : null}
       {brief.lanes.length > 0 ? <Figures brief={brief} /> : null}
     </section>

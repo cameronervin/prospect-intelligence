@@ -58,9 +58,38 @@ const sourceModeLabel: Partial<Record<SourceMode, string>> = {
   snapshot: "Snapshot",
 };
 
-/** Fixture provenance remains in the source name and artifact path without a redundant mode label. */
+/** Fixture mode remains in raw provenance without a separate product-copy label. */
 export function visibleSourceModeLabel(mode: SourceMode): string | undefined {
   return mode === "fixture" ? undefined : sourceModeLabel[mode];
+}
+
+const visibleSourceLabels: Readonly<Record<string, string>> = {
+  "CRM fixture": "CRM",
+  "GenLogs fixture": "GenLogs",
+  "Carrier network fixture": "Carrier network",
+};
+
+const visibleEvidenceClaims: Readonly<Record<string, string>> = {
+  "Synthetic observed shipper lanes and facilities": "Observed shipper lanes and facilities",
+  "Synthetic carrier capacity and density": "Carrier capacity and density",
+  "Reviewed CRM demo account record": "Reviewed CRM account record",
+};
+
+const omittedRecommendations = new Set([
+  "Review the evidence-backed outreach before simulated send.",
+]);
+
+/** Product copy may be neutral while raw provenance retains its source identity. */
+export function visibleSourceLabel(source: string): string {
+  return visibleSourceLabels[source] ?? source;
+}
+
+export function visibleEvidenceClaim(claim: string): string {
+  return visibleEvidenceClaims[claim] ?? claim;
+}
+
+export function visibleRecommendation(recommendation: string): string | undefined {
+  return omittedRecommendations.has(recommendation) ? undefined : recommendation;
 }
 
 export const coverageStatusLabel: Record<SourceCoverage["status"], string> = {

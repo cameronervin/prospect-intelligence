@@ -9,6 +9,8 @@ import {
   coverageStatusLabel,
   formatRetrievedDate,
   formatRetrievedTimestamp,
+  visibleEvidenceClaim,
+  visibleSourceLabel,
   visibleSourceModeLabel,
 } from "./format";
 import { StatusPill, type StatusTone } from "./status-pill";
@@ -24,7 +26,7 @@ function CoverageRow({ item }: Readonly<{ item: Coverage }>) {
 
   return (
     <li className="flex flex-wrap items-start gap-x-4 gap-y-1 border-b border-slate-200 py-2 last:border-b-0">
-      <span className="min-w-0 flex-1 text-sm font-medium">{item.source}</span>
+      <span className="min-w-0 flex-1 text-sm font-medium">{visibleSourceLabel(item.source)}</span>
       <StatusPill tone={statusTone[item.status]}>{coverageStatusLabel[item.status]}</StatusPill>
       {mode || item.detail ? (
         <span className={`${typeStyles.utility} w-full`}>
@@ -55,8 +57,8 @@ function RunEvidence({ evidence }: Readonly<{ evidence: Evidence[] }>) {
       </h3>
       <div className="mt-1 flex flex-col gap-3">
         {[...grouped.entries()].map(([source, items]) => (
-          <div key={source} role="group" aria-label={source}>
-            <h4 className="text-sm font-semibold">{source}</h4>
+          <div key={source} role="group" aria-label={visibleSourceLabel(source)}>
+            <h4 className="text-sm font-semibold">{visibleSourceLabel(source)}</h4>
             <ul>
               {items.map((item) => {
                 const metadata = [
@@ -68,7 +70,7 @@ function RunEvidence({ evidence }: Readonly<{ evidence: Evidence[] }>) {
                     key={item.citation_id}
                     className="flex flex-col gap-0.5 border-b border-slate-200 py-2 last:border-b-0"
                   >
-                    <span className="text-sm">{item.claim}</span>
+                    <span className="text-sm">{visibleEvidenceClaim(item.claim)}</span>
                     <span
                       className={typeStyles.utility}
                       title={formatRetrievedTimestamp(item.retrieved_at)}
