@@ -5,7 +5,6 @@ set -eu
 
 root=$(repo_root)
 require_command rg
-require_command git
 require_command python3
 
 scan_parent=$(mktemp -d "${TMPDIR:-/tmp}/langchain-takehome-secret-scan.XXXXXX")

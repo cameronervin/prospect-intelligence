@@ -5,6 +5,8 @@ set -eu
 
 root=$(repo_root)
 require_command docker
+require_command python3
+require_command rg
 
 env_file="$root/deploy/envs/.env.local.example"
 standard_env_file="$root/deploy/envs/.env.local"
@@ -23,17 +25,7 @@ case "$selection_only" in
 esac
 
 workspace_source_id() {
-  (
-    cd "$root"
-    {
-      git rev-parse HEAD
-      git diff --no-ext-diff --binary HEAD -- .
-      git ls-files --others --exclude-standard | LC_ALL=C sort | while IFS= read -r file; do
-        printf '%s ' "$file"
-        git hash-object -- "$file"
-      done
-    } | git hash-object --stdin
-  )
+  python3 "$root/scripts/copy-reviewable-snapshot.py" --source-id "$root"
 }
 
 source_id_is_explicit=true

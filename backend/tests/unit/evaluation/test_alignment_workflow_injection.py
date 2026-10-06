@@ -137,6 +137,7 @@ async def test_calibration_uses_injected_client_and_judges_without_closing(
     monkeypatch.setattr(calibration, "publish_approved_label_set", lambda *_, **__: None)
     monkeypatch.setattr(calibration, "calibration_inputs", lambda *_, **__: (object(),))
     monkeypatch.setattr(calibration, "run_calibration", stop_after_judge_injection)
+    monkeypatch.setattr(calibration, "alignment_code_revision", lambda: "test-revision")
     monkeypatch.setattr(client, "list_feedback", lambda **_: iter(()), raising=False)
 
     with pytest.raises(RuntimeError, match="stop after dependency assertion"):

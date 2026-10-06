@@ -1,4 +1,4 @@
-# LangChain deployed-engineer take-home
+# Prospect Intelligence: LangChain deployed-engineer take-home
 
 This repository contains a reviewable freight prospect-intelligence MVP. It combines FastAPI,
 LangGraph and Deep Agents, PostgreSQL, Next.js, offline evaluation, and opt-in LangSmith quality
@@ -13,12 +13,17 @@ production readiness. Credentialed provider and LangSmith evidence is documented
 ## Verify without credentials
 
 Prerequisites: Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js `>=22.12.0`, npm 10,
-Docker Compose v2, and Git.
+Docker Compose v2, and [ripgrep](https://github.com/BurntSushi/ripgrep). Git is needed only for
+repository administration and evidence tied to an authentic revision.
 
 ```sh
 make setup
 make verify
 ```
+
+A GitHub source ZIP may be extracted under any folder name, including one containing spaces, and
+uses the same commands. Normal development and verification do not require reconstructed Git
+history.
 
 `make verify` uses model and source fakes, a disposable PostgreSQL container, and the credential-free
 offline evaluator. It does not call model providers or publish a LangSmith experiment.
@@ -64,15 +69,6 @@ docs/          Assignment, architecture, setup, evaluation, and delivery notes
 scripts/       Repository-wide automation
 .agents/       Path-scoped rules and reusable coding-agent skills
 .codex/        Project-scoped Codex MCP configuration
-```
-
-## Share the handover
-
-Create handover archives from a committed revision, not from the working directory. This excludes
-ignored environment files, local databases, caches, and generated browser artifacts:
-
-```sh
-git archive --format=zip --output ../langchain-takehome.zip HEAD
 ```
 
 Start with the [documentation index](docs/README.md), [system architecture](docs/architecture/system.md),

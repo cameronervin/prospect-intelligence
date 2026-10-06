@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 
 repo_root() {
-  git rev-parse --show-toplevel
+  script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+  (CDPATH= cd -- "$script_directory/.." && pwd -P)
 }
 
 require_command() {
@@ -19,4 +20,3 @@ run_in() {
     "$@"
   )
 }
-

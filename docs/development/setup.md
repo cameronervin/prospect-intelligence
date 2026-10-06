@@ -6,9 +6,10 @@
 - [uv](https://docs.astral.sh/uv/)
 - Node.js `>=22.12.0` and npm 10
 - Docker with Compose v2
-- Git
+- [ripgrep](https://github.com/BurntSushi/ripgrep)
 
-GitHub CLI is optional and used only for repository administration.
+Git and GitHub CLI are optional for normal development. They are required for repository
+administration and workflows that publish evidence tied to an authentic code revision.
 
 ## Credential-free verification
 
@@ -17,9 +18,13 @@ make setup
 make verify
 ```
 
+These commands work from either a Git checkout or a GitHub source ZIP. The extracted root may be
+renamed, including to a name containing spaces. Archive workflows honor `.gitignore` when selecting
+reviewable files and do not reconstruct Git history.
+
 `make verify` validates project configuration, starts a disposable PostgreSQL container, runs the
 backend checks and credential-free v4 evaluator, runs the frontend checks and build, and scans the
-Git-visible snapshot for likely credentials. It does not inspect ignored local environment files,
+reviewable source snapshot for likely credentials. It does not inspect ignored local environment files,
 call model providers, or publish to LangSmith.
 
 Run Desktop Chrome browser coverage separately:
@@ -28,7 +33,10 @@ Run Desktop Chrome browser coverage separately:
 make test-e2e
 ```
 
-The test harness uses scripted models and synthetic data. It does not require provider keys.
+The test harness uses scripted models and synthetic data. It does not require provider keys. A
+genuine checkout fingerprints its commit, tracked diff, and untracked reviewable files; a source ZIP
+fingerprints reviewable relative paths and contents. Ignored configuration and generated artifacts
+do not affect either fingerprint.
 
 ## Live-model demo
 
