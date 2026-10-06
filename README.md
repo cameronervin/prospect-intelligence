@@ -1,75 +1,87 @@
-# Prospect Intelligence: LangChain deployed-engineer take-home
+# Prospect Intelligence
 
-This repository contains a reviewable freight prospect-intelligence MVP. It combines FastAPI,
-LangGraph and Deep Agents, PostgreSQL, Next.js, offline evaluation, and opt-in LangSmith quality
-delivery. A sales rep researches an assigned shipper, reviews an evidence-backed brief, and approves,
-edits, or rejects a draft. Approval records a simulated send; it does not contact a prospect or write
-to a CRM.
+## Product overview
 
-Repository verification uses credential-free model and source fakes. It demonstrates topology,
-permissions, persistence, and human-review behavior, but is not evidence of live model quality or
-production readiness. Credentialed provider and LangSmith evidence is documented separately.
+Prospect Intelligence helps a freight sales rep research an assigned shipper. It creates a sourced
+brief and an outreach draft, then pauses for review. Approval records a simulated send. The MVP does
+not contact prospects or write to a CRM.
 
-## Verify without credentials
+## Core workflow
 
-Prerequisites: Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js `>=22.12.0`, npm 10,
-Docker Compose v2, and [ripgrep](https://github.com/BurntSushi/ripgrep). Git is needed only for
-repository administration and evidence tied to an authentic revision.
+1. The sales rep signs in and selects an assigned shipper.
+2. The agent gathers account, freight, carrier, and public-source data.
+3. The agent creates a brief with source links and an outreach draft.
+4. The sales rep approves, edits, or rejects the outreach draft.
+5. An approval or valid edit creates a simulated send.
+
+## Local quick start
+
+Prerequisites:
+
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/)
+- Node.js `>=22.12.0` and npm 10
+- Docker with Compose v2
+- [ripgrep](https://github.com/BurntSushi/ripgrep)
+
+Install the dependencies:
 
 ```sh
 make setup
-make verify
 ```
 
-A GitHub source ZIP may be extracted under any folder name, including one containing spaces, and
-uses the same commands. Normal development and verification do not require reconstructed Git
-history.
-
-`make verify` uses model and source fakes, a disposable PostgreSQL container, and the credential-free
-offline evaluator. It does not call model providers or publish a LangSmith experiment.
-
-## Run the live-model demo
-
-Copy the backend environment template, replace the JWT signing placeholder with at least 32 random
-bytes, and set a valid OpenAI API key:
+Create the backend environment file:
 
 ```sh
 cp backend/.env.example backend/.env
-# Edit backend/.env: TAKEHOME_JWT_SIGNING_SECRET and OPENAI_API_KEY
+```
+
+Set these values in `backend/.env`:
+
+- `TAKEHOME_JWT_SIGNING_SECRET`: at least 32 random bytes
+- `OPENAI_API_KEY`: a valid OpenAI API key
+
+Start PostgreSQL, FastAPI, and Next.js:
+
+```sh
 make dev
 ```
 
-`make dev` starts PostgreSQL, runs migrations, seeds the fictional user and assigned Sysco account,
-and starts both applications. Open `http://localhost:3000/login` and sign in with
-`alex.morgan@example.test` / `prospect-demo`.
+Open `http://localhost:3000/login` and sign in with:
 
-Browser authentication uses same-origin routes at `/api/auth/login`, `/api/auth/refresh`,
-`/api/auth/session`, and `/api/auth/logout`. The backend exposes:
+- Email: `alex.morgan@example.test`
+- Password: `prospect-demo`
 
-- `GET /health/live`
-- `GET /health/ready`
-- `POST /api/v1/auth/token`
-- `POST /api/v1/auth/refresh`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/accounts`
-- `POST /api/v1/prospect-runs`
-- `GET /api/v1/prospect-runs/{run_id}`
-- `POST /api/v1/prospect-runs/{run_id}/review`
+See [local development](docs/development/setup.md) for Docker Compose and optional integrations.
 
-See [local setup](docs/development/setup.md) for the Compose path and optional external-source or
-online-quality credentials.
+## Credential-free verification
 
-## Repository map
+Run the repository checks:
 
-```text
-backend/       FastAPI, LangGraph/LangSmith, PostgreSQL, migrations, tests
-frontend/      Next.js prospect review console
-deploy/        Compose and non-root production images
-docs/          Assignment, architecture, setup, evaluation, and delivery notes
-scripts/       Repository-wide automation
-.agents/       Path-scoped rules and reusable coding-agent skills
-.codex/        Project-scoped Codex MCP configuration
+```sh
+make verify
 ```
 
-Start with the [documentation index](docs/README.md), [system architecture](docs/architecture/system.md),
-and [evaluation results](docs/evaluation/README.md).
+The checks use synthetic data and test models. They do not call model providers or publish data to
+LangSmith.
+
+Run the browser tests separately:
+
+```sh
+make test-e2e
+```
+
+## Technology
+
+- Python 3.12 and FastAPI
+- LangGraph and Deep Agents
+- PostgreSQL
+- Next.js
+- Offline evaluation and optional LangSmith reporting
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [System architecture](docs/architecture/system.md)
+- [Evaluation](docs/evaluation/README.md)
+- [MVP scope](docs/delivery/mvp-scoping.md)
