@@ -1,13 +1,13 @@
-# Evaluator Alignment to Human Preference
+# Evaluator alignment to human preference
 
-CAM-41/CAM-50 establish whether the seven `semantic-v1` questions reproduce a human reviewer's
+CAM-41/CAM-50 assess whether the seven `semantic-v1` questions reproduce a human reviewer's
 judgment closely enough to remain useful. The process starts with reference labels, not judge outputs:
 one designated reviewer examines sanitized cases blind, freezes those labels, and only then are Jev and GPT-5.6 Sol
 measured against them. This is a single-reviewer, two-pass adjudication workflow, not inter-rater
 validation.
 
 This document defines the process and the evidence required to explain it. On 2026-10-01, live
-preparation was read back as 280 roots before the MVP scope was reduced. The live workflow now
+preparation was read back as 280 roots before the MVP scope was reduced. The live workflow
 reconciled the seven primary queues to 10 selected items each. The complete primary pass, 13 required
 second-pass adjudications, and the 70-example `cam-41-labels-v1` dataset were read back successfully.
 The separately authorized alignment phase is now published and read back in LangSmith as 210 attempt
@@ -146,9 +146,9 @@ For each question and judge, report:
 Agreement uses valid attempts. A question cannot receive `retain`—or any pass-like conclusion—unless
 coverage is 100% over the complete three-run denominator.
 
-## 4. Make a recommendation, not a release gate
+## 4. Interpret a future holdout
 
-Each question receives one recommendation:
+If the untouched holdout is run, each question can receive one recommendation:
 
 - `retain`: holdout exact agreement is at least 85%, attempt coverage is 100%, and Jev is no more
   than five percentage points behind GPT-5.6 Sol;
@@ -156,9 +156,10 @@ Each question receives one recommendation:
 - `split`: the question combines judgments that should be evaluated separately; or
 - `replace`: after bounded revision, the comparison judge remains materially better.
 
-These thresholds are evaluation evidence only. CAM-41/CAM-50 do not activate semantic promotion
-gates or change runtime routing. Deterministic release gates remain authoritative. A future business
-decision to gate on a semantic score requires a separate logged policy change and release evidence.
+These are planned interpretation criteria, not promotion thresholds. The holdout did not run, so
+CAM-41/CAM-50 produced no formal retain/revise/split/replace recommendations. They do not activate a
+semantic gate or change runtime routing. A future business decision to gate on a semantic score
+requires a separate logged policy change and release evidence.
 
 ## 5. Keep evidence classes separate
 
@@ -265,8 +266,8 @@ dependency would not simplify human-preference alignment.
 ## 6. Presentation record
 
 The presentation should show the lifecycle in this order: representative cases → blind human labels
-→ frozen alignment labels → judge comparison and bounded rubric iteration → untouched holdout →
-recommendation. Report limitations beside the results, not as footnotes.
+→ frozen alignment labels → judge comparison and bounded rubric iteration → untouched holdout (not
+run) → future recommendation. Report limitations beside the results, not as footnotes.
 
 | Evidence | Required value |
 | --- | --- |
@@ -277,15 +278,15 @@ recommendation. Report limitations beside the results, not as footnotes.
 | Primary pass completion | Complete: 70/70 cases, 280/280 required fields; frozen 2026-10-01 |
 | Second-pass completion | Complete: 13/13 flagged cases adjudicated |
 | Approved reference set | `cam-41-labels-v1`; 70 examples (35 alignment, 35 holdout) |
-| LangSmith alignment project/URL | `cam-41-alignment-cam-41-labels-v1-0099bade7c54a0ed`; 210/210 roots and feedback read back |
+| LangSmith alignment project/URL | [`cam-41-alignment-cam-41-labels-v1-0099bade7c54a0ed`](https://smith.langchain.com/o/272b51ac-d19f-4811-8bee-52c0b6473835/projects/p/809bfd2d-69b0-4dd2-b06a-2085506317ca); 210/210 roots and feedback read back |
 | Code revision | `e270dd16365b-dirty-69c567eba5e0` |
 | Aggregate report | [`backend/evaluation/reports/cam_41_diagnostics.md`](../../backend/evaluation/reports/cam_41_diagnostics.md) |
-| Score-revision evidence | 60/60 combined valid attempts across `cam-41-alignment-cam-41-labels-v1-9def2f19d5593cf7` and retry project `cam-41-alignment-cam-41-labels-v1-4a7eedede417b378` |
+| Score-revision evidence | 60/60 combined valid attempts across [`cam-41-alignment-cam-41-labels-v1-9def2f19d5593cf7`](https://smith.langchain.com/o/272b51ac-d19f-4811-8bee-52c0b6473835/projects/p/a7f85072-13df-46e3-820e-08ef92772e32) and retry project [`cam-41-alignment-cam-41-labels-v1-4a7eedede417b378`](https://smith.langchain.com/o/272b51ac-d19f-4811-8bee-52c0b6473835/projects/p/beff5dd6-7291-40eb-96d1-c81361535374) |
 | Score-revision report | [`backend/evaluation/reports/cam_41_score_revision_diagnostics.md`](../../backend/evaluation/reports/cam_41_score_revision_diagnostics.md) |
-| Rejected v3 prompt experiment | `cam-41-alignment-cam-41-labels-v1-b6adb9618f50cb3e`; 60/60 valid attempts under `shared-question-payload-v3-score-anchors` |
+| Rejected v3 prompt experiment | [`cam-41-alignment-cam-41-labels-v1-b6adb9618f50cb3e`](https://smith.langchain.com/o/272b51ac-d19f-4811-8bee-52c0b6473835/projects/p/af6aa26e-1c6b-4da5-a165-3852133f9178); 60/60 valid attempts under `shared-question-payload-v3-score-anchors` |
 | V3 diagnostic report | [`backend/evaluation/reports/cam_41_score_prompt_diagnostics.md`](../../backend/evaluation/reports/cam_41_score_prompt_diagnostics.md) |
-| Accepted composite evidence | `cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`; original categorical plus v2 score/retry sources; both prompt revisions pinned; 210 attempts read back |
-| Alignment-only findings | Strong exact agreement: `claim_supported`, `internal_data_leak`, `next_step`, `entity_resolution_ok`; revise/inspect: `draft_matches_brief`, `actionability`, `tone_fit` |
+| Accepted composite evidence | [`cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143`](https://smith.langchain.com/o/272b51ac-d19f-4811-8bee-52c0b6473835/projects/p/dd92223b-65df-44a7-ba7a-5940d7dd6e95); original categorical plus v2 score/retry sources; both prompt revisions pinned; 210 attempts read back |
+| Alignment-only findings | Strong exact agreement: `claim_supported`, `internal_data_leak`, `next_step`, `entity_resolution_ok`; inspect before holdout: `draft_matches_brief`, `actionability`, `tone_fit` |
 
 The earlier composite `cam-41-alignment-composite-cam-41-labels-v1-9ede43d8fc6305bc`
 remains immutable but is superseded. Validation added categorical-prompt pinning and stricter stored
@@ -300,8 +301,8 @@ on four and scored 80% on `draft_matches_brief`; GPT-5.6 Sol scored 100% on all 
 score-contract revision, `actionability` exact/within-one agreement is 60.0%/80.0% for Jev and
 53.3%/93.3% for Sol; `tone_fit` is 60.0%/86.7% for Jev and 73.3%/93.3% for Sol. Jev is stable but
 systematically under-scores some middle classes; Sol is closer on MAE but shows more run-to-run and
-option-order variation. Both score questions therefore remain `revise`, not `replace`, as MVP
-alignment findings.
+option-order variation. Both score questions need inspection before any holdout run. This is a
+diagnostic finding, not a formal recommendation.
 Under v3, Jev's `actionability` exact agreement improved to 66.7% and MAE to 0.483, but run-to-run
 disagreement became 6.7% and option-order sensitivity became 20%; Jev `tone_fit` within-one fell to
 80%. Sol also became less stable, including 40% and 66.7% option-order sensitivity on the two

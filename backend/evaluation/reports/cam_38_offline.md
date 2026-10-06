@@ -4,9 +4,10 @@ This is credential-free repository evidence from a scripted model over the compi
 
 ## Versions
 
-- Dataset: `freight-prospect-v1`
+- Datasets: `freight-prospect-v1`
 - Evaluators: `freight-evaluators-v3`
-- Graph target: `prospect-compiled-script-v1`
+- Graph target: `prospect-compiled-script-v4`
+- Prompt bundle: `outreach-v4`
 - Repetitions: `3`
 - Evaluated rows: `72`
 
@@ -30,7 +31,7 @@ This is credential-free repository evidence from a scripted model over the compi
 | Metric | Value |
 | --- | ---: |
 | `cost_usd` | 0.0000 |
-| `tool_call_count` | 19.0000 |
+| `tool_call_count` | 14.7500 |
 | `latency_seconds` | measured per run; omitted from the published report |
 
 ## Dataset slices

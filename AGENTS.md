@@ -8,7 +8,9 @@ Build the smallest complete, reviewable slice for the deployed-engineer take-hom
 - The backend is a feature-first modular monolith: `bootstrap`, `platform`, `shared_kernel`, then `features/<name>`.
 - Keep routes thin. Use `api -> services/agents -> contracts/domain <- repositories/integrations`.
 - Cross-feature imports must use the target feature's `public.py` or `contracts/` package.
-- This scaffold contains no product domain, agent graph, model provider, auth scheme, or evaluation metric yet.
+- The current product slice is freight prospect intelligence at graph and prompt revision v4. Demo
+  authentication and opt-in online-quality delivery are implemented; production identity, private
+  data integrations, outbound sending, and CRM writes are not.
 - Never commit credentials, LangSmith datasets/results, traces, private customer data, or generated browser artifacts.
 
 ## Working agreement

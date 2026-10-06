@@ -1,7 +1,10 @@
-# ADR 0001: Domain-neutral modular foundation
+# Historical ADR 0001: Domain-neutral modular foundation
 
-- Status: Accepted
+- Status: Historical foundation; product behavior has since been added
 - Date: 2026-09-28
+
+This decision records the repository's inception state. It is not a description of the current v4
+freight prospect-intelligence application.
 
 ## Decision
 
@@ -20,4 +23,3 @@ PostgreSQL and Alembic are included because durable state, human review, idempot
 - The repository can run and verify before product selection.
 - The first real feature must make explicit choices about auth, tenancy, state, tools, human review, datasets, and metrics.
 - Some packages are extension points rather than proof of implemented behavior.
-

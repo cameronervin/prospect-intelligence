@@ -5,7 +5,7 @@ feedback, and annotation destination. The catalog assigns every deterministic an
 to exactly one single-step, final-output, or full-trajectory scope. All ten deterministic catalog
 signals are emitted after graph execution; reference-aware lane checks use the canonical product
 analysis. Seven bounded Jev questions reuse the offline scoring, rubric, and judge contracts. Jev
-scores are evidence only until CAM-41 establishes calibrated thresholds.
+scores remain evidence only; CAM-41 did not run the holdout or establish promotion thresholds.
 
 The optional synchronous runtime guardrails are intentionally separate. They are feature-owned
 LangGraph nodes, use the platform `DecisionModel` boundary, are not sampled, do not publish raw state

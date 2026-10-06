@@ -101,40 +101,8 @@ CAM-41/CAM-50 now define a separate human-preference alignment workflow; see
 [evaluator-alignment-process.md](../evaluation/evaluator-alignment-process.md). It must not be folded
 into the CAM-40 release experiment or used to reinterpret CAM-40's historical v2/v3 evidence.
 
-For each `semantic-v1` question, preparation deterministically selects 10 applicable cases with seed
-`28029`, deduplicates projected state, and creates a five-case alignment split plus a five-case untouched
-holdout. A designated single reviewer completes a blind primary pass before seeing judge outputs, then separately
-adjudicates low-confidence or ambiguous cases. The resulting `cam-41-labels-v1` set is accurately
-described as single-reviewer, two-pass adjudication—not inter-rater validation.
-
-Jev and GPT-5.6 Sol each run three repetitions per approved case. Alignment results report full-
-denominator coverage, exact agreement, confusion counts, balanced accuracy where all required
-classes are represented, ordered-score error/within-one agreement, run-to-run disagreement,
-option-order sensitivity after a stable repeated canonical-order baseline, cost, and latency.
-Incomplete attempts fail closed, and missing class
-support is reported as class imbalance rather than as a balanced score. Alignment cases may inform
-one bounded rubric revision; the revision must be frozen before holdout evaluation.
-
-These results produce `retain`, `revise`, `split`, or `replace` recommendations only. Semantic scores
-remain evidence-only and must not replace deterministic gates. A live result is not complete until
-LangSmith traces and feedback have been read back with all expected questions, splits, judges,
-repetitions, and required version metadata. The blind 70-case reference review and all 13 required
-second-pass adjudications are complete in `cam-41-labels-v1`; the paid alignment and holdout judge
-phases are separately authorized. The alignment phase is now read back as 210 attempt roots and 210
-feedback records: 154 were valid, while 56 ordered-score attempts were unavailable because the
-adapter rejected the score primitive's legitimate probability-weighted values as non-integer.
-The five binary/categorical questions have complete alignment coverage. The approved bounded
-revision uses the probability distribution to compute canonical weighted 1–5 scores; a targeted
-run and unavailable-only retry now provide 60/60 valid score attempts. `draft_matches_brief`,
-`actionability`, and `tone_fit` remain alignment-only revision findings. A
-single `shared-question-payload-v3-score-anchors` experiment also produced 60/60 valid attempts,
-but it was rejected under the frozen acceptance rule: `tone_fit` within-one regressed and Jev gained
-repeat/order instability on `actionability`. This distinguishes the accepted v2 normalization fix
-from a rejected v3 prompt change.
-
-The read-back-verified composite project
-`cam-41-alignment-composite-cam-41-labels-v1-039273d2fe8e3143` references the unchanged categorical
-project and accepted v2 score/retry projects as 210 attempts. It does not copy raw payloads or
-reinterpret the rejected v3 evidence. The three findings remain `revise` recommendations, but no
-further tuning is permitted on the alignment split. The implemented holdout remains unrun and was
-explicitly waived from CAM-41/CAM-50 take-home completion; this is not a holdout or production claim.
+The blind 70-case review, 13 adjudications, and 210 alignment attempts are complete. The v2 change
+fixed score normalization; the bounded v3 prompt experiment was rejected. The untouched holdout was
+not run, so this work produced diagnostic findings only. It established no semantic promotion
+threshold or formal per-question recommendation. Project links, reports, and detailed mechanics are
+kept in the canonical alignment document above.

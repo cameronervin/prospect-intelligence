@@ -1,176 +1,94 @@
-# Use Case: Freight Prospect Intelligence for Carrier Sales
+# Use case: freight prospect intelligence for carrier sales
 
-## Summary
+## Problem
 
-Sales reps at a truckload carrier spend hours researching shippers before outreach, and most
-outreach is still generic. This tool gives each rep a short, evidence-backed brief on a
-shipper's actual freight activity and how it fits the carrier's network, plus a draft outreach
-message the rep reviews before sending. The goal is more qualified conversations, higher win
-rates on lanes that make the carrier money, and fewer empty miles.
+Truckload-carrier sales reps research shippers before outreach, but account history, public company
+signals, freight estimates, and carrier-network data are split across systems. This makes research
+slow and can delay the network-fit decision until after a sales conversation starts.
 
----
+The MVP helps a rep decide whether an assigned shipper is worth contacting. It produces an
+evidence-backed brief, identifies lane fit, drafts outreach only for a fit account, and pauses for a
+human decision.
 
-## The business
+## User and workflow
 
-- **Company type (assumed):** asset-based truckload carrier. It owns trucks and employs drivers.
-- **Customers:** shippers (manufacturers, distributors, retailers) that need freight moved
-  between facilities.
-- **How the carrier makes money:** revenue per loaded mile. Every mile a truck drives empty
-  ("deadhead") is cost with no revenue.
-- **Core economic problem:** freight flows are unbalanced. A truck that delivers Dallas →
-  Atlanta often has no load for the return trip. Filling those return legs ("backhauls") is
-  one of the highest-margin opportunities a carrier has, because the truck is making that
-  trip anyway.
+The primary user is a carrier sales rep. Sales leadership, network planning, pricing, and compliance
+are supporting stakeholders.
 
-### Carrier vs. broker
+For the selected account, the application:
 
-| | Asset-based carrier (default) | Broker (alternate) |
-|---|---|---|
-| Owns trucks | Yes | No; matches shippers to third-party carriers |
-| Earns | Revenue per loaded mile | Margin between shipper rate and carrier cost |
-| "Good fit" shipper | Lanes that fill empty return legs or add density to lanes already run | Lanes where the broker has reliable carrier coverage and margin history |
-| Pitch | "We run empty on your lane, so we can price it well and reliably" | "We have proven capacity on your lanes" |
+1. reads fixture-backed account, freight, and carrier-network context;
+2. checks a packaged public freight-volume snapshot and optional public sources;
+3. compares shipper lanes with the carrier's reviewed network data;
+4. returns `fit`, `no_fit`, or `needs_more_data` with dated evidence;
+5. drafts outreach only for a fit result;
+6. waits for the rep to approve, edit, or reject the draft.
 
-Many large carriers run both an asset fleet and a brokerage arm. The MVP targets the carrier
-case; broker logic is a later option. Confirm which model the partner company runs before
-building.
+Approval records a simulated-send receipt. The MVP does not send email, contact a prospect, or write
+to a CRM.
 
----
+The local seed creates one fictional sales rep and assigns one Sysco Corporation account. The rep can
+list and run only assigned accounts. Authentication is a local demo issuer; production identity is
+deferred.
 
-## The problem
+## Data boundaries
 
-### Current workflow
-1. Rep picks a shipper to target (existing account for expansion, or a prospect).
-2. Rep manually researches the company: website, news, LinkedIn, CRM history.
-3. Rep guesses which lanes the shipper runs, usually without real data.
-4. Rep sends generic outreach ("we'd love to earn your business").
-5. If there's interest, rep asks the shipper which lanes they need covered, then checks
-   internally whether those lanes fit the network.
+Every source reports its mode, retrieval time, coverage, and provenance.
 
-### Pain points
-- **Research is slow and shallow.** Hours per account, and it rarely answers the question
-  that matters: what freight does this shipper actually move, and where?
-- **Outreach is generic.** Shippers get constant carrier outreach. Messages without specific,
-  relevant lane information get ignored.
-- **Fit is discovered too late.** The carrier only learns whether a shipper's lanes are
-  profitable after the conversation starts, which wastes sales time on poor-fit accounts.
-- **Network knowledge is siloed.** Operations knows where trucks run empty; sales often
-  doesn't use that when choosing whom to call.
+| Source | Current MVP mode |
+| --- | --- |
+| CRM account context | Reviewed fixture; no live CRM connection |
+| GenLogs-shaped freight intelligence | Reviewed fixture; no commercial API connection |
+| Carrier network | Reviewed tenant-scoped fixture |
+| FHWA/BTS FAF5.7.1 | Packaged, checksummed snapshot |
+| SEC EDGAR | Live only when external access is enabled; otherwise unavailable |
+| Tavily web search | Live only when external access and a key are configured; otherwise unavailable |
+| FMCSA | Live only when external access and a key are configured; otherwise unavailable |
 
----
+The seeded Sysco identity is used for the demo, but its private freight, CRM, and network facts remain
+fixtures. Live public evidence does not validate or convert those private facts. A missing live source
+produces degraded or unavailable coverage rather than invented data.
 
-## The opportunity
+## Human review and safety
 
-Freight intelligence data now exists that shows real truck activity at shipper facilities.
-GenLogs, for example, uses roadside sensors to observe truck movements and offers shipper
-lane, facility, and regional data through an API. Combined with the carrier's own network
-data, a rep can know before the first call:
+- The graph cannot complete a fit run without the named outreach-review interrupt.
+- The rep may approve the draft, submit a complete edit, or reject it.
+- Numeric and source claims are checked against typed artifacts before review.
+- Source text is bounded and treated as untrusted.
+- Actor scope comes from verified claims and is retained across queued work and review.
+- Model inputs, outputs, and metadata are hidden from LangSmith tracing by default.
 
-- Which lanes a shipper runs and roughly how much volume.
-- Which of those lanes match the carrier's empty return legs or dense lanes.
-- What the opportunity is worth.
+Optional online-quality delivery is implemented for sanitized lifecycle events and feedback. It is
+disabled by default and does not replace production monitoring, incident response, or identity
+controls.
 
-That turns outreach from "we'd love to work with you" into "you ship about 40 loads a week
-Atlanta → Dallas, and we have trucks heading that direction every day."
+## Success measures
 
----
+Before a pilot:
 
-## The solution
+- every material claim resolves to source evidence;
+- fit and non-fit decisions meet the documented evaluator gates;
+- the review workflow survives retries and restarts;
+- human labels are used to assess semantic-judge agreement.
 
-For a selected shipper account, the tool:
+During a controlled pilot:
 
-1. **Gathers context:** CRM history and current business with the shipper.
-2. **Researches freight activity:** shipper lanes, facilities, and volumes from freight
-   intelligence data; market lane volumes from public freight data; company news and
-   financials from public sources.
-3. **Scores network fit:** compares each shipper lane against the carrier's network, focusing
-   on backhaul gaps, existing lane density, and equipment match, then sizes the opportunity.
-4. **Writes a sales brief:** top-fit lanes, supporting evidence, sized opportunity, and a
-   recommended next step (expand existing lanes, pitch new lanes, not a fit, or needs more data).
-5. **Drafts outreach:** a message tailored to the shipper and the rep's style.
-6. **Waits for the rep:** nothing is sent and the CRM is not updated until the rep approves,
-   edits, or rejects.
+- research time per assigned account;
+- draft approval and edit rates;
+- reply and meeting rates against a baseline;
+- qualified opportunities and wins on target lanes;
+- cost per completed brief and per qualified opportunity.
 
-### Users and stakeholders
+Empty-mile and margin effects require customer operational data and should not be claimed from the
+MVP. The [ROI model](../production/product-roi.md) records pilot assumptions separately from observed
+results.
 
-| Role | Interest |
-|---|---|
-| Sales rep (primary user) | Faster research, better conversations, higher close rate |
-| Sales leadership (buyer) | Pipeline quality, rep productivity, revenue on target lanes |
-| Network / operations planning | Freight that improves truck utilization and reduces empty miles |
-| Pricing | Opportunities on lanes where the carrier can price competitively |
-| Legal / compliance | Third-party data used within license terms; nothing sent without human review |
+## MVP and production boundary
 
----
+The reviewable MVP includes the v4 agent workflow, PostgreSQL persistence and checkpoints, demo
+authentication, assigned-account authorization, deterministic and semantic evaluation paths,
+Desktop Chrome coverage, and opt-in online-quality delivery.
 
-## Data sources
-
-| Source | What it provides | MVP approach |
-|---|---|---|
-| Freight intelligence (GenLogs) | Shipper lanes, facilities, volumes | Simulated, following the vendor's published data format (commercial license required for real data) |
-| Public freight flow data (FHWA FAF5) | Market-level freight volumes between regions | Real |
-| FMCSA | Carrier and safety data | Real |
-| SEC EDGAR | Financials and facility or expansion mentions for public shippers | Real |
-| Web search | Company news, expansion signals | Real |
-| CRM | Account history, contacts, current business | Simulated |
-| Carrier network data | Lanes run, weekly loads, where trucks run empty | Simulated |
-
----
-
-## Value and ROI framing
-
-Illustrative model for the stakeholder conversation; all inputs are assumptions to replace
-with the partner company's real numbers.
-
-- **Rep time saved:** research hours per account × accounts per rep per week × loaded rep cost.
-- **Better targeting:** share of outreach aimed at high-fit shippers, before vs. after.
-- **Revenue:** matched loads per week × average rate per load × 52 weeks, for accounts won.
-- **Margin uplift:** backhaul loads replace empty miles, so each one improves utilization
-  beyond its revenue.
-
-The strongest pitch is the last point: a won backhaul lane is worth more to a carrier than
-its rate alone, because it converts cost (empty miles) into revenue.
-
----
-
-## How success is measured
-
-**Before rollout (quality gates):**
-- Every figure in the brief traces to a source; no invented numbers.
-- The tool correctly identifies the best-fit lanes and correctly flags poor-fit shippers.
-- Reps rate the briefs as actionable.
-
-**In production (business outcomes):**
-- Rep approval rate of drafts, and how much reps edit them.
-- Research time per account.
-- Outreach reply rate and meetings booked, vs. baseline.
-- Opportunities created and won on high-fit lanes.
-- Empty-mile reduction on lanes where business was won (longer-term).
-
----
-
-## Risks and constraints
-
-| Risk | Mitigation |
-|---|---|
-| Wrong or invented numbers damage credibility with a prospect | Every figure must trace to a source; checked automatically; rep reviews before sending |
-| Third-party data license limits what can be shared with prospects | Rules on what appears in outreach; legal review of license terms |
-| Freight data cost (commercial licenses are expensive) | Prove value on simulated plus public data first; cache and limit paid calls |
-| Reps over-trust the tool | Rep approval required for every send and CRM update; evidence shown with each claim |
-| Data access and privacy across sales teams | Reps see only their own accounts and territory |
-| Shipper's lanes change over time | Briefs are dated; data refreshed on each run |
-
----
-
-## MVP scope and next decision
-
-**In scope:** end-to-end brief and draft for a set of shipper accounts using simulated
-freight, CRM, and network data plus real public sources; rep approval step; quality
-measurement before and after deployment.
-
-**Out of scope:** real freight intelligence license, real email sending, real CRM writes,
-broker mode.
-
-**Decision for the stakeholder:** whether to fund phase 2, which would add a real freight data
-license, CRM integration, and a pilot with a small group of reps measured against a control
-group on reply rate, meetings booked, and revenue on target lanes.
+A production pilot still needs managed identity, licensed private-data integrations, a real CRM,
+hardened outbound delivery, customer-approved data and retention rules, operational ownership, and
+live quality evidence. See the [path to production](../production/path-to-production.md).

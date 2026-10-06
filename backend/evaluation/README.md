@@ -66,13 +66,13 @@ analysis correctness, file-contract, trajectory, and injection checks; reference
 precision@3 of at least 0.80; and verdict accuracy of at least 0.90. Latency, cost, and tool-call
 count are informational. The tool-call count includes every model-requested call, including the
 interrupted `send_outreach` review request. Measured latency is not persisted in the report so its
-repository evidence remains reproducible. CAM-39 semantic metrics remain informational until human
-calibration establishes their promotion thresholds in CAM-41.
+repository evidence remains reproducible. Semantic metrics remain informational. CAM-41 completed
+alignment diagnostics, but its holdout did not run and it established no promotion threshold.
 
 The hosted CAM-40 matrix is archived, read-only historical evidence for the v1 graph and prompt
 revisions. The former `evaluation.experiments.offline --live` path fails closed before hosted writes
-or model-provider calls. Do not rerun it or interpret its retained results as outreach-v2 evidence;
-a future live v2 matrix needs a separately reviewed plan, dataset, revisions, and authorization.
+or model-provider calls. Do not rerun it or interpret its retained results as v4 evidence. A future
+live v4 matrix needs a separately reviewed plan, dataset, revisions, and authorization.
 
 The default command without `--live` remains the credential-free CAM-38 path. The archived matrix
 published `freight-prospect-v1` with stable IDs, its canonical checksum and seed, and exactly 16 core
@@ -83,10 +83,11 @@ plus 8 edge examples, then uploaded four experiments with three repetitions per 
 - `prompt-revision`: GPT-5.6 Sol/Luna, prompt `evidence-self-check-v2`, interpreter on.
 - `interpreter-off`: GPT-5.6 Sol/Luna, prompt `v1`, interpreter off.
 
-Those historical variants used graph `prospect-intelligence-v1`, evaluators
-`freight-evaluators-v3`, rubric `semantic-v1`, and Jev `jev-1.13.0`. They are not defaults for future
-variants. The compiled target used deterministic synthetic handlers, in-memory persistence, and no
-public-source reads. Rep metadata contains only SHA-256 scope hashes.
+Those historical variants used graph `prospect-intelligence-v1`, hosted evaluator feedback labeled
+`freight-evaluators-v2`, rubric `semantic-v1`, and Jev `jev-1.13.0`. Retained outputs were rescored
+locally with `freight-evaluators-v3`; the rescore did not rewrite hosted feedback. These revisions are
+not defaults for future variants. The compiled target used deterministic synthetic handlers,
+in-memory persistence, and no public-source reads. Rep metadata contains only SHA-256 scope hashes.
 Raw traces, prompts, source/provider payloads, model messages, customer data, API keys, and downloaded
 LangSmith results must not be committed.
 Each target call must exactly match its local canonical synthetic example. After every variant, the
@@ -95,9 +96,9 @@ hashed rep and code metadata, and all evaluator feedback. A commit-plus-worktree
 captured once and reused in hosted metadata and the final report.
 
 The deterministic suite runs before the seven Jev evaluators in the configured evaluator order.
-`experiments.offline.results.gate_results()` is the only release gate; semantic scores and judge cost/latency are
-evidence-only until CAM-41. Aggregation includes variant, split, tags, metric, and synthetic failure
-ID. Target costs use the CAM-40 OpenAI standard card: Sol `$4/$0.40/$20` and Luna
+`experiments.offline.results.gate_results()` is the only release gate; semantic scores and judge
+cost/latency remain evidence only. Aggregation includes variant, split, tags, metric, and synthetic
+failure ID. Target costs use the CAM-40 OpenAI standard card: Sol `$4/$0.40/$20` and Luna
 `$0.20/$0.02/$1.20` per million input/cached/output tokens. Jev uses the separate 2026-09-15 card.
 A candidate with a target-cost or mean-latency regression over 20% is rejected unless it passes all
 deterministic gates, fixes a baseline deterministic failure, and introduces no new deterministic

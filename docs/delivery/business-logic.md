@@ -21,8 +21,8 @@ production readiness.
 - The stakeholder decision is whether to fund that limited pilot, not whether to authorize an
   autonomous or enterprise-wide rollout.
 
-Evidence: [use case](../development/use_case.md),
-[implementation description](../development/agent_description.md), and
+Evidence: [use case](../development/use-case.md),
+[implementation description](../development/agent-description.md), and
 [MVP deferrals](mvp-scoping.md).
 
 ## Lane fit and opportunity model
@@ -221,8 +221,8 @@ Reviewed failures may enter the separate regression population only after a huma
 accepts a sanitized target example. Raw LangSmith traces and customer data are never copied
 automatically.
 
-Credentialed CAM-40 evidence selected the GPT-5.6 Sol orchestrator, GPT-5.6 Luna specialists,
-prompt `v1`, and interpreter-enabled baseline for the historical v1 graph:
+Archived credentialed CAM-40 v1 evidence selected the GPT-5.6 Sol orchestrator, GPT-5.6 Luna
+specialists, prompt `v1`, and interpreter-enabled baseline for the historical graph:
 
 - Lower-cost routing was rejected after producing 21 target errors.
 - The prompt revision was rejected because deterministic quality did not improve while target cost
@@ -231,9 +231,9 @@ prompt `v1`, and interpreter-enabled baseline for the historical v1 graph:
   latency benefit.
 
 Baseline, lower-cost, and prompt-revision variants each completed 72 roots. Interpreter-off stopped
-at 51 visible roots after LangSmith exhausted the trace quota. This supports the MVP configuration
-choice but is not a completed four-variant release gate. It is historical v1 evidence and does not
-validate the later `outreach-v2` prompt and customer-copy contract.
+at 51 visible roots after LangSmith exhausted the trace quota. This supports the historical
+configuration choice but is not a completed four-variant release gate. It is archived v1 evidence
+and does not validate the active v4 graph or `outreach-v4` contract.
 
 The separate semantic-alignment exercise completed its synthetic, single-reviewer alignment phase,
 but three questions remained revision candidates and the untouched holdout was explicitly waived
@@ -251,20 +251,20 @@ Evidence: [CAM-40 decision](../evaluation/experimentation-process.md),
 
 ## Product ROI decision model
 
-The production ROI model supports a controlled-pilot decision only. It assumes the client already
-owns GenLogs, CRM, and carrier-network data. Its base case uses 24,000 completed analyses per year, a
-20% high-fit rate, 60% rep approval, 8% meeting conversion, and 15% close rate. It applies a 75%
-first-year realization discount and a 12% contribution margin to the synthetic dataset's $273,000
-median top-lane opportunity.
+The production ROI model supports a controlled-pilot decision only. Its pilot assumptions include
+existing client ownership of CRM and carrier-network data, a valid GenLogs license for this use,
+24,000 completed analyses per year, a 20% high-fit rate, 60% rep approval, 8% meeting conversion,
+and a 15% close rate. It applies a 75% first-year realization discount and an assumed 12%
+contribution margin to the synthetic dataset's $273,000 median top-lane opportunity.
 
 Under those assumptions, about 35 wins produce $2.36 million in gross sales and $283,000 in
 contribution against about $90,000 in recurring product spend. Eleven incremental annual wins cover
 recurring spend; 21 cover the estimated $170,000 first-year spend. These values are planning
 assumptions, not guaranteed revenue or production evidence.
 
-The $80,000 one-time build estimate is 16 engineer-weeks with agentic coding tools at about $200,000
-per loaded FTE-year, plus a $16,000 external security review. The 12% contribution margin is treated as conservative for
-backhaul lanes, where the return trip's driver and fuel cost is already incurred.
+The $80,000 one-time build estimate assumes 16 engineer-weeks at about $200,000 per loaded FTE-year,
+plus a $16,000 external security review. The 12% contribution margin is a pilot assumption, not a
+validated customer margin.
 
 A pilot must use matched non-agent accounts and count only incremental conversion and realized loads.
 Broader deployment requires at least 2x annualized contribution to recurring product cost, expected

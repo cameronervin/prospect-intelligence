@@ -2,7 +2,7 @@
 
 ## Recommendation
 
-The current system is a strong MVP. It is suitable for a small, human-reviewed pilot after the
+The current system is a reviewable MVP. It is suitable for a small, human-reviewed pilot after the
 highest-priority gaps below are closed. It is not ready for autonomous outreach or a broad customer
 rollout.
 
@@ -10,7 +10,7 @@ The main gaps are not basic agent architecture. They are live quality evidence, 
 identity, tenant isolation, memory governance, reliable external side effects, and production
 operations.
 
-## What is already strong
+## Implemented controls
 
 - Typed agent state, explicit specialist roles, bounded tools, and deterministic guardrails.
 - Durable PostgreSQL jobs, LangGraph checkpoints, and a named human approval step.
@@ -28,9 +28,9 @@ reliability, customer-data safety, or production operation.
 
 ### Revalidate the current agent
 
-The existing hosted LangSmith evidence describes an older graph and prompt revision. Run a new
-experiment for the exact version intended for the pilot. Freeze and record the graph, prompts,
-skills, models, evaluators, dataset, dependency lock, and source revision.
+The hosted LangSmith evidence is archived v1 evidence. Run a new experiment for the active v4 graph
+and `outreach-v4` prompt before a pilot. Freeze and record the graph, prompts, skills, models,
+evaluators, dataset, dependency lock, and source revision.
 
 The new release gate should include:
 
@@ -214,4 +214,3 @@ A production decision should combine four separate evidence classes:
 4. Dated staging or production evidence for load, recovery, security, and operations.
 
 No single evidence class proves production readiness by itself.
-

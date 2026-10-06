@@ -5,17 +5,19 @@
 Continue to a controlled sales pilot. Do not approve autonomous outreach or a broad production
 rollout yet.
 
-The base case estimates **$2.36 million in first-year gross sales** and **$283,000 in contribution
-margin** from about **35 won lane opportunities**. Estimated recurring product cost is **$90,000 per
-year**. This is a 26x gross-sales-to-spend ratio and a 3.1x contribution-to-spend ratio.
+The pilot base case estimates **$2.36 million in first-year gross sales** and **$283,000 in
+contribution margin** from about **35 won lane opportunities**. Estimated recurring product cost is
+**$90,000 per year**. This is a 26x gross-sales-to-spend ratio and a 3.1x
+contribution-to-spend ratio.
 
 These figures are a decision model, not a revenue forecast. The pilot must measure incremental wins
 against comparable accounts that do not use the product.
 
 ## Base case
 
-The client already owns GenLogs, its CRM, and carrier-network data. The model assumes 25 sales
-representatives analyze 20 accounts per week for 48 weeks.
+The model assumes the client already licenses GenLogs and owns its CRM and carrier-network data.
+That ownership and the permitted GenLogs use must be confirmed during pilot planning. It also
+assumes 25 sales representatives analyze 20 accounts per week for 48 weeks.
 
 | Funnel stage | Assumption | Annual result |
 | --- | ---: | ---: |
@@ -30,7 +32,7 @@ among fit cases. The ROI model recognizes only 25% of that amount in the first y
 partial award, ramp time, and lower realized volume.
 
 - First-year sales per win: `$273,000 × 25% = $68,250`
-- Assumed contribution margin: 12%
+- Pilot contribution-margin assumption: 12%
 - First-year contribution per win: `$68,250 × 12% = $8,190`
 - Expected gross sales: `34.56 wins × $68,250 = $2,358,720`
 - Expected contribution: `34.56 wins × $8,190 = $283,046`
@@ -48,18 +50,17 @@ volume, or a customer-specific forecast.
 | Three-minute review of each high-fit result at $60 per hour | $14,400 |
 | **Total recurring cost** | **$90,000** |
 
-The inference estimate starts with the CAM-40 baseline cost of $0.294620 per run. Adjusting for its
-5 target errors in 72 runs gives about $0.317 per completed analysis, or $7,600 for 24,000 analyses.
+The inference estimate starts with the archived CAM-40 v1 baseline cost of $0.294620 per run.
+Adjusting for its 5 target errors in 72 runs gives about $0.317 per completed analysis, or $7,600
+for 24,000 analyses.
 
 Add an estimated $80,000 for first-year hardening, security work, deployment, and integration. This
-makes total first-year product spend about $170,000. Existing CRM, GenLogs, and carrier data costs
-are excluded by assumption.
+makes total first-year product spend about $170,000. Existing CRM, GenLogs licensing, and carrier
+data costs are excluded as pilot assumptions and must be verified with the client.
 
-The $80,000 is an effort estimate, not a quote. It assumes the team builds with agentic coding tools,
-and it prices engineering at about $200,000 per loaded FTE-year (about $4,000 per week), the same rate
-behind the 0.25 FTE line above. Agentic tools compress coding, not the dependencies: client IT setup
-for SSO, data access and field mapping, and the external security review still set a pilot start
-about two to three months out. A conventional estimate was about 27.5 engineer-weeks, or $125,000.
+The $80,000 is a pilot planning estimate, not a quote. It prices engineering at about $200,000 per
+loaded FTE-year (about $4,000 per week), the same rate used for the 0.25 FTE line above. Client IT
+work for SSO, data access, field mapping, and the external security review may affect the schedule.
 
 | One-time workstream | Effort | Estimate |
 | --- | ---: | ---: |
@@ -83,7 +84,8 @@ additional upside.
 
 ## Evaluation evidence
 
-The CAM-40 LangSmith experiment supports testing this case in a pilot:
+The archived CAM-40 LangSmith experiment provides historical v1 evidence for testing this case in a
+pilot:
 
 - The selected baseline scored about 93% on lane choice, verdict, workflow trajectory, and injection
   resistance, with 99.4% file-contract compliance.
@@ -93,10 +95,11 @@ The CAM-40 LangSmith experiment supports testing this case in a pilot:
 - Removing the interpreter did not improve quality, latency, or cost per usable result.
 - Human approval remains mandatory before any simulated outreach action.
 
-The evidence does not establish production readiness. The dataset is synthetic, the numeric
-grounding result remains diagnostic, the semantic holdout is unrun, and real conversion uplift has
-not been measured. See the [CAM-40 hosted report](../../backend/evaluation/reports/cam_40_hosted.md)
-and [experiment decision](../evaluation/experimentation-process.md).
+The evidence does not validate the active v4 release or establish production readiness. The dataset
+is synthetic, the numeric grounding result remains diagnostic, the semantic holdout is unrun, and
+real conversion uplift has not been measured. See the
+[CAM-40 hosted report](../../backend/evaluation/reports/cam_40_hosted.md) and
+[experiment decision](../evaluation/experimentation-process.md).
 
 ## Pilot decision
 

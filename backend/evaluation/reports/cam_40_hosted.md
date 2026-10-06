@@ -1,5 +1,9 @@
 # CAM-40 Hosted Experiment Decision
 
+> Archived v1 evidence. Hosted feedback used `freight-evaluators-v2`; retained outputs were rescored
+> locally with `freight-evaluators-v3`. This report does not validate the current v4 graph or
+> `outreach-v4` prompt bundle.
+
 ## Recommendation
 
 Continue with the baseline:

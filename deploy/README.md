@@ -1,12 +1,17 @@
 # Deployment foundation
 
-The Compose stack is a cloud-neutral runtime contract for PostgreSQL, a migration job, the FastAPI backend, and the Next.js frontend. Both application images run as UID/GID `10001`, drop Linux capabilities, use read-only filesystems under Compose, and expose health checks.
+The Compose stack runs PostgreSQL, a migration job, FastAPI, and Next.js. Both application images run
+as UID/GID `10001`, drop Linux capabilities, use read-only filesystems, and expose health checks.
 
 ```sh
 cp deploy/envs/.env.local.example deploy/envs/.env.local
+# Set TAKEHOME_JWT_SIGNING_SECRET and OPENAI_API_KEY in .env.local.
 make docker-config
 make docker-up
+make seed-demo-data
 ```
+
+Open `http://localhost:3000/login` and use `alex.morgan@example.test` / `prospect-demo`.
 
 For live reload in containers, `make docker-dev-up` applies `compose.dev.yml` to the same
 `langchain-takehome` project. The backend runs one reload-enabled Uvicorn application process from a
@@ -25,8 +30,9 @@ make docker-prod-restore
 The restore command keeps the named PostgreSQL volume and recreates application services without
 the development mounts or reload commands.
 
-The application now provides authenticated sessions, persisted tenant membership, and actor-scoped
-account assignments. Production delivery must still add a managed identity integration and secrets,
-TLS, centralized redacted logs, immutable image references, scaling policy, and a reviewed database
-migration/rollback strategy, plus an authorization review for the deployment's tenant model. Do not
-expose LangSmith or model-provider credentials to the browser.
+The application provides demo sessions, persisted membership, and actor-scoped account assignments.
+It also implements opt-in online-quality delivery. Production delivery must replace the demo issuer
+with managed identity and add managed secrets, TLS, centralized redacted logs, immutable image
+references, scaling policy, and a reviewed migration and rollback process. Private source systems,
+outbound sending, and CRM writes also remain deferred. Do not expose LangSmith or model-provider
+credentials to the browser.

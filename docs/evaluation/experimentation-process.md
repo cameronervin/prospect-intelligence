@@ -1,7 +1,10 @@
 # Experimentation Process and Decision
 
+> Archived v1 evidence. The hosted experiments do not validate the current v4 graph or
+> `outreach-v4` prompt bundle.
+
 CAM-40 compared model routing, prompt, and interpreter choices for the freight prospect agent. The
-goal was to select a reliable MVP configuration using synthetic data, repeatable metrics, and hosted
+goal was to select an MVP configuration using synthetic data, repeatable metrics, and hosted
 LangSmith evidence.
 
 ## What was delivered
@@ -59,8 +62,8 @@ Deterministic evaluators measured:
 
 Latency, token usage, and estimated cost were recorded as operational evidence. Seven Jev semantic
 evaluators also reviewed claim support, data leakage, brief and draft agreement, next-step choice,
-entity resolution, actionability, and tone. Semantic scores were supporting evidence because human
-calibration is separate work.
+entity resolution, actionability, and tone. Semantic scores were supporting evidence. Later
+alignment diagnostics did not run the holdout or establish a promotion threshold.
 
 The deterministic results below are the original hosted aggregates. Values in parentheses show the
 number of scored results for that metric.

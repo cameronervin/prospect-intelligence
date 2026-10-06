@@ -1,14 +1,14 @@
 # Backend
 
-This package contains the FastAPI foundation and the freight prospect-intelligence MVP. PostgreSQL
-owns durable runs, worker claims, reviews, receipts, and preference metadata. Application startup
-explicitly initializes the LangGraph PostgreSQL checkpointer and store before starting two local worker
-slots.
+This package contains the FastAPI freight prospect-intelligence MVP. PostgreSQL owns durable runs,
+worker claims, reviews, simulated-send receipts, preference metadata, checkpoints, and cross-run
+memory. Startup initializes the LangGraph checkpointer and store before starting two local workers.
 
 ## Development
 
 ```sh
 cp .env.example .env
+# Set TAKEHOME_JWT_SIGNING_SECRET and OPENAI_API_KEY in .env.
 uv sync
 uv run alembic upgrade head
 uv run python -m scripts.seed_demo_data
@@ -36,29 +36,28 @@ and observability channel with inputs, outputs, and metadata hidden by default.
 ## Prospect API
 
 Prospect routes require an HS256 demo bearer token from `POST /api/v1/auth/token`; tenant, rep,
-subject, and role scope come only from verified claims. The explicit seed command owns the fictional
-user, membership, fictional contacts, accounts, and actor assignments in one transaction; migrations
-create only the schema. Runtime authentication joins `auth_users` to `auth_memberships`, so tenant,
-rep, and role authority is not stored on the profile row. Browser tenant/rep/authorization headers
-are discarded by the Next.js BFF. Accounts and runs are tenant/rep/subject-scoped, and an
-unknown or out-of-scope account/run returns the same sanitized `404 not_found` envelope. The demo
-credentials are `alex.morgan@example.test` / `prospect-demo`; only a generated Argon2 hash is stored.
+subject, and role scope come only from verified claims. The explicit seed command creates the
+fictional user, membership, contact, assigned Sysco account, and assignment in one transaction;
+migrations create only schema. Browser identity and authorization headers are discarded by the
+Next.js BFF. Accounts and runs are tenant/rep/subject-scoped, and an unknown or out-of-scope resource
+returns the same sanitized `404 not_found` envelope. The demo credentials are
+`alex.morgan@example.test` / `prospect-demo`; only an Argon2 hash is stored.
 
 | Method | Path | Success | Purpose |
 | --- | --- | --- | --- |
 | `POST` | `/api/v1/auth/token` | `200` | Authenticate the fictional demo user. |
 | `POST` | `/api/v1/auth/refresh` | `200` | Rotate a valid one-hour token within its eight-hour session. |
 | `GET` | `/api/v1/auth/me` | `200` | Resolve the current verified user without returning the token. |
-| `GET` | `/api/v1/accounts` | `200` | List accounts visible to the tenant. |
-| `POST` | `/api/v1/prospect-runs` | `202` | Atomically persist and enqueue `{ "account_id": "acme-foods" }`. |
+| `GET` | `/api/v1/accounts` | `200` | List accounts assigned to the authenticated actor. |
+| `POST` | `/api/v1/prospect-runs` | `202` | Persist and enqueue `{ "account_id": "sysco-corporation" }`. |
 | `GET` | `/api/v1/prospect-runs/{run_id}` | `200` | Poll the durable run. |
 | `POST` | `/api/v1/prospect-runs/{run_id}/review` | `200` | Resume the pending outreach interrupt. |
 
 Run status describes execution, independently of the freight verdict:
 
 - `queued` and `running` are pollable non-terminal states.
-- `awaiting_review` exposes a draft in `outreach` and an explicit `pending_review` capability. For
-  v1 that capability is `{ "name": "send_outreach", "allowed_decisions": ["approve", "edit",
+- `awaiting_review` exposes a draft in `outreach` and an explicit `pending_review` capability. The
+  capability is `{ "name": "send_outreach", "allowed_decisions": ["approve", "edit",
   "reject"], "tool_call_id": "review-{run_id}" }`.
 - `completed` may carry `fit`, `no_fit`, or `needs_more_data`; the last two complete without outreach
   review. `rejected` records the rep's terminal rejection. `failed` carries a sanitized run `error`.
@@ -83,10 +82,10 @@ Failures use one non-disclosing envelope:
 }
 ```
 
-The stable codes are `unauthorized`, `forbidden`, `validation_error`, `not_found`, `conflict`, and
-`internal_error`, and
-`service_unavailable`. Validation issues identify fields but never echo submitted values; internal
-errors never expose raw exceptions, prompts, credentials, or private source payloads.
+The stable codes are `unauthorized`, `forbidden`, `validation_error`, `not_found`, `conflict`,
+`internal_error`, and `service_unavailable`. Validation issues identify fields but never echo
+submitted values; internal errors never expose raw exceptions, prompts, credentials, or private
+source payloads.
 
 ## Feature creation
 
@@ -109,8 +108,8 @@ Run the credential-free offline release gates separately:
 uv run python -m evaluation.experiments.offline
 ```
 
-This uses local LangSmith evaluation over the compiled scripted graph and writes only sanitized
-aggregate repository evidence. It does not upload a LangSmith experiment or call a model provider.
+This evaluates the scripted v4 graph and `outreach-v4` prompt revision locally and writes only
+sanitized aggregate repository evidence. It does not upload an experiment or call a model provider.
 
 Set `TAKEHOME_TEST_DATABASE_URL` to a disposable PostgreSQL database to run migration, repository,
 worker-concurrency, restart, idempotency, checkpoint, and store-isolation integration tests. These
@@ -124,8 +123,3 @@ those tables intentionally survive the feature downgrade. The in-process Postgre
 for the local MVP, not horizontally scaled production delivery. Review serialization is likewise
 process-local; a multi-replica deployment needs a durable reservation spanning graph resume and the
 product-state commit before it can safely accept concurrent review decisions.
-
-The integrated `20260930_0001` migration is based on `20260929_0002`. A disposable development
-database stamped by the unmerged CAM-35 branch's earlier migration ancestry must be recreated before
-running this history; retained or production data must not be reset to reconcile unpublished branch
-history.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for CAM-32.
+Accepted and implemented.
 
 ## Context
 

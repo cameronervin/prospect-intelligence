@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-The repository includes a working freight prospect-intelligence agent slice. The Next.js client
+The repository includes a working v4 freight prospect-intelligence agent slice. The Next.js client
 creates and polls runs through FastAPI; PostgreSQL stores run, worker, review, receipt, preference,
 checkpoint, and cross-run memory state. Two durable worker slots share one process-wide runtime: an
 outer LangGraph invokes one root Deep Agent harness that delegates to five declarative specialists
@@ -89,12 +89,15 @@ outside the graph.
 
 ## Lifecycle and readiness
 
-Startup initializes PostgreSQL, starts checkpoint/store resources, compiles the prospect runtime,
+Startup initializes PostgreSQL, starts checkpoint/store resources, compiles the v4 prospect runtime,
 constructs the durable review handler and two-slot worker supervisor, and only then marks the prospect
 component ready. When online quality is enabled, bootstrap also provisions its LangSmith project and
 annotation queue before starting the outbox poller. `GET /health/ready` requires both database health
 and that fully started component when prospect routes are enabled. Shutdown stops quality delivery
 and closes its provider clients before prospect and database resources.
+
+Online-quality delivery is implemented but disabled by default. Production alert routing, retention,
+incident response, and operating ownership remain deployment work.
 
 Specialist progress flows in five hops:
 
@@ -110,8 +113,8 @@ Progress writes are best-effort and never fail a run.
 
 ## Source-adapter boundary
 
-CAM-30 uses source-specific contracts rather than a universal integration superclass. Services and
-future agent tools receive a bootstrap-owned source bundle; they do not import concrete adapters.
+The source boundary uses narrow contracts rather than a universal integration superclass. Services
+and agent tools receive a bootstrap-owned source bundle; they do not import concrete adapters.
 
 ```text
 services / agent tools -> source Protocols <- synthetic private-source adapters
@@ -122,10 +125,13 @@ services / agent tools -> source Protocols <- synthetic private-source adapters
 reviewed scenario fixtures -> synthetic source catalog -> synthetic adapters
 ```
 
-Adapters normalize provider responses into typed data, source coverage, and evidence. Provider wire
-payloads remain inside `integrations`. Expected unavailability is data, not an exception and never a
-reason to invent facts. The run-scoped cache is isolated by run, tenant, and rep. Real CRM, GenLogs,
-and carrier-network implementations remain post-MVP substitutions behind the same contracts.
+Adapters normalize provider responses into typed data, source coverage, and evidence. Private CRM,
+GenLogs-shaped freight, and carrier-network data use reviewed fixtures. FAF uses a packaged snapshot.
+SEC, Tavily, and FMCSA use live mode only when external access and required configuration are enabled;
+otherwise they report unavailable coverage. Provider wire payloads remain inside `integrations`.
+Expected unavailability is data, not an exception or a reason to invent facts. The run-scoped cache
+is isolated by run, tenant, and rep. Real private-source implementations remain post-MVP
+substitutions behind the same contracts.
 
 The source Protocols are defined in `features/prospect_intelligence/contracts/sources.py`.
 `fixtures/synthetic` owns deterministic source records, scenario construction, edge cases, and
@@ -134,6 +140,8 @@ itself remains under `backend/evaluation`: `datasets/freight_prospect_v1.py` pro
 scenarios, `datasets/golden/freight_prospect_v1.json` is the reviewed artifact, and `evaluators` and
 `experiments` retain scoring and experiment configuration. Moving scenario construction into the
 feature did not remove the evaluation harness; it removed a duplicate integration-shaped copy.
+The `freight_prospect_v1` dataset name is a retained evidence version, not the current graph or prompt
+revision; credential-free reports record graph v4 and `outreach-v4`.
 
 Carrier-network and carrier-registry adapters remain separate. The former is private operational
 capacity owned by the carrier; the latter is public FMCSA identity, authority, and safety data for
@@ -146,10 +154,11 @@ The authentication feature owns a generic user domain record, repository contrac
 verification, and the demo JWT service. `bootstrap/dependencies.py` composes those exported
 capabilities with the PostgreSQL adapter and settings; the feature does not own an application
 bootstrap helper. PostgreSQL owns user data in `auth_users`; schema migrations
-do not create identities. An explicit idempotent development script seeds Alex Morgan and generates
-the stored Argon2 hash. Production composition injects the PostgreSQL user repository, while tests
-inject an in-memory repository. JWT encoding and validation remain internal stateless authentication
-services rather than outbound integrations.
+do not create identities. An explicit idempotent development script seeds Alex Morgan, membership,
+and one assigned Sysco Corporation account, and generates the stored Argon2 hash. Account and run
+access is tenant/rep/subject-scoped. Production composition injects the PostgreSQL user repository,
+while tests inject an in-memory repository. JWT encoding and validation remain internal stateless
+authentication services. A managed production identity provider is not implemented.
 
 ## Frontend boundary
 
@@ -159,3 +168,6 @@ the access token in an HttpOnly Strict cookie. The protected review console sits
 headers. `BACKEND_BASE_URL` remains server-only. When the backend is unreachable the proxy returns
 the typed `service_unavailable` envelope, so the browser never sees transport exceptions or
 dependency details.
+
+Repository Playwright acceptance covers Desktop Chrome. Responsive behavior and a qualitative mobile
+design reference exist, but mobile browser support is not part of the current evidence.

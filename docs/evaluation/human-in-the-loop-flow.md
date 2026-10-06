@@ -100,6 +100,6 @@ does not fail or change the user's run.
 
 - Repository tests prove workflow, checkpoint, persistence, guardrail, concurrency, and dispatcher
   behavior. They are not evidence of a live LangSmith experiment.
-- Concrete LangSmith quality-event delivery is deferred to CAM-42.
+- LangSmith quality-event delivery is implemented in CAM-42 and disabled by default.
 - Real email, CRM writeback, customer-specific memory, and production retention controls are outside
   this MVP.

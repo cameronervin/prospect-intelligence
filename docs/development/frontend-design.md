@@ -19,11 +19,9 @@ work rather than a generic SaaS marketing page:
 - motion only for feedback, state change, or spatial continuity;
 - a visibly emphasized human-review checkpoint because approval is the product's safety boundary.
 
-The repository currently enforces the design workflow through `.agents/skills/frontend-design` and
-the path-scoped frontend rules. Those instructions require product grounding, admission tests for
-visual devices, subject-swap and deletion critiques, and Playwright MCP inspection at relevant
-viewports. CAM-37 validates the current MVP at the desktop viewport only. Existing responsive code
-remains, but mobile support and mobile browser acceptance are deferred rather than claimed.
+The repository enforces this direction through the path-scoped frontend rules, style-policy checks,
+component tests, and Playwright. Current browser acceptance covers Desktop Chrome only. Responsive
+code and a qualitative mobile design board exist, but mobile browser support is not claimed.
 
 ## Anti-template principles
 
@@ -47,11 +45,11 @@ interaction, state, or brand reason.
 
 | Item                               | Current decision                                                                                | Activation condition                                                                                                                                        |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root `DESIGN.md`                   | Paused. Do not create a speculative token contract.                                             | CAM-36 establishes an approved and stable palette, typography, spacing, radius, component, and motion grammar worth preserving across agents and sessions.  |
+| Root `DESIGN.md`                   | Paused. Do not create a speculative token contract.                                             | A stable cross-surface palette, typography, spacing, radius, component, and motion grammar needs preservation across agents and sessions.                    |
 | DTCG tokens and Style Dictionary   | Paused; Tailwind v4 built-in values are sufficient for the MVP.                                 | The product targets multiple platforms or needs generated token outputs beyond the web application.                                                         |
 | `@shadcn/lint` component contracts | Paused. The current page has no shared UI component contract for `no-restyle` rules to protect. | A reusable component layer with approved variants exists; adopt only rules that match that contract and disclose the linter's limits.                       |
 | Storybook                          | Paused. Component and Playwright tests are the smaller current workflow.                        | The frontend has a reusable component catalog with multiple meaningful visual states that is difficult to review through routes alone.                      |
-| Committed screenshot baselines     | Deferred. CAM-37 uses behavioral and accessibility assertions and does not commit generated browser artifacts. | A post-MVP visual-regression scope defines supported viewports and key states, and a pinned browser environment is approved.                                |
+| Committed screenshot baselines     | Deferred. Current tests use behavioral and accessibility assertions and do not commit generated browser artifacts. | A visual-regression scope defines supported viewports and key states, and a pinned browser environment is approved.                              |
 | Figma MCP and Code Connect         | Paused because no maintained Figma source of truth exists.                                      | A reviewed Figma library becomes authoritative and its components can be mapped to repository components.                                                   |
 | Headless primitive library         | No dependency now. Native HTML covers the present controls.                                     | A concrete accessible widget cannot be implemented clearly with native controls or an existing repository pattern; choose the narrowest suitable primitive. |
 | Icon library                       | No dependency now. The current workflow does not need an icon vocabulary.                       | Repeated, familiar control or navigation symbols are approved; select one family and expose only the semantic project subset.                               |
@@ -62,15 +60,7 @@ Google's [`DESIGN.md` specification](https://github.com/google-labs-code/design.
 [Playwright visual comparisons](https://playwright.dev/docs/test-snapshots) are reference options,
 not current dependencies. Re-evaluate them only when their activation conditions are met.
 
-## CAM-36 handoff
-
-CAM-36 owns the integrated visual cleanup for the brief, evidence, lane-fit, and outreach-review
-experience. It should preserve CAM-35 behavior while replacing the current marketing and repeated-
-card scaffold with the dispatch-console direction above. CAM-37 owns expanded desktop behavioral
-coverage and a credential-free full-stack browser journey after that direction is accepted. Mobile
-acceptance and committed screenshot baselines are outside the MVP ticket.
-
-### CAM-36 outcome
+## Implemented design
 
 - **Thesis:** a dispatch manifest for one account. Every number sits beside its source, and nothing
   leaves without the rep's decision.
@@ -90,8 +80,7 @@ acceptance and committed screenshot baselines are outside the MVP ticket.
 - **Hierarchy:** verdict and recommended action lead, followed by two modeled totals. Assumptions,
   complete sources and non-lead lane details stay behind disclosures. Degraded and unavailable
   sources are always visible.
-- **Reference:** `docs/design/` contains the reviewed system, desktop, state and mobile boards. The
-  files are qualitative inspiration only: the application never imports their HTML or copies their
-  raw values, and the PNGs are not screenshot baselines.
+- **Reference:** `docs/design/` contains reviewed system, desktop, state, and mobile boards. They are
+  qualitative references, not imported application assets or screenshot baselines.
 - **Enforcement:** `npm run styles:check` rejects raw colors, CSS dimensions, gradients, inline
   styles and arbitrary-value Tailwind utilities from `frontend/src`.

@@ -4,7 +4,7 @@ This report contains sanitized aggregate alignment evidence only. It excludes ca
 
 ## Evidence status
 
-- Status: **TARGETED DIAGNOSTIC COMPLETE — read-back verified; holdout pending**
+- Status: **TARGETED DIAGNOSTIC COMPLETE — read-back verified; holdout not run**
 - LangSmith project: `cam-41-alignment-cam-41-labels-v1-9def2f19d5593cf7`
 - Targeted questions: `actionability`, `tone_fit`
 - Supporting LangSmith projects: `cam-41-alignment-cam-41-labels-v1-4a7eedede417b378`
@@ -39,7 +39,6 @@ This report contains sanitized aggregate alignment evidence only. It excludes ca
 
 ## Per-question recommendations
 
-| Question | Recommendation | Jev agreement delta from Sol | Release gate |
-| --- | --- | ---: | --- |
+No recommendations: the untouched holdout was not run.
 
-Semantic alignment thresholds remain recommendation-only; deterministic release gates are unchanged.
+Semantic diagnostics remain evidence only; deterministic release gates are unchanged.

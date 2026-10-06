@@ -115,7 +115,7 @@ def _render_alignment_report(
     elif (
         diagnostic_scope and safe_project is not None and safe_project.startswith(ALIGNMENT_PREFIX)
     ):
-        status = "TARGETED DIAGNOSTIC COMPLETE — read-back verified; holdout pending"
+        status = "TARGETED DIAGNOSTIC COMPLETE — read-back verified; holdout not run"
     elif (
         safe_project is not None
         and safe_project.startswith(ALIGNMENT_PREFIX)
@@ -127,7 +127,7 @@ def _render_alignment_report(
         }
         and not recommendations
     ):
-        status = "DIAGNOSTIC COMPLETE — read-back verified; holdout pending"
+        status = "DIAGNOSTIC COMPLETE — read-back verified; holdout not run"
     else:
         status = "INCOMPLETE — LangSmith read-back not verified"
 
@@ -180,25 +180,27 @@ def _render_alignment_report(
         f"{confusion_text(summary)} |"
         for summary in summaries
     )
+    lines.extend(["", "## Per-question recommendations", ""])
+    if recommendations:
+        lines.extend(
+            [
+                "| Question | Recommendation | Jev agreement delta from Sol | Release gate |",
+                "| --- | --- | ---: | --- |",
+            ]
+        )
+        lines.extend(
+            f"| `{item.question_key}` | `{item.recommendation}` | "
+            f"{percent(item.jev_agreement_delta_from_sol)} | no; evidence only |"
+            for item in recommendations
+        )
+    elif all(summary.split == "alignment" for summary in summaries):
+        lines.append("No recommendations: the untouched holdout was not run.")
+    else:
+        lines.append("No recommendations: this evidence set is incomplete.")
     lines.extend(
         [
             "",
-            "## Per-question recommendations",
-            "",
-            "| Question | Recommendation | Jev agreement delta from Sol | Release gate |",
-            "| --- | --- | ---: | --- |",
-        ]
-    )
-    lines.extend(
-        f"| `{item.question_key}` | `{item.recommendation}` | "
-        f"{percent(item.jev_agreement_delta_from_sol)} | no; evidence only |"
-        for item in recommendations
-    )
-    lines.extend(
-        [
-            "",
-            "Semantic alignment thresholds remain recommendation-only; deterministic release gates "
-            "are unchanged.",
+            "Semantic diagnostics remain evidence only; deterministic release gates are unchanged.",
             "",
         ]
     )

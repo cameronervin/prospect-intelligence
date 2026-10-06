@@ -142,7 +142,11 @@ def test_traced_alignment_phase_is_diagnostic_not_completed_holdout(tmp_path: Pa
         evidence_complete=False,
     )
 
-    assert "DIAGNOSTIC COMPLETE" in path.read_text()
+    report = path.read_text()
+    assert "DIAGNOSTIC COMPLETE" in report
+    assert "No recommendations: the untouched holdout was not run." in report
+    assert "| Question | Recommendation |" not in report
+    assert "Semantic diagnostics remain evidence only" in report
 
     partial = write_alignment_report(
         tmp_path / "partial-diagnostic.md",
@@ -175,6 +179,8 @@ def test_explicit_targeted_diagnostic_is_readback_complete_for_its_scope(tmp_pat
     assert "TARGETED DIAGNOSTIC COMPLETE" in report
     assert "`actionability`, `tone_fit`" in report
     assert "cam-41-alignment-score-retry" in report
+    assert "No recommendations: the untouched holdout was not run." in report
+    assert "| Question | Recommendation |" not in report
 
 
 def test_report_rejects_inconsistent_completion_and_unsafe_aggregates(tmp_path: Path) -> None:

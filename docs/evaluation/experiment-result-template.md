@@ -43,8 +43,8 @@ Copy this file for each approved live experiment. Keep only aggregate and synthe
 | Cost per run | | baseline +20% max | |
 | Latency per run | | baseline +20% max | |
 
-Semantic metrics and CAM-41/CAM-50 alignment thresholds are evidence-only. Do not infer a release
-promotion decision from a judge score or alignment recommendation.
+Semantic metrics are evidence only. CAM-41/CAM-50 did not run the holdout or establish promotion
+thresholds. Do not infer a release decision from a judge score or alignment diagnostic.
 
 ## Slice failures
 
@@ -67,10 +67,11 @@ inter-rater validation.
 | --- | --- | --- | ---: | ---: | --- | --- | ---: | --- | --- | --- |
 | _pending_ | alignment / holdout | Jev / GPT-5.6 Sol | _of `3 × cases`_ | | | | | | | retain / revise / split / replace |
 
-Retain is available only on holdout with 100% attempt coverage, at least 85% exact agreement, and
-Jev no more than five percentage points behind GPT-5.6 Sol. Record missing attempts and unsupported
-classes explicitly; do not reduce the denominator or publish a misleading balanced score. Treat an
-option-order finding as eligible only when the repeated canonical-order baseline is stable.
+For a future holdout, the planned retain criterion requires 100% attempt coverage, at least 85%
+exact agreement, and Jev no more than five percentage points behind GPT-5.6 Sol. This is an
+interpretation rule, not a release gate. Record missing attempts and unsupported classes explicitly;
+do not reduce the denominator or publish a misleading balanced score. Treat an option-order finding
+as eligible only when the repeated canonical-order baseline is stable.
 For an ordered score, compute the canonical weighted 1–5 value from the returned probability
 distribution. Round to the nearest canonical label (half upward) for exact/confusion/stability, but
 retain the continuous value for MAE and within-one. Record the prompt/answer contract revision.

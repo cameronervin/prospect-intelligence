@@ -1,15 +1,15 @@
 # Path to production
 
-The [product ROI model](product-roi.md) describes the conversion and cost assumptions that support a
-controlled sales pilot. It is a planning model, not a production-readiness or guaranteed-revenue
-claim.
+The [detailed production plan](path-to-production.md) lists the required hardening and rollout
+sequence. The [product ROI model](product-roi.md) records the pilot conversion and cost assumptions;
+it is not a production-readiness or guaranteed-revenue claim.
 
 The current repository is a reviewable MVP, not a production system. It implements a compiled agent
-runtime, durable work and review state, full-component readiness checks, and redacted structured
-stdout logging with correlation across the Next.js and FastAPI server boundaries. A production
-proposal must still decide and test:
+runtime, durable work and review state, database and prospect-runtime readiness checks, and
+redacted structured stdout logging with correlation across the Next.js and FastAPI server
+boundaries. A production proposal must still decide and test:
 
-- Authentication for users, services, and agent tools.
+- Enterprise identity for users, services, and agent tools.
 - Tenant identity propagation and isolation in database rows, checkpoints, traces, datasets, caches, and logs.
 - State ownership, checkpoint retention, deletion, replay, and concurrent-run behavior.
 - Human-review authorization, expiration, audit history, and safe resume semantics.

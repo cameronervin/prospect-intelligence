@@ -2,7 +2,6 @@
 
 - Status: Accepted
 - Date: 2026-09-29
-- Ticket: CAM-30
 
 ## Decision
 
@@ -44,8 +43,8 @@ hiding provider-specific request and failure semantics.
 
 ## Operational rules
 
-- Adapter methods remain synchronous because the current worker invokes its handler in a bounded
-  worker thread. CAM-32 may wrap them as LangChain tools without changing the contracts.
+- Adapter methods remain synchronous because the worker invokes its handler in a bounded worker
+  thread. LangChain tools wrap the contracts without changing them.
 - Cache scope is one run; results are never shared across runs, tenants, or reps.
 - Timeouts, HTTP clients, retry sleeping, and clocks are injected.
 - One initial request plus two retries is allowed only for timeouts, HTTP 429, and HTTP 5xx.

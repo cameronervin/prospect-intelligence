@@ -13,7 +13,7 @@ BACKEND_BASE_URL=http://127.0.0.1:8000 npm run dev
 - `src/features/prospect-intelligence/` owns API schemas/client, run restoration and storage,
   review-failure policy, and the run presentation boundary.
 - `src/components/console/` holds the rail, brief, lane table, source coverage, and review
-  checkpoint, and outcome.
+  checkpoint, and outcome states.
 - `src/lib/prospect-api.ts` is a compatibility facade over the feature-scoped API boundary, where
   Zod validates every backend response.
 - `src/app/api/v1/[...path]/route.ts` allowlists the prospect API, strips browser identity input,
@@ -24,4 +24,5 @@ configuration. The interface uses Tailwind's built-in system font stack and toke
 
 `npm run styles:check` rejects raw UI values and arbitrary Tailwind utilities in application source.
 `npm run check` runs that policy, lint, typecheck, Vitest, and the production build;
-`npm run test:e2e` runs the Playwright scenarios on desktop Chrome and Pixel 7.
+`npm run test:e2e` runs the Playwright scenarios on Desktop Chrome. Responsive code exists, but
+mobile browser acceptance is outside the current assessment scope.

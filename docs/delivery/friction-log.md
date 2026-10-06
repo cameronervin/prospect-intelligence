@@ -37,9 +37,8 @@ Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
   2. The labels are frozen into a versioned dataset.
   3. Local code runs both judges and computes agreement with the human labels.
   4. Results are written back to LangSmith as traces and feedback.
-- **Note:** I understand that a UI-first design keeps users on the platform. But teams that run
-  evaluators in CI would be more likely to adopt Align Evals if it had an SDK path, and their data
-  would still live in LangSmith.
+- **Follow-up:** Recheck for supported SDK alignment and export APIs before the next evaluator
+  revision; keep the local alignment workflow canonical until both exist.
 - **Evidence:** [alignment process](../evaluation/evaluator-alignment-process.md),
   [alignment package](../../backend/evaluation/experiments/alignment/),
   [LangSmith: Align Evals](https://docs.langchain.com/langsmith/improve-judge-evaluator-feedback),
@@ -63,6 +62,8 @@ Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
     hides inputs and outputs.
   - Wrap the run in `tracing_context(enabled=False)`.
   - A test blocks all sockets and checks that the evaluation makes no network calls.
+- **Follow-up:** Retest `upload_results=False` after LangSmith SDK upgrades and remove the defensive
+  client only when the no-network regression test passes without it.
 - **Evidence:** [offline runner](../../backend/evaluation/experiments/offline/runner.py),
   [semantic smoke runner](../../backend/evaluation/experiments/semantic_smoke.py),
   [no-network test](../../backend/tests/unit/evaluation/test_offline_runner.py).
@@ -85,6 +86,8 @@ Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
   - Store the validated context in a Python `ContextVar` for the length of the call. This keeps it
     out of messages and checkpoints.
   - Use the private import, pinned to the tested version.
+- **Follow-up:** Recheck supported context propagation and provider discovery on Deep Agents
+  upgrades; remove the bridge and private import only after the integration tests pass.
 - **Evidence:** [context bridge](../../backend/app/features/prospect_intelligence/agents/context.py),
   [agent construction](../../backend/app/features/prospect_intelligence/agents/chains.py),
   [runtime ADR](../architecture/decisions/0003-deep-agent-runtime-composition.md).
@@ -105,6 +108,8 @@ Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
   - Match existing alerts by project and name.
   - Send `config` as a JSON string.
   - Mocked tests cover duplicates and recovery after a partial failure.
+- **Follow-up:** Move to the documented alert API when it supports listing and a typed webhook
+  configuration, while retaining duplicate and partial-failure tests.
 - **Evidence:** [alert client](../../backend/app/features/agent_quality/integrations/langsmith/operations_client.py),
   [alert payloads](../../backend/app/features/agent_quality/services/operations/payloads.py),
   [LangSmith: create an alert rule](https://docs.langchain.com/langsmith/smith-api/alert_rules/create-an-alert-rule).

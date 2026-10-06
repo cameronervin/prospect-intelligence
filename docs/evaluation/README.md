@@ -9,17 +9,10 @@ decision outcomes, durable commit flow, preference learning, and quality feedbac
 See [experimentation-process.md](experimentation-process.md) for the CAM-40 variants, evaluation
 method, aggregate results, evaluator revisions, and MVP configuration decision.
 
-See [evaluator-alignment-process.md](evaluator-alignment-process.md) for the CAM-41/CAM-50
-human-preference workflow, blind labeling protocol, alignment/holdout analysis, evidence boundaries,
-and presentation record. The 70-case reference review and 13 adjudications are complete; the
-210-attempt alignment phase is read back. The untouched holdout was explicitly waived for the
-take-home closeout while its implementation remains available for future validation. The alignment
-diagnostic found complete coverage on all five binary/categorical questions. The approved weighted-
-score contract revision and targeted retry now provide complete ordered-score diagnostic coverage;
-one bounded v3 score-anchor prompt experiment was rejected under its predeclared rule. The accepted
-v2 categorical-plus-score evidence is now composed into a read-back-verified 210-attempt manifest;
-three questions remain revision candidates. CAM-41/CAM-50 are complete without claiming holdout or
-production validation.
+See [evaluator-alignment-process.md](evaluator-alignment-process.md) for the CAM-41/CAM-50 blind
+labeling and alignment record. The 70-case reference review, 13 adjudications, and 210 alignment
+attempts are complete. The untouched holdout was not run, so the work produced diagnostics only:
+three questions remain revision candidates and no semantic promotion threshold was established.
 
 The credential-free harness provides:
 
@@ -86,9 +79,9 @@ Numeric values and counts remain the responsibility of deterministic code evalua
 date and datetime spans are excluded from quantitative scoring; their support belongs to citation
 and claim review. A semantic result with a provider or validation failure has no score and carries
 only sanitized error metadata. Missing results therefore fail metric coverage closed; GPT-5.6 Sol
-does not substitute for Jev. CAM-41/CAM-50 measure human agreement and produce per-question
-recommendations; they do not set semantic promotion gates. Semantic scores remain evidence only and
-do not affect the release decision.
+does not substitute for Jev. CAM-41/CAM-50 measured human agreement on the alignment split. The
+holdout did not run, so the process produced no formal recommendations or semantic promotion gates.
+Semantic scores remain evidence only and do not affect the release decision.
 
 Each judge receives a strict, size-bounded projection rather than a trace or application object.
 Qualitative evidence uses stable `ev_<24 hex>` citation IDs derived from canonical provenance. The
@@ -181,8 +174,10 @@ retention policy; the repository receives only a sanitized aggregate report at
 | `interpreter-off` | `gpt-5.6-sol` | `gpt-5.6-luna` | `v1` | off |
 
 Each retained variant ran all 24 examples three times through graph revision
-`prospect-intelligence-v1`, deterministic evaluator revision `freight-evaluators-v3`, semantic rubric
-`semantic-v1`, and Jev `jev-1.13.0`. The `evidence-self-check-v2` prompt adds one bounded
+`prospect-intelligence-v1`, hosted evaluator revision `freight-evaluators-v2`, semantic rubric
+`semantic-v1`, and Jev `jev-1.13.0`. Retained outputs were rescored locally with
+`freight-evaluators-v3`; the local rescore did not rewrite hosted feedback. The
+`evidence-self-check-v2` prompt adds one bounded
 orchestrator verification pass before drafting/review. The target uses the real compiled graph and
 OpenAI models, but replaces every business-data integration with deterministic synthetic handlers,
 uses in-memory graph persistence, and disables public-source reads. Only synthetic inputs and
@@ -265,17 +260,10 @@ partial result sets fail closed. The informational tool count includes all model
 including the interrupted review request; measured latency is evaluated but its environment-dependent
 value is omitted from the committed report.
 
-CAM-41/CAM-50 prepare exactly 10 applicable, deduplicated cases per question with seed `28029` and
-split them into five alignment plus five untouched holdout cases. A designated reviewer labels projected state blind,
-freezes the complete primary pass as a reviewer-verified checksum, and adjudicates low-confidence or
-ambiguous cases in separate metric queues. Jev and GPT-5.6 Sol then run three repetitions in distinct
-alignment and frozen-holdout phases. Ordered options use a repeated canonical baseline plus
-deterministic permutations mapped back to canonical labels. A revision-bound alignment completion
-manifest must exist before holdout. Retain requires complete attempt
-coverage, at least 85% holdout exact
-agreement, and Jev no more than five percentage points behind Sol. This is a single-reviewer,
-two-pass process—not inter-rater validation—and the recommendation remains evidence-only rather than
-a semantic promotion gate.
+CAM-41/CAM-50 prepared five alignment and five holdout cases per question with seed `28029`. One
+reviewer completed a blind primary pass and a separate adjudication pass. Jev and GPT-5.6 Sol ran
+three repetitions on the alignment cases. The untouched holdout was not run, so no retain decision,
+semantic promotion threshold, or production claim follows from this evidence.
 
 For ordered scores, the shared primitive's probability distribution maps rubric positions back to a
 weighted canonical 1–5 value. Exact/confusion/stability metrics use the nearest canonical label;
