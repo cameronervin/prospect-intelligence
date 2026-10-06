@@ -1,135 +1,94 @@
 # Friction log
 
-This log lists the problems I hit with LangChain, LangGraph, Deep Agents, and LangSmith while building
-this take-home. Each entry says what I was trying to do, what went wrong, and how I worked around it.
+Issues hit with Deep Agents and LangSmith while building this take-home, with the workaround used for
+each.
 
-Versions used: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
+Versions: `deepagents` 0.7.19, `langgraph` 1.2.12, `langsmith` 0.14.1.
 
 ## Summary
 
-| # | Product | Friction |
-| --- | --- | --- |
-| 1 | LangSmith | Align Evals only works in the UI. I could not align evaluators that run in my code. |
-| 2 | LangSmith | `evaluate(upload_results=False)` still contacts LangSmith and tries to upload traces. |
-| 3 | Deep Agents | Subagent tools did not get the parent's runtime context. Disabling the default subagent needs a private import. |
-| 4 | LangSmith | The alert API has no list endpoint, so alerts cannot be managed from code without duplicates. |
-| 5 | LangGraph | Tool schema failures were converted to payload-bearing error messages before outer middleware could sanitize and count them. |
+| # | Product | Friction | Workaround |
+| --- | --- | --- | --- |
+| 1 | LangSmith | Align Evals works only in the UI; no SDK path for evaluators that run in code. | Local alignment: annotation-queue labels, a frozen dataset, agreement computed in code. |
+| 2 | LangSmith | `evaluate(upload_results=False)` still calls LangSmith and tries to upload traces. | Localhost client, tracing off, no-network test in CI. |
+| 3 | Deep Agents | Subagent tools don't get the parent's runtime context; turning off the default subagent needs a private import. | Context passed through a `ContextVar`; private import pinned to the tested version. |
+| 4 | LangSmith | The alert API has no list endpoint, so setup reruns create duplicate alerts. | Use the UI's list endpoint; match alerts by project and name. |
 
-## 1. LangSmith: Align Evals only works in the UI
+## 1. LangSmith: Align Evals works only in the UI
 
-- **Goal:** Check that my LLM-as-judge evaluators agree with a human reviewer, and improve them
-  where they do not. LangSmith's Align Evals feature is built for this, and I wanted to use it.
-- **Problem:** My evaluators run as Python code in my local evaluation pipeline. They are not
-  evaluators defined inside LangSmith. Align Evals works only in the LangSmith UI, and only on
-  LLM-judge evaluators defined in LangSmith. I found no SDK or API to:
-  - start an alignment run against labeled examples;
-  - read the alignment score; or
-  - export the improved judge prompt back to code.
-
-  The SDK can create and manage evaluators (`client.evaluators.*` and
-  `langsmith evaluator create-llm`), but the alignment step itself is UI-only.
-- **Impact:** To use Align Evals, I would have had to re-create each evaluator in the UI, align it
-  there, and copy the prompt back into code by hand. That leaves two copies of each evaluator that
-  can drift apart. My judges also do things the UI evaluator does not model: two judge models,
-  three repeats per case, shuffled answer order, and weighted 1–5 scores.
-- **Workaround:** I built alignment locally:
-  1. LangSmith annotation queues collect blind human labels.
+- **Problem:** The LLM judges run as Python in the local evaluation pipeline. Align Evals works only
+  on LLM-judge evaluators defined in the LangSmith UI. The SDK can create evaluators, but it has no
+  call to run an alignment, read the alignment score, or export the aligned prompt.
+- **Impact:** Using Align Evals means keeping two copies of each judge, one in code and one in the UI,
+  and they drift apart. The UI evaluator also can't model this setup: two judge models, three repeats
+  per case, shuffled answer order, and weighted 1–5 scores.
+- **Workaround:**
+  1. Annotation queues collect blind human labels.
   2. The labels are frozen into a versioned dataset.
-  3. Local code runs both judges and computes agreement with the human labels.
+  3. Local code runs both judges and scores agreement with the labels.
   4. Results are written back to LangSmith as traces and feedback.
-- **Follow-up:** Recheck for supported SDK alignment and export APIs before the next evaluator
-  revision; keep the local alignment workflow canonical until both exist.
+- **Follow-up:** Check for SDK alignment and export before the next judge revision. Until both exist,
+  the local workflow is the source of truth.
 - **Evidence:** [alignment process](../evaluation/evaluator-alignment-process.md),
   [alignment package](../../backend/evaluation/experiments/alignment/),
   [LangSmith: Align Evals](https://docs.langchain.com/langsmith/improve-judge-evaluator-feedback),
   [LangSmith: manage evaluators with the SDK](https://docs.langchain.com/langsmith/manage-evaluators-sdk).
 
-## 2. LangSmith: `upload_results=False` still contacts LangSmith
+## 2. LangSmith: `upload_results=False` still calls LangSmith
 
-- **Goal:** Run evaluations fully locally (in CI, without credentials, on synthetic data) and send
-  nothing to LangSmith.
-- **Problem:** When `evaluate()` or `aevaluate()` runs with `upload_results=False`, the SDK still:
-  - calls LangSmith's `/info` endpoint; and
-  - tries to upload the target's runs as traces (`POST /runs/multipart`), even when
-    `LANGSMITH_TRACING` is off.
-
-  `aevaluate` turns tracing on around the target. I reproduced this on 2026-10-04 with
-  `langsmith` 0.14.1 by blocking the network and logging every connection attempt.
-- **Impact:** A run meant to be local-only can send data to LangSmith when an API key is set. When no
-  key is set, CI shows connection errors. "Do not upload" is not a single switch.
+- **Problem:** With `upload_results=False`, `evaluate()` and `aevaluate()` still call `/info` and
+  post target runs to `/runs/multipart`, even with `LANGSMITH_TRACING` off. `aevaluate` turns tracing
+  on around the target. Reproduced on 2026-10-04 with `langsmith` 0.14.1 by blocking the network and
+  logging each connection attempt.
+- **Impact:** "Do not upload" isn't a single switch. With an API key set, data from a local run can
+  leave the machine. Without a key, CI logs connection errors.
 - **Workaround:**
-  - Pass a client that points at `localhost`, has server info preloaded, has batching off, and
-    hides inputs and outputs.
+  - Pass a client that points at `localhost`, has server info preloaded, has batching off, and hides
+    inputs and outputs.
   - Wrap the run in `tracing_context(enabled=False)`.
   - A test blocks all sockets and checks that the evaluation makes no network calls.
-- **Follow-up:** Retest `upload_results=False` after LangSmith SDK upgrades and remove the defensive
-  client only when the no-network regression test passes without it.
+- **Follow-up:** Retest after SDK upgrades. Remove the guard client only when the no-network test
+  passes without it.
 - **Evidence:** [offline runner](../../backend/evaluation/experiments/offline/runner.py),
   [semantic smoke runner](../../backend/evaluation/experiments/semantic_smoke.py),
   [no-network test](../../backend/tests/unit/evaluation/test_offline_runner.py).
 
 ## 3. Deep Agents: subagent context and the default subagent
 
-- **Goal:** Build one orchestrator agent with five specialist subagents. Each request carries typed
-  runtime context (tenant, sales rep, run ID, and tool dependencies). LangGraph passes this context
-  through its `context=` argument.
-- **Problem A:** In my setup, tools running inside a subagent did not reliably receive the parent's
-  runtime context. Deep Agents calls the subagent without passing `context=`, so my tools failed
-  with "runtime context is unavailable".
-- **Problem B:** To turn off Deep Agents' built-in general-purpose subagent, I had to register a
-  global "harness profile" for each model provider. Getting the provider name requires a private
-  function, `deepagents._models.get_model_provider`.
-- **Impact:** Tenant and user information could not reach subagent tools in a supported way. Putting
-  it into agent state would have saved sensitive dependencies in checkpoints. The private import can
-  break on any upgrade.
+- **Problem A:** Each request carries typed runtime context (tenant, rep, run ID, tool dependencies)
+  through LangGraph's `context=` argument. Deep Agents calls subagents without `context=`, so
+  subagent tools fail with "runtime context is unavailable".
+- **Problem B:** Turning off the default general-purpose subagent needs a harness profile for each
+  model provider. Getting the provider name needs the private function
+  `deepagents._models.get_model_provider`.
+- **Impact:** Tenant and rep context can't reach subagent tools in a supported way. Putting it in
+  agent state would checkpoint sensitive dependencies. The private import can break on any upgrade.
 - **Workaround:**
-  - Store the validated context in a Python `ContextVar` for the length of the call. This keeps it
-    out of messages and checkpoints.
-  - Use the private import, pinned to the tested version.
-- **Follow-up:** Recheck supported context propagation and provider discovery on Deep Agents
-  upgrades; remove the bridge and private import only after the integration tests pass.
+  - Bind the validated context in a scoped `ContextVar` for the length of the call. This keeps it out
+    of messages and checkpoints.
+  - Pin the private import to the tested version.
+- **Follow-up:** Recheck on each Deep Agents upgrade. Remove the bridge and the private import once the
+  integration tests pass without them.
 - **Evidence:** [context bridge](../../backend/app/features/prospect_intelligence/agents/context.py),
   [agent construction](../../backend/app/features/prospect_intelligence/agents/chains.py),
   [runtime ADR](../architecture/decisions/0003-deep-agent-runtime-composition.md).
 
-## 4. LangSmith: managing alerts from code is incomplete
+## 4. LangSmith: alerts can't be managed from code without duplicates
 
-- **Goal:** Create production monitoring alerts (for example, error rate and latency) from code, so
-  setup is repeatable and running it again does not create duplicates.
-- **Problem:** The alert API reference documents create, get, update, delete, and test, but no way to
-  list alerts. Code therefore cannot check whether an alert already exists. Also:
-  - the create request accepts a rule `id`, but LangSmith assigns its own; and
-  - the webhook `config` is documented as an untyped object, but the service needed it as a
-    JSON-encoded string.
-- **Impact:** Running setup again created duplicate alerts. The documented create request failed
-  partway through, after other resources had already been created.
+- **Problem:** The alert API reference documents create, get, update, delete, and test, but not list,
+  so code can't check whether an alert already exists. Two smaller mismatches:
+  - create accepts a rule `id`, but LangSmith assigns its own;
+  - the webhook `config` is documented as an object, but the service needs a JSON string.
+- **Impact:** Rerunning setup creates duplicate alerts. A create that fails partway leaves the
+  resources created before it.
 - **Workaround:**
-  - List alerts through the endpoint the LangSmith UI uses, which is not in the API reference.
+  - List alerts through the endpoint the UI uses (`/api/v1/platform/alerts`), which isn't in the API
+    reference.
   - Match existing alerts by project and name.
   - Send `config` as a JSON string.
   - Mocked tests cover duplicates and recovery after a partial failure.
-- **Follow-up:** Move to the documented alert API when it supports listing and a typed webhook
-  configuration, while retaining duplicate and partial-failure tests.
+- **Follow-up:** Switch to the documented API once it supports listing and a typed webhook config. Keep
+  the duplicate and partial-failure tests.
 - **Evidence:** [alert client](../../backend/app/features/agent_quality/integrations/langsmith/operations_client.py),
   [alert payloads](../../backend/app/features/agent_quality/services/operations/payloads.py),
   [LangSmith: create an alert rule](https://docs.langchain.com/langsmith/smith-api/alert_rules/create-an-alert-rule).
-
-## 5. LangGraph: schema errors cross the tool middleware boundary
-
-- **Goal:** Give a specialist two safe corrections for invalid typed artifact submissions, count
-  every call, and never return submitted values or raw validation exceptions.
-- **Problem:** With the locked LangGraph/LangChain versions, `ToolNode` converts Pydantic schema
-  failures into an error `ToolMessage` containing submitted arguments and field details before the
-  outer `wrap_tool_call` middleware receives the result. A normal exception handler therefore
-  records the call as successful and can return model-authored values in correction feedback.
-- **Impact:** The fixed three-call limit and sanitized-feedback boundary were bypassed specifically
-  for malformed structured tool arguments.
-- **Workaround:** Submission middleware validates the tool's public `tool_call_schema` before
-  execution, records the durable ordinal, and returns a fixed issue code. It also sanitizes an
-  error-status `ToolMessage` defensively for framework-version differences.
-- **Follow-up:** Recheck this adapter when upgrading LangChain or LangGraph and remove the defensive
-  result handling only after an installed-version regression test proves the framework exposes a
-  safe structured schema-error hook.
-- **Evidence:** [submission middleware](../../backend/app/features/prospect_intelligence/agents/middleware/submissions.py),
-  [ToolNode regression test](../../backend/tests/unit/prospect_intelligence/test_typed_artifact_tools.py),
-  [LangChain tool-error middleware](https://docs.langchain.com/oss/python/langchain/middleware/built-in).
